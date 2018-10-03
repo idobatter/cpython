@@ -271,7 +271,7 @@ and off individually.  They are described here in more detail.
 
 .. 2to3fixer:: input
 
-   Converts ``input(prompt)`` to ``eval(input(prompt))``
+   Converts ``input(prompt)`` to ``eval(input(prompt))``.
 
 .. 2to3fixer:: intern
 
@@ -392,7 +392,7 @@ and off individually.  They are described here in more detail.
    Replaces use of the :class:`set` constructor with set literals.  This fixer
    is optional.
 
-.. 2to3fixer:: standard_error
+.. 2to3fixer:: standarderror
 
    Renames :exc:`StandardError` to :exc:`Exception`.
 

@@ -191,7 +191,8 @@ Directory and files operations
    match one of the glob-style *patterns* provided.  See the example below.
 
 
-.. function:: copytree(src, dst, symlinks=False, ignore=None, copy_function=copy2, ignore_dangling_symlinks=False)
+.. function:: copytree(src, dst, symlinks=False, ignore=None, \
+              copy_function=copy2, ignore_dangling_symlinks=False)
 
    Recursively copy an entire directory tree rooted at *src*, returning the
    destination directory.  The destination
@@ -206,8 +207,8 @@ Directory and files operations
    and metadata of the linked files are copied to the new tree.
 
    When *symlinks* is false, if the file pointed by the symlink doesn't
-   exist, a exception will be added in the list of errors raised in
-   a :exc:`Error` exception at the end of the copy process.
+   exist, an exception will be added in the list of errors raised in
+   an :exc:`Error` exception at the end of the copy process.
    You can set the optional *ignore_dangling_symlinks* flag to true if you
    want to silence this exception. Notice that this option has no effect
    on platforms that don't support :func:`os.symlink`.
@@ -282,27 +283,35 @@ Directory and files operations
       .. versionadded:: 3.3
 
 
-.. function:: move(src, dst)
+.. function:: move(src, dst, copy_function=copy2)
 
    Recursively move a file or directory (*src*) to another location (*dst*)
    and return the destination.
 
-   If the destination is a directory or a symlink to a directory, then *src* is
-   moved inside that directory.
-
-   The destination directory must not already exist.  If the destination already
-   exists but is not a directory, it may be overwritten depending on
-   :func:`os.rename` semantics.
+   If the destination is an existing directory, then *src* is moved inside that
+   directory. If the destination already exists but is not a directory, it may
+   be overwritten depending on :func:`os.rename` semantics.
 
    If the destination is on the current filesystem, then :func:`os.rename` is
-   used.  Otherwise, *src* is copied (using :func:`shutil.copy2`) to *dst* and
-   then removed. In case of symlinks, a new symlink pointing to the target of
-   *src* will be created in or as *dst* and *src* will be removed.
+   used. Otherwise, *src* is copied to *dst* using *copy_function* and then
+   removed.  In case of symlinks, a new symlink pointing to the target of *src*
+   will be created in or as *dst* and *src* will be removed.
+
+   If *copy_function* is given, it must be a callable that takes two arguments
+   *src* and *dst*, and will be used to copy *src* to *dest* if
+   :func:`os.rename` cannot be used.  If the source is a directory,
+   :func:`copytree` is called, passing it the :func:`copy_function`. The
+   default *copy_function* is :func:`copy2`.  Using :func:`copy` as the
+   *copy_function* allows the move to succeed when it is not possible to also
+   copy the metadata, at the expense of not copying any of the metadata.
 
    .. versionchanged:: 3.3
       Added explicit symlink handling for foreign filesystems, thus adapting
       it to the behavior of GNU's :program:`mv`.
       Now returns *dst*.
+
+   .. versionchanged:: 3.5
+      Added the *copy_function* keyword argument.
 
 .. function:: disk_usage(path)
 
@@ -341,7 +350,7 @@ Directory and files operations
 
    On Windows, the current directory is always prepended to the *path* whether
    or not you use the default or provide your own, which is the behavior the
-   command shell uses when finding executables.  Additionaly, when finding the
+   command shell uses when finding executables.  Additionally, when finding the
    *cmd* in the *path*, the ``PATHEXT`` environment variable is checked.  For
    example, if you call ``shutil.which("python")``, :func:`which` will search
    ``PATHEXT`` to know that it should look for ``python.exe`` within the *path*
@@ -421,6 +430,26 @@ Another example that uses the *ignore* argument to add a logging call::
    copytree(source, destination, ignore=_logpath)
 
 
+.. _shutil-rmtree-example:
+
+rmtree example
+~~~~~~~~~~~~~~
+
+This example shows how to remove a directory tree on Windows where some
+of the files have their read-only bit set. It uses the onerror callback
+to clear the readonly bit and reattempt the remove. Any subsequent failure
+will propagate. ::
+
+    import os, stat
+    import shutil
+
+    def remove_readonly(func, path, _):
+        "Clear the readonly bit and reattempt the removal"
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+
+    shutil.rmtree(directory, onerror=remove_readonly)
+
 .. _archiving-operations:
 
 Archiving operations
@@ -437,7 +466,8 @@ provided.  They rely on the :mod:`zipfile` and :mod:`tarfile` modules.
 
    *base_name* is the name of the file to create, including the path, minus
    any format-specific extension. *format* is the archive format: one of
-   "zip", "tar", "bztar" (if the :mod:`bz2` module is available) or "gztar".
+   "zip", "tar", "bztar" (if the :mod:`bz2` module is available), "xztar"
+   (if the :mod:`lzma` module is available) or "gztar".
 
    *root_dir* is a directory that will be the root directory of the
    archive; for example, we typically chdir into *root_dir* before creating the
@@ -449,22 +479,31 @@ provided.  They rely on the :mod:`zipfile` and :mod:`tarfile` modules.
 
    *root_dir* and *base_dir* both default to the current directory.
 
+   If *dry_run* is true, no archive is created, but the operations that would be
+   executed are logged to *logger*.
+
    *owner* and *group* are used when creating a tar archive. By default,
    uses the current owner and group.
 
    *logger* must be an object compatible with :pep:`282`, usually an instance of
    :class:`logging.Logger`.
 
+   The *verbose* argument is unused and deprecated.
+
+   .. versionchanged:: 3.5
+      Added support for the *xztar* format.
+
 
 .. function:: get_archive_formats()
 
    Return a list of supported formats for archiving.
-   Each element of the returned sequence is a tuple ``(name, description)``
+   Each element of the returned sequence is a tuple ``(name, description)``.
 
    By default :mod:`shutil` provides these formats:
 
    - *gztar*: gzip'ed tar-file
    - *bztar*: bzip2'ed tar-file (if the :mod:`bz2` module is available.)
+   - *xztar*: xz'ed tar-file (if the :mod:`lzma` module is available.)
    - *tar*: uncompressed tar file
    - *zip*: ZIP file
 
@@ -474,14 +513,19 @@ provided.  They rely on the :mod:`zipfile` and :mod:`tarfile` modules.
 
 .. function:: register_archive_format(name, function, [extra_args, [description]])
 
-   Register an archiver for the format *name*. *function* is a callable that
-   will be used to invoke the archiver.
+   Register an archiver for the format *name*.
+
+   *function* is the callable that will be used to unpack archives. The callable
+   will receive the *base_name* of the file to create, followed by the
+   *base_dir* (which defaults to :data:`os.curdir`) to start archiving from.
+   Further arguments are passed as keyword arguments: *owner*, *group*,
+   *dry_run* and *logger* (as passed in :func:`make_archive`).
 
    If given, *extra_args* is a sequence of ``(name, value)`` pairs that will be
    used as extra keywords arguments when the archiver callable is used.
 
    *description* is used by :func:`get_archive_formats` which returns the
-   list of archivers. Defaults to an empty list.
+   list of archivers.  Defaults to an empty string.
 
 
 .. function:: unregister_archive_format(name)
@@ -535,6 +579,7 @@ provided.  They rely on the :mod:`zipfile` and :mod:`tarfile` modules.
 
    - *gztar*: gzip'ed tar-file
    - *bztar*: bzip2'ed tar-file (if the :mod:`bz2` module is available.)
+   - *xztar*: xz'ed tar-file (if the :mod:`lzma` module is available.)
    - *tar*: uncompressed tar file
    - *zip*: ZIP file
 

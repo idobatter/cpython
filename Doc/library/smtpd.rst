@@ -20,7 +20,8 @@ specific mail-sending strategies.
 Additionally the SMTPChannel may be extended to implement very specific
 interaction behaviour with SMTP clients.
 
-The code supports :RFC:`5321`, plus the :rfc:`1870` SIZE extension.
+The code supports :RFC:`5321`, plus the :rfc:`1870` SIZE and :rfc:`6531`
+SMTPUTF8 extensions.
 
 
 SMTPServer Objects
@@ -28,7 +29,7 @@ SMTPServer Objects
 
 
 .. class:: SMTPServer(localaddr, remoteaddr, data_size_limit=33554432,\
-                      map=None)
+                      map=None, enable_SMTPUTF8=False, decode_data=True)
 
    Create a new :class:`SMTPServer` object, which binds to local address
    *localaddr*.  It will treat *remoteaddr* as an upstream SMTP relayer.  It
@@ -39,25 +40,77 @@ SMTPServer Objects
    accepted in a ``DATA`` command.  A value of ``None`` or ``0`` means no
    limit.
 
-   A dictionary can be specified in *map* to avoid using a global socket map.
+   *map* is the socket map to use for connections (an initially empty
+   dictionary is a suitable value).  If not specified the :mod:`asyncore`
+   global socket map is used.
 
-   .. method:: process_message(peer, mailfrom, rcpttos, data)
+   *enable_SMTPUTF8* determins whether the ``SMTPUTF8`` extension (as defined
+   in :RFC:`6531`) should be enabled.  The default is ``False``.  If set to
+   ``True``, *decode_data* must be ``False`` (otherwise an error is raised).
+   When ``True``, ``SMTPUTF8`` is accepted as a parameter to the ``MAIL``
+   command and when present is passed to :meth:`process_message` in the
+   ``kwargs['mail_options']`` list.
 
-      Raise :exc:`NotImplementedError` exception. Override this in subclasses to
+   *decode_data* specifies whether the data portion of the SMTP transaction
+   should be decoded using UTF-8.  The default is ``True`` for backward
+   compatibility reasons, but will change to ``False`` in Python 3.6; specify
+   the keyword value explicitly to avoid the :exc:`DeprecationWarning`.  When
+   *decode_data* is set to ``False`` the server advertises the ``8BITMIME``
+   extension (:rfc:`6152`), accepts the ``BODY=8BITMIME`` parameter to
+   the ``MAIL`` command, and when present passes it to :meth:`process_message`
+   in the ``kwargs['mail_options']`` list.
+
+   .. method:: process_message(peer, mailfrom, rcpttos, data, **kwargs)
+
+      Raise a :exc:`NotImplementedError` exception. Override this in subclasses to
       do something useful with this message. Whatever was passed in the
       constructor as *remoteaddr* will be available as the :attr:`_remoteaddr`
       attribute. *peer* is the remote host's address, *mailfrom* is the envelope
       originator, *rcpttos* are the envelope recipients and *data* is a string
-      containing the contents of the e-mail (which should be in :rfc:`2822`
+      containing the contents of the e-mail (which should be in :rfc:`5321`
       format).
+
+      If the *decode_data* constructor keyword is set to ``True``, the *data*
+      argument will be a unicode string.  If it is set to ``False``, it
+      will be a bytes object.
+
+      *kwargs* is a dictionary containing additional information. It is empty
+      unless at least one of ``decode_data=False`` or ``enable_SMTPUTF8=True``
+      was given as an init parameter, in which case it contains the following
+      keys:
+
+          *mail_options*:
+             a list of all received parameters to the ``MAIL``
+             command (the elements are uppercase strings; example:
+             ``['BODY=8BITMIME', 'SMTPUTF8']``).
+
+          *rcpt_options*:
+             same as *mail_options* but for the ``RCPT`` command.
+             Currently no ``RCPT TO`` options are supported, so for now
+             this will always be an empty list.
+
+      Implementations of ``process_message`` should use the ``**kwargs``
+      signature to accept arbitrary keyword arguments, since future feature
+      enhancements may add keys to the kwargs dictionary.
+
+      Return ``None`` to request a normal ``250 Ok`` response; otherwise
+      return the desired response string in :RFC:`5321` format.
 
    .. attribute:: channel_class
 
       Override this in subclasses to use a custom :class:`SMTPChannel` for
       managing SMTP clients.
 
-   .. versionchanged:: 3.4
-      The *map* argument was added.
+   .. versionadded:: 3.4
+      The *map* constructor argument.
+
+   .. versionchanged:: 3.5
+      *localaddr* and *remoteaddr* may now contain IPv6 addresses.
+
+   .. versionadded:: 3.5
+      the *decode_data* and *enable_SMTPUTF8* constructor arguments, and the
+      *kwargs* argument to :meth:`process_message` when one or more of these is
+      specified.
 
 
 DebuggingServer Objects
@@ -97,7 +150,7 @@ SMTPChannel Objects
 -------------------
 
 .. class:: SMTPChannel(server, conn, addr, data_size_limit=33554432,\
-                       map=None))
+                       map=None, enable_SMTPUTF8=False, decode_data=True)
 
    Create a new :class:`SMTPChannel` object which manages the communication
    between the server and a single SMTP client.
@@ -108,10 +161,23 @@ SMTPChannel Objects
    accepted in a ``DATA`` command.  A value of ``None`` or ``0`` means no
    limit.
 
+   *enable_SMTPUTF8* determins whether the ``SMTPUTF8`` extension (as defined
+   in :RFC:`6531`) should be enabled.  The default is ``False``.  A
+   :exc:`ValueError` is raised if both *enable_SMTPUTF8* and *decode_data* are
+   set to ``True`` at the same time.
+
    A dictionary can be specified in *map* to avoid using a global socket map.
+
+   *decode_data* specifies whether the data portion of the SMTP transaction
+   should be decoded using UTF-8.  The default is ``True`` for backward
+   compatibility reasons, but will change to ``False`` in Python 3.6.  Specify
+   the keyword value explicitly to avoid the :exc:`DeprecationWarning`.
 
    To use a custom SMTPChannel implementation you need to override the
    :attr:`SMTPServer.channel_class` of your :class:`SMTPServer`.
+
+   .. versionchanged:: 3.5
+      the *decode_data* and *enable_SMTPUTF8* arguments were added.
 
    The :class:`SMTPChannel` has the following instance variables:
 

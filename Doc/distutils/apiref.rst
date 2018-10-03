@@ -78,7 +78,7 @@ setup script). Indirectly provides the  :class:`distutils.dist.Distribution` and
    |                    | be built                       | :class:`distutils.core.Extension`                           |
    +--------------------+--------------------------------+-------------------------------------------------------------+
    | *classifiers*      | A list of categories for the   | a list of strings; valid classifiers are listed on `PyPI    |
-   |                    | package                        | <http://pypi.python.org/pypi?:action=list_classifiers>`_.   |
+   |                    | package                        | <https://pypi.python.org/pypi?:action=list_classifiers>`_.  |
    +--------------------+--------------------------------+-------------------------------------------------------------+
    | *distclass*        | the :class:`Distribution`      | a subclass of                                               |
    |                    | class to use                   | :class:`distutils.core.Distribution`                        |
@@ -521,7 +521,7 @@ This module provides the following functions.
 
    .. method:: CCompiler.library_option(lib)
 
-      Return the compiler option to add *dir* to the list of libraries linked into the
+      Return the compiler option to add *lib* to the list of libraries linked into the
       shared library or executable.
 
 
@@ -853,17 +853,6 @@ Windows.  It also contains the Mingw32CCompiler class which handles the mingw32
 port of GCC (same as cygwin in no-cygwin mode).
 
 
-:mod:`distutils.emxccompiler` --- OS/2 EMX Compiler
-===================================================
-
-.. module:: distutils.emxccompiler
-   :synopsis: OS/2 EMX Compiler support
-
-
-This module provides the EMXCCompiler class, a subclass of
-:class:`UnixCCompiler` that handles the EMX port of the GNU C compiler to OS/2.
-
-
 :mod:`distutils.archive_util` ---  Archiving utilities
 ======================================================
 
@@ -879,23 +868,31 @@ tarballs or zipfiles.
 
    Create an archive file (eg. ``zip`` or ``tar``).  *base_name*  is the name of
    the file to create, minus any format-specific extension;  *format* is the
-   archive format: one of ``zip``, ``tar``,  ``ztar``, or ``gztar``. *root_dir* is
-   a directory that will be the root directory of the archive; ie. we typically
-   ``chdir`` into *root_dir* before  creating the archive.  *base_dir* is the
-   directory where we start  archiving from; ie. *base_dir* will be the common
-   prefix of all files and directories in the archive.  *root_dir* and *base_dir*
-   both default to the current directory.  Returns the name of the archive file.
+   archive format: one of ``zip``, ``tar``, ``gztar``, ``bztar``, ``xztar``, or
+   ``ztar``. *root_dir* is a directory that will be the root directory of the
+   archive; ie. we typically ``chdir`` into *root_dir* before  creating the
+   archive.  *base_dir* is the directory where we start  archiving from; ie.
+   *base_dir* will be the common prefix of all files and directories in the
+   archive.  *root_dir* and *base_dir* both default to the current directory.
+   Returns the name of the archive file.
+
+   .. versionchanged: 3.5
+      Added support for the ``xztar`` format.
 
 
 .. function:: make_tarball(base_name, base_dir[, compress='gzip', verbose=0, dry_run=0])
 
    'Create an (optional compressed) archive as a tar file from all files in and
-   under *base_dir*. *compress* must be ``'gzip'`` (the default),  ``'compress'``,
-   ``'bzip2'``, or ``None``.  Both :program:`tar` and the compression utility named
-   by *compress* must be on the  default program search path, so this is probably
-   Unix-specific.  The  output tar file will be named :file:`base_dir.tar`,
-   possibly plus the appropriate compression extension (:file:`.gz`, :file:`.bz2`
-   or :file:`.Z`).  Return the output filename.
+   under *base_dir*. *compress* must be ``'gzip'`` (the default),
+   ``'bzip2'``, ``'xz'``, ``'compress'``, or ``None``.  For the ``'compress'``
+   method the compression utility named by :program:`compress` must be on the
+   default program search path, so this is probably Unix-specific.  The output
+   tar file will be named :file:`base_dir.tar`, possibly plus the appropriate
+   compression extension (``.gz``, ``.bz2``, ``.xz`` or ``.Z``).  Return the
+   output filename.
+
+   .. versionchanged: 3.5
+      Added support for the ``xz`` compression.
 
 
 .. function:: make_zipfile(base_name, base_dir[, verbose=0, dry_run=0])
@@ -931,7 +928,7 @@ timestamp dependency analysis.
 
    Walk two filename lists in parallel, testing if each source is newer than its
    corresponding target.  Return a pair of lists (*sources*, *targets*) where
-   source is newer than target, according to the semantics of :func:`newer`
+   source is newer than target, according to the semantics of :func:`newer`.
 
    .. % % equivalent to a listcomp...
 
@@ -975,7 +972,7 @@ directories.
 .. function:: create_tree(base_dir, files[, mode=0o777, verbose=0, dry_run=0])
 
    Create all the empty directories under *base_dir* needed to put *files* there.
-   *base_dir* is just the a name of a directory which doesn't necessarily exist
+   *base_dir* is just the name of a directory which doesn't necessarily exist
    yet; *files* is a list of filenames to be interpreted relative to *base_dir*.
    *base_dir* + the directory portion of every file in *files* will be created if
    it doesn't already exist.  *mode*, *verbose* and *dry_run* flags  are as for
@@ -1004,7 +1001,7 @@ directories.
 
    Files in *src* that begin with :file:`.nfs` are skipped (more information on
    these files is available in answer D2 of the `NFS FAQ page
-   <http://nfs.sourceforge.net/#section_d>`_.
+   <http://nfs.sourceforge.net/#section_d>`_).
 
    .. versionchanged:: 3.3.1
       NFS files are ignored.
@@ -1110,13 +1107,13 @@ other utility module.
    during the build of Python), not the OS version of the current system.
 
    For universal binary builds on Mac OS X the architecture value reflects
-   the univeral binary status instead of the architecture of the current
+   the universal binary status instead of the architecture of the current
    processor. For 32-bit universal binaries the architecture is ``fat``,
    for 64-bit universal binaries the architecture is ``fat64``, and
    for 4-way universal binaries the architecture is ``universal``. Starting
    from Python 2.7 and Python 3.2 the architecture ``fat3`` is used for
    a 3-way universal build (ppc, i386, x86_64) and ``intel`` is used for
-   a univeral build with the i386 and x86_64 architectures
+   a universal build with the i386 and x86_64 architectures
 
    Examples of returned values on Mac OS X:
 
@@ -1171,15 +1168,6 @@ other utility module.
    underscore. No { } or ( ) style quoting is available.
 
 
-.. function:: grok_environment_error(exc[, prefix='error: '])
-
-   Generate a useful error message from an :exc:`OSError` exception object.
-   Handles Python 1.5.1 and later styles, and does what it can to deal with
-   exception objects that don't have a filename (which happens when the error
-   is due to a two-file operation, such as :func:`~os.rename` or :func:`~os.link`).
-   Returns the error message as a string prefixed with *prefix*.
-
-
 .. function:: split_quoted(s)
 
    Split a string up according to Unix shell-like rules for quotes and backslashes.
@@ -1213,12 +1201,12 @@ other utility module.
 
 .. function:: byte_compile(py_files[, optimize=0, force=0, prefix=None, base_dir=None, verbose=1, dry_run=0, direct=None])
 
-   Byte-compile a collection of Python source files to either :file:`.pyc` or
-   :file:`.pyo` files in a :file:`__pycache__` subdirectory (see :pep:`3147`).
+   Byte-compile a collection of Python source files to :file:`.pyc` files in a
+   :file:`__pycache__` subdirectory (see :pep:`3147` and :pep:`488`).
    *py_files* is a list of files to compile; any files that don't end in
    :file:`.py` are silently skipped.  *optimize* must be one of the following:
 
-   * ``0`` - don't optimize (generate :file:`.pyc`)
+   * ``0`` - don't optimize
    * ``1`` - normal optimization (like ``python -O``)
    * ``2`` - extra optimization (like ``python -OO``)
 
@@ -1242,9 +1230,12 @@ other utility module.
    doing, leave it set to ``None``.
 
    .. versionchanged:: 3.2.3
-      Create ``.pyc`` or ``.pyo`` files with an :func:`import magic tag
+      Create ``.pyc`` files with an :func:`import magic tag
       <imp.get_tag>` in their name, in a :file:`__pycache__` subdirectory
       instead of files without tag in the current directory.
+
+   .. versionchanged: 3.5
+      Create ``.pyc`` files according to :pep:`488`.
 
 
 .. function:: rfc822_escape(header)
@@ -1943,8 +1934,12 @@ Subclasses of :class:`Command` must define the following methods.
 .. module:: distutils.command.clean
    :synopsis: Clean a package build area
 
+This command removes the temporary files created by :command:`build`
+and its subcommands, like intermediary compiled object files.  With
+the ``--all`` option, the complete build directory will be removed.
 
-.. % todo
+Extension modules built :ref:`in place <distutils-build-ext-inplace>`
+will not be cleaned, as they are not in the build directory.
 
 
 :mod:`distutils.command.config` --- Perform package configuration

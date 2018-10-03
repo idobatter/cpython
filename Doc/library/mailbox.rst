@@ -202,7 +202,7 @@ Supported mailbox formats are Maildir, mbox, MH, Babyl, and MMDF.
       .. versionchanged:: 3.2
          The file object really is a binary file; previously it was incorrectly
          returned in text mode.  Also, the file-like object now supports the
-         context manager protocol: you can use a :keyword:`with` statement to
+         context management protocol: you can use a :keyword:`with` statement to
          automatically close it.
 
       .. note::
@@ -487,7 +487,7 @@ Supported mailbox formats are Maildir, mbox, MH, Babyl, and MMDF.
    `Configuring Netscape Mail on Unix: Why The Content-Length Format is Bad <http://www.jwz.org/doc/content-length.html>`_
       An argument for using the original mbox format rather than a variation.
 
-   `"mbox" is a family of several mutually incompatible mailbox formats <http://homepages.tesco.net./~J.deBoynePollard/FGA/mail-mbox-formats.html>`_
+   `"mbox" is a family of several mutually incompatible mailbox formats <http://homepage.ntlworld.com/jonathan.deboynepollard/FGA/mail-mbox-formats.html>`_
       A history of mbox variations.
 
 
@@ -674,7 +674,7 @@ Supported mailbox formats are Maildir, mbox, MH, Babyl, and MMDF.
 
       In Babyl mailboxes, the headers of a message are not stored contiguously
       with the body of the message. To generate a file-like representation, the
-      headers and body are copied together into a :class:`io.BytesIO` instance,
+      headers and body are copied together into an :class:`io.BytesIO` instance,
       which has an API identical to that of a
       file. As a result, the file-like object is truly independent of the
       underlying mailbox but does not save memory compared to a string
@@ -1550,7 +1550,7 @@ programs, mail loss due to interruption of the program, or premature termination
 due to malformed messages in the mailbox::
 
    import mailbox
-   import email.Errors
+   import email.errors
 
    list_names = ('python-list', 'python-dev', 'python-bugs')
 
@@ -1560,7 +1560,7 @@ due to malformed messages in the mailbox::
    for key in inbox.iterkeys():
        try:
            message = inbox[key]
-       except email.Errors.MessageParseError:
+       except email.errors.MessageParseError:
            continue                # The message is malformed. Just leave it.
 
        for name in list_names:

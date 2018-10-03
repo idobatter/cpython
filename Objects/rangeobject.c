@@ -139,7 +139,11 @@ PyDoc_STRVAR(range_doc,
 "range(stop) -> range object\n\
 range(start, stop[, step]) -> range object\n\
 \n\
-Return a virtual sequence of numbers from start to stop by step.");
+Return an object that produces a sequence of integers from start (inclusive)\n\
+to stop (exclusive) by step.  range(i, j) produces i, i+1, i+2, ..., j-1.\n\
+start defaults to 0, and stop is omitted!  range(4) produces 0, 1, 2, 3.\n\
+These are exactly the valid indices for a list of 4 elements.\n\
+When step is given, it specifies the increment (or decrement).");
 
 static void
 range_dealloc(rangeobject *r)
@@ -190,8 +194,11 @@ compute_range_length(PyObject *start, PyObject *stop, PyObject *step)
     }
 
     /* if (lo >= hi), return length of 0. */
-    if (PyObject_RichCompareBool(lo, hi, Py_GE) == 1) {
+    cmp_result = PyObject_RichCompareBool(lo, hi, Py_GE);
+    if (cmp_result != 0) {
         Py_XDECREF(step);
+        if (cmp_result < 0)
+            return NULL;
         return PyLong_FromLong(0);
     }
 
@@ -807,10 +814,11 @@ rangeiter_setstate(rangeiterobject *r, PyObject *state)
     long index = PyLong_AsLong(state);
     if (index == -1 && PyErr_Occurred())
         return NULL;
-    if (index < 0 || index >= r->len) {
-        PyErr_SetString(PyExc_ValueError, "index out of range");
-        return NULL;
-    }
+    /* silently clip the index value */
+    if (index < 0)
+        index = 0;
+    else if (index > r->len)
+        index = r->len; /* exhausted iterator */
     r->index = index;
     Py_RETURN_NONE;
 }
@@ -985,9 +993,29 @@ longrangeiter_reduce(longrangeiterobject *r)
 static PyObject *
 longrangeiter_setstate(longrangeiterobject *r, PyObject *state)
 {
-    Py_CLEAR(r->index);
-    r->index = state;
-    Py_INCREF(r->index);
+    int cmp;
+
+    /* clip the value */
+    PyObject *zero = PyLong_FromLong(0);
+    if (zero == NULL)
+        return NULL;
+    cmp = PyObject_RichCompareBool(state, zero, Py_LT);
+    if (cmp > 0) {
+        Py_SETREF(r->index, zero);
+        Py_RETURN_NONE;
+    }
+    Py_DECREF(zero);
+    if (cmp < 0)
+        return NULL;
+
+    cmp = PyObject_RichCompareBool(r->len, state, Py_LT);
+    if (cmp < 0)
+        return NULL;
+    if (cmp > 0)
+        state = r->len;
+
+    Py_INCREF(state);
+    Py_SETREF(r->index, state);
     Py_RETURN_NONE;
 }
 
@@ -1036,8 +1064,7 @@ longrangeiter_next(longrangeiterobject *r)
     result = PyNumber_Add(r->start, product);
     Py_DECREF(product);
     if (result) {
-        Py_DECREF(r->index);
-        r->index = new_index;
+        Py_SETREF(r->index, new_index);
     }
     else {
         Py_DECREF(new_index);

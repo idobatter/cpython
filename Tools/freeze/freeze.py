@@ -219,6 +219,7 @@ def main():
 
     # locations derived from options
     version = sys.version[:3]
+    flagged_version = version + sys.abiflags
     if win:
         extensions_c = 'frozen_extensions.c'
     if ishome:
@@ -233,10 +234,11 @@ def main():
             frozendllmain_c = os.path.join(exec_prefix, 'Pc\\frozen_dllmain.c')
     else:
         binlib = os.path.join(exec_prefix,
-                              'lib', 'python%s' % version, 'config')
-        incldir = os.path.join(prefix, 'include', 'python%s' % version)
+                              'lib', 'python%s' % version,
+                              'config-%s' % flagged_version)
+        incldir = os.path.join(prefix, 'include', 'python%s' % flagged_version)
         config_h_dir = os.path.join(exec_prefix, 'include',
-                                    'python%s' % version)
+                                    'python%s' % flagged_version)
         config_c_in = os.path.join(binlib, 'config.c.in')
         frozenmain_c = os.path.join(binlib, 'frozenmain.c')
         makefile_in = os.path.join(binlib, 'Makefile')
@@ -363,6 +365,12 @@ def main():
         else:
             mf.load_file(mod)
 
+    # Alias "importlib._bootstrap" to "_frozen_importlib" so that the
+    # import machinery can bootstrap.  Do the same for
+    # importlib._bootstrap_external.
+    mf.modules["_frozen_importlib"] = mf.modules["importlib._bootstrap"]
+    mf.modules["_frozen_importlib_external"] = mf.modules["importlib._bootstrap_external"]
+
     # Add the main script as either __main__, or the actual module name.
     if python_entry_is_main:
         mf.run_script(scriptfile)
@@ -433,29 +441,21 @@ def main():
                  frozendllmain_c, os.path.basename(extensions_c)] + files
         maindefn = checkextensions_win32.CExtension( '__main__', xtras )
         frozen_extensions.append( maindefn )
-        outfp = open(makefile, 'w')
-        try:
+        with open(makefile, 'w') as outfp:
             winmakemakefile.makemakefile(outfp,
                                          locals(),
                                          frozen_extensions,
                                          os.path.basename(target))
-        finally:
-            outfp.close()
         return
 
     # generate config.c and Makefile
     builtins.sort()
-    infp = open(config_c_in)
-    outfp = bkfile.open(config_c, 'w')
-    try:
+    with open(config_c_in) as infp, bkfile.open(config_c, 'w') as outfp:
         makeconfig.makeconfig(infp, outfp, builtins)
-    finally:
-        outfp.close()
-    infp.close()
 
     cflags = ['$(OPT)']
     cppflags = defines + includes
-    libs = [os.path.join(binlib, 'libpython$(VERSION).a')]
+    libs = [os.path.join(binlib, '$(LDLIBRARY)')]
 
     somevars = {}
     if os.path.exists(makefile_in):
@@ -469,11 +469,8 @@ def main():
             files + supp_sources +  addfiles + libs + \
             ['$(MODLIBS)', '$(LIBS)', '$(SYSLIBS)']
 
-    outfp = bkfile.open(makefile, 'w')
-    try:
+    with bkfile.open(makefile, 'w') as outfp:
         makemakefile.makemakefile(outfp, somevars, files, base_target)
-    finally:
-        outfp.close()
 
     # Done!
 

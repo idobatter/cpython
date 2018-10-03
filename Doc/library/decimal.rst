@@ -12,6 +12,8 @@
 .. moduleauthor:: Stefan Krah <skrah at bytereef.org>
 .. sectionauthor:: Raymond D. Hettinger <python at rcn.com>
 
+**Source code:** :source:`Lib/decimal.py`
+
 .. import modules for testing inline doctests with the Sphinx doctest builder
 .. testsetup:: *
 
@@ -261,7 +263,7 @@ For more advanced work, it may be useful to create alternate contexts using the
 Context() constructor.  To make an alternate active, use the :func:`setcontext`
 function.
 
-In accordance with the standard, the :mod:`Decimal` module provides two ready to
+In accordance with the standard, the :mod:`decimal` module provides two ready to
 use standard contexts, :const:`BasicContext` and :const:`ExtendedContext`. The
 former is especially useful for debugging because many of the traps are
 enabled:
@@ -446,6 +448,19 @@ Decimal objects
       ``Decimal('321e+5').adjusted()`` returns seven.  Used for determining the
       position of the most significant digit with respect to the decimal point.
 
+   .. method:: as_integer_ratio()
+
+      Return a pair ``(n, d)`` of integers that represent the given
+      :class:`Decimal` instance as a fraction, in lowest terms and
+      with a positive denominator::
+
+          >>> Decimal('-3.14').as_integer_ratio()
+          (-157, 50)
+
+      The conversion is exact.  Raise OverflowError on infinities and ValueError
+      on NaNs.
+
+   .. versionadded:: 3.6
 
    .. method:: as_tuple()
 
@@ -742,7 +757,7 @@ Decimal objects
       * ``"NaN"``, indicating that the operand is a quiet NaN (Not a Number).
       * ``"sNaN"``, indicating that the operand is a signaling NaN.
 
-   .. method:: quantize(exp, rounding=None, context=None, watchexp=True)
+   .. method:: quantize(exp, rounding=None, context=None)
 
       Return a value equal to the first operand after rounding and having the
       exponent of the second operand.
@@ -765,14 +780,8 @@ Decimal objects
       ``context`` argument; if neither argument is given the rounding mode of
       the current thread's context is used.
 
-      If *watchexp* is set (default), then an error is returned whenever the
-      resulting exponent is greater than :attr:`Emax` or less than
-      :attr:`Etiny`.
-
-      .. deprecated:: 3.3
-         *watchexp* is an implementation detail from the pure Python version
-         and is not present in the C version. It will be removed in version
-         3.4, where it defaults to ``True``.
+      An error is returned whenever the resulting exponent is greater than
+      :attr:`Emax` or less than :attr:`Etiny`.
 
    .. method:: radix()
 
@@ -845,7 +854,7 @@ Decimal objects
 
       Engineering notation has an exponent which is a multiple of 3, so there
       are up to 3 digits left of the decimal place.  For example, converts
-      ``Decimal('123E+1')`` to ``Decimal('1.23E+3')``
+      ``Decimal('123E+1')`` to ``Decimal('1.23E+3')``.
 
    .. method:: to_integral(rounding=None, context=None)
 
@@ -2092,4 +2101,3 @@ Alternatively, inputs can be rounded upon creation using the
 
    >>> Context(prec=5, rounding=ROUND_DOWN).create_decimal('1.2345678')
    Decimal('1.2345')
-

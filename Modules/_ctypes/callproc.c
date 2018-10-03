@@ -919,7 +919,7 @@ static PyObject *GetResult(PyObject *restype, void *result, PyObject *checker)
 
     v = PyObject_CallFunctionObjArgs(checker, retval, NULL);
     if (v == NULL)
-        _ctypes_add_traceback("GetResult", "_ctypes/callproc.c", __LINE__-2);
+        _PyTraceback_Add("GetResult", "_ctypes/callproc.c", __LINE__-2);
     Py_DECREF(retval);
     return v;
 }
@@ -928,7 +928,7 @@ static PyObject *GetResult(PyObject *restype, void *result, PyObject *checker)
  * Raise a new exception 'exc_class', adding additional text to the original
  * exception string.
  */
-void _ctypes_extend_error(PyObject *exc_class, char *fmt, ...)
+void _ctypes_extend_error(PyObject *exc_class, const char *fmt, ...)
 {
     va_list vargs;
     PyObject *tp, *v, *tb, *s, *cls_str, *msg_str;
@@ -1140,9 +1140,6 @@ PyObject *_ctypes_callproc(PPROC pProc,
     for (i = 0; i < argcount; ++i) {
         atypes[i] = args[i].ffi_type;
         if (atypes[i]->type == FFI_TYPE_STRUCT
-#ifdef _WIN64
-            && atypes[i]->size <= sizeof(void *)
-#endif
             )
             avalues[i] = (void *)args[i].value.p;
         else
@@ -1204,7 +1201,7 @@ _parse_voidp(PyObject *obj, void **address)
 
 #ifdef MS_WIN32
 
-static char format_error_doc[] =
+static const char format_error_doc[] =
 "FormatError([integer]) -> string\n\
 \n\
 Convert a win32 error code into a string. If the error code is not\n\
@@ -1228,7 +1225,7 @@ static PyObject *format_error(PyObject *self, PyObject *args)
     return result;
 }
 
-static char load_library_doc[] =
+static const char load_library_doc[] =
 "LoadLibrary(name) -> handle\n\
 \n\
 Load an executable (usually a DLL), and return a handle to it.\n\
@@ -1257,7 +1254,7 @@ static PyObject *load_library(PyObject *self, PyObject *args)
 #endif
 }
 
-static char free_library_doc[] =
+static const char free_library_doc[] =
 "FreeLibrary(handle) -> void\n\
 \n\
 Free the handle of an executable previously loaded by LoadLibrary.\n";
@@ -1272,7 +1269,7 @@ static PyObject *free_library(PyObject *self, PyObject *args)
     return Py_None;
 }
 
-static char copy_com_pointer_doc[] =
+static const char copy_com_pointer_doc[] =
 "CopyComPointer(src, dst) -> HRESULT value\n";
 
 static PyObject *
@@ -1442,7 +1439,7 @@ call_cdeclfunction(PyObject *self, PyObject *args)
 /*****************************************************************
  * functions
  */
-static char sizeof_doc[] =
+static const char sizeof_doc[] =
 "sizeof(C type) -> integer\n"
 "sizeof(C instance) -> integer\n"
 "Return the size in bytes of a C instance";
@@ -1463,7 +1460,7 @@ sizeof_func(PyObject *self, PyObject *obj)
     return NULL;
 }
 
-static char alignment_doc[] =
+static const char alignment_doc[] =
 "alignment(C type) -> integer\n"
 "alignment(C instance) -> integer\n"
 "Return the alignment requirements of a C instance";
@@ -1486,7 +1483,7 @@ align_func(PyObject *self, PyObject *obj)
     return NULL;
 }
 
-static char byref_doc[] =
+static const char byref_doc[] =
 "byref(C instance[, offset=0]) -> byref-object\n"
 "Return a pointer lookalike to a C instance, only usable\n"
 "as function argument";
@@ -1530,7 +1527,7 @@ byref(PyObject *self, PyObject *args)
     return (PyObject *)parg;
 }
 
-static char addressof_doc[] =
+static const char addressof_doc[] =
 "addressof(C instance) -> integer\n"
 "Return the address of the C instance internal buffer";
 
@@ -1606,7 +1603,7 @@ resize(PyObject *self, PyObject *args)
                      "Memory cannot be resized because this object doesn't own it");
         return NULL;
     }
-    if (size <= sizeof(obj->b_value)) {
+    if ((size_t)size <= sizeof(obj->b_value)) {
         /* internal default buffer is large enough */
         obj->b_size = size;
         goto done;
@@ -1672,24 +1669,30 @@ POINTER(PyObject *self, PyObject *cls)
     }
     if (PyUnicode_CheckExact(cls)) {
         char *name = _PyUnicode_AsString(cls);
-        buf = alloca(strlen(name) + 3 + 1);
+        buf = PyMem_Malloc(strlen(name) + 3 + 1);
+        if (buf == NULL)
+            return PyErr_NoMemory();
         sprintf(buf, "LP_%s", name);
         result = PyObject_CallFunction((PyObject *)Py_TYPE(&PyCPointer_Type),
                                        "s(O){}",
                                        buf,
                                        &PyCPointer_Type);
+        PyMem_Free(buf);
         if (result == NULL)
             return result;
         key = PyLong_FromVoidPtr(result);
     } else if (PyType_Check(cls)) {
         typ = (PyTypeObject *)cls;
-        buf = alloca(strlen(typ->tp_name) + 3 + 1);
+        buf = PyMem_Malloc(strlen(typ->tp_name) + 3 + 1);
+        if (buf == NULL)
+            return PyErr_NoMemory();
         sprintf(buf, "LP_%s", typ->tp_name);
         result = PyObject_CallFunction((PyObject *)Py_TYPE(&PyCPointer_Type),
                                        "s(O){sO}",
                                        buf,
                                        &PyCPointer_Type,
                                        "_type_", cls);
+        PyMem_Free(buf);
         if (result == NULL)
             return result;
         Py_INCREF(cls);

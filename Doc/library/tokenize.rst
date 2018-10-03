@@ -41,7 +41,7 @@ The primary entry point is a :term:`generator`:
    returned as a :term:`named tuple` with the field names:
    ``type string start end line``.
 
-   The returned :term:`named tuple` has a additional property named
+   The returned :term:`named tuple` has an additional property named
    ``exact_type`` that contains the exact operator type for
    :data:`token.OP` tokens.  For all other token types ``exact_type``
    equals the named tuple ``type`` field.
@@ -130,6 +130,24 @@ function it uses to do this is available:
    :func:`detect_encoding`.
 
    .. versionadded:: 3.2
+
+.. exception:: TokenError
+
+   Raised when either a docstring or expression that may be split over several
+   lines is not completed anywhere in the file, for example::
+
+      """Beginning of
+      docstring
+
+   or::
+
+      [1,
+       2,
+       3
+
+Note that unclosed single-quoted strings do not cause an error to be
+raised. They are tokenized as ``ERRORTOKEN``, followed by the tokenization of
+their contents.
 
 
 .. _tokenize-cli:

@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import collections.abc
 import errno
 import socket
@@ -19,7 +17,6 @@ class PythonBuildersTest(unittest.TestCase):
             builders = server.getAllBuilders()
         except OSError as e:
             self.skipTest("network error: %s" % e)
-            return
         self.addCleanup(lambda: server('close')())
 
         # Perform a minimal sanity check on the result, just to be sure

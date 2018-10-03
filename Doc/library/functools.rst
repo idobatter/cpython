@@ -21,8 +21,8 @@ The :mod:`functools` module defines the following functions:
 
 .. function:: cmp_to_key(func)
 
-   Transform an old-style comparison function to a key function.  Used with
-   tools that accept key functions (such as :func:`sorted`, :func:`min`,
+   Transform an old-style comparison function to a :term:`key function`.  Used
+   with tools that accept key functions (such as :func:`sorted`, :func:`min`,
    :func:`max`, :func:`heapq.nlargest`, :func:`heapq.nsmallest`,
    :func:`itertools.groupby`).  This function is primarily used as a transition
    tool for programs being converted from Python 2 which supported the use of
@@ -31,12 +31,13 @@ The :mod:`functools` module defines the following functions:
    A comparison function is any callable that accept two arguments, compares them,
    and returns a negative number for less-than, zero for equality, or a positive
    number for greater-than.  A key function is a callable that accepts one
-   argument and returns another value indicating the position in the desired
-   collation sequence.
+   argument and returns another value to be used as the sort key.
 
    Example::
 
        sorted(iterable, key=cmp_to_key(locale.strcoll))  # locale-aware sort order
+
+   For sorting examples and a brief sorting tutorial, see :ref:`sortinghowto`.
 
    .. versionadded:: 3.2
 
@@ -72,7 +73,7 @@ The :mod:`functools` module defines the following functions:
    bypassing the cache, or for rewrapping the function with a different cache.
 
    An `LRU (least recently used) cache
-   <http://en.wikipedia.org/wiki/Cache_algorithms#Least_Recently_Used>`_ works
+   <http://en.wikipedia.org/wiki/Cache_algorithms#Examples>`_ works
    best when the most recent calls are the best predictors of upcoming calls (for
    example, the most popular articles on a news server tend to change each day).
    The cache's size limit assures that the cache does not grow without bound on
@@ -218,6 +219,8 @@ The :mod:`functools` module defines the following functions:
    Example::
 
       >>> class Cell(object):
+      ...     def __init__(self):
+      ...         self._alive = False
       ...     @property
       ...     def alive(self):
       ...         return self._alive
@@ -247,7 +250,7 @@ The :mod:`functools` module defines the following functions:
    a default when the sequence is empty.  If *initializer* is not given and
    *sequence* contains only one item, the first item is returned.
 
-   Equivalent to::
+   Roughly equivalent to::
 
       def reduce(function, iterable, initializer=None):
           it = iter(iterable)
@@ -411,9 +414,10 @@ The :mod:`functools` module defines the following functions:
 
 .. decorator:: wraps(wrapped, assigned=WRAPPER_ASSIGNMENTS, updated=WRAPPER_UPDATES)
 
-   This is a convenience function for invoking ``partial(update_wrapper,
-   wrapped=wrapped, assigned=assigned, updated=updated)`` as a function decorator
-   when defining a wrapper function. For example:
+   This is a convenience function for invoking :func:`update_wrapper` as a
+   function decorator when defining a wrapper function.  It is equivalent to
+   ``partial(update_wrapper, wrapped=wrapped, assigned=assigned, updated=updated)``.
+   For example::
 
       >>> from functools import wraps
       >>> def my_decorator(f):

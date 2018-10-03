@@ -69,9 +69,9 @@ The module itself defines the following classes:
    connecting to an NNTP server on the local machine and intend to call
    reader-specific commands, such as ``group``.  If you get unexpected
    :exc:`NNTPPermanentError`\ s, you might need to set *readermode*.
-   :class:`NNTP` class supports the :keyword:`with` statement to
+   The :class:`NNTP` class supports the :keyword:`with` statement to
    unconditionally consume :exc:`OSError` exceptions and to close the NNTP
-   connection when done. Here is a sample on how using it:
+   connection when done, e.g.:
 
     >>> from nntplib import NNTP
     >>> with NNTP('news.gmane.org') as n:
@@ -94,6 +94,7 @@ The module itself defines the following classes:
    port *port*.  :class:`NNTP_SSL` objects have the same methods as
    :class:`NNTP` objects.  If *port* is omitted, port 563 (NNTPS) is used.
    *ssl_context* is also optional, and is a :class:`~ssl.SSLContext` object.
+   Please read :ref:`ssl-security` for best practices.
    All other parameters behave the same as for :class:`NNTP`.
 
    Note that SSL-on-563 is discouraged per :rfc:`4642`, in favor of
@@ -102,6 +103,10 @@ The module itself defines the following classes:
 
    .. versionadded:: 3.2
 
+   .. versionchanged:: 3.4
+      The class now supports hostname check with
+      :attr:`ssl.SSLContext.check_hostname` and *Server Name Indication* (see
+      :data:`ssl.HAS_SNI`).
 
 .. exception:: NNTPError
 
@@ -230,9 +235,10 @@ tuples or objects that the method normally returns will be empty.
 
 .. method:: NNTP.starttls(ssl_context=None)
 
-   Send a ``STARTTLS`` command.  The *ssl_context* argument is optional
-   and should be a :class:`ssl.SSLContext` object.  This will enable
-   encryption on the NNTP connection.
+   Send a ``STARTTLS`` command.  This will enable encryption on the NNTP
+   connection.  The *ssl_context* argument is optional and should be a
+   :class:`ssl.SSLContext` object.  Please read :ref:`ssl-security` for best
+   practices.
 
    Note that this may not be done after authentication information has
    been transmitted, and authentication occurs by default if possible during a
@@ -241,6 +247,10 @@ tuples or objects that the method normally returns will be empty.
 
    .. versionadded:: 3.2
 
+   .. versionchanged:: 3.4
+      The method now supports hostname check with
+      :attr:`ssl.SSLContext.check_hostname` and *Server Name Indication* (see
+      :data:`ssl.HAS_SNI`).
 
 .. method:: NNTP.newgroups(date, *, file=None)
 
@@ -331,7 +341,7 @@ tuples or objects that the method normally returns will be empty.
 
 .. method:: NNTP.over(message_spec, *, file=None)
 
-   Send a ``OVER`` command, or a ``XOVER`` command on legacy servers.
+   Send an ``OVER`` command, or an ``XOVER`` command on legacy servers.
    *message_spec* can be either a string representing a message id, or
    a ``(first, last)`` tuple of numbers indicating a range of articles in
    the current group, or a ``(first, None)`` tuple indicating a range of

@@ -4,14 +4,14 @@ import telnetlib
 import time
 import contextlib
 
-from unittest import TestCase
 from test import support
+import unittest
 threading = support.import_module('threading')
 
 HOST = support.HOST
 
 def server(evt, serv):
-    serv.listen(5)
+    serv.listen()
     evt.set()
     try:
         conn, addr = serv.accept()
@@ -21,7 +21,7 @@ def server(evt, serv):
     finally:
         serv.close()
 
-class GeneralTests(TestCase):
+class GeneralTests(unittest.TestCase):
 
     def setUp(self):
         self.evt = threading.Event()
@@ -41,6 +41,11 @@ class GeneralTests(TestCase):
         # connects
         telnet = telnetlib.Telnet(HOST, self.port)
         telnet.sock.close()
+
+    def testContextManager(self):
+        with telnetlib.Telnet(HOST, self.port) as tn:
+            self.assertIsNotNone(tn.get_socket())
+        self.assertIsNone(tn.get_socket())
 
     def testTimeoutDefault(self):
         self.assertTrue(socket.getdefaulttimeout() is None)
@@ -116,6 +121,10 @@ class MockSelector(selectors.BaseSelector):
     def __init__(self):
         self.keys = {}
 
+    @property
+    def resolution(self):
+        return 1e-3
+
     def register(self, fileobj, events, data=None):
         key = selectors.SelectorKey(fileobj, 0, events, data)
         self.keys[fileobj] = key
@@ -161,7 +170,7 @@ def test_telnet(reads=(), cls=TelnetAlike):
         telnet._messages = '' # debuglevel output
     return telnet
 
-class ExpectAndReadTestCase(TestCase):
+class ExpectAndReadTestCase(unittest.TestCase):
     def setUp(self):
         self.old_selector = telnetlib._TelnetSelector
         telnetlib._TelnetSelector = MockSelector
@@ -280,7 +289,7 @@ class nego_collector(object):
 
 tl = telnetlib
 
-class WriteTests(TestCase):
+class WriteTests(unittest.TestCase):
     '''The only thing that write does is replace each tl.IAC for
     tl.IAC+tl.IAC'''
 
@@ -296,7 +305,7 @@ class WriteTests(TestCase):
             written = b''.join(telnet.sock.writes)
             self.assertEqual(data.replace(tl.IAC,tl.IAC+tl.IAC), written)
 
-class OptionTests(TestCase):
+class OptionTests(unittest.TestCase):
     # RFC 854 commands
     cmds = [tl.AO, tl.AYT, tl.BRK, tl.EC, tl.EL, tl.GA, tl.IP, tl.NOP]
 
@@ -389,9 +398,5 @@ class ExpectTests(ExpectAndReadTestCase):
         self.assertEqual(data, b''.join(want[:-1]))
 
 
-def test_main(verbose=None):
-    support.run_unittest(GeneralTests, ReadTests, WriteTests, OptionTests,
-                         ExpectTests)
-
 if __name__ == '__main__':
-    test_main()
+    unittest.main()

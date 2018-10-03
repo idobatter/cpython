@@ -20,6 +20,16 @@
 This module provides functions for calculating mathematical statistics of
 numeric (:class:`Real`-valued) data.
 
+.. note::
+
+   Unless explicitly noted otherwise, these functions support :class:`int`,
+   :class:`float`, :class:`decimal.Decimal` and :class:`fractions.Fraction`.
+   Behaviour with other types (whether in the numeric tower or not) is
+   currently unsupported.  Mixed types are also undefined and
+   implementation-dependent.  If your input data consists of mixed types,
+   you may be able to use :func:`map` to ensure a consistent result, e.g.
+   ``map(float, input_data)``.
+
 Averages and measures of central location
 -----------------------------------------
 
@@ -216,7 +226,7 @@ However, for reading convenience, most of the examples show sorted sequences.
       * Calculating the `median <http://www.ualberta.ca/~opscan/median.html>`_.
 
       * The `SSMEDIAN
-        <https://projects.gnome.org/gnumeric/doc/gnumeric-function-SSMEDIAN.shtml>`_
+        <https://help.gnome.org/users/gnumeric/stable/gnumeric.html#gnumeric-function-SSMEDIAN>`_
         function in the Gnome Gnumeric spreadsheet, including `this discussion
         <https://mail.gnome.org/archives/gnumeric-list/2011-April/msg00018.html>`_.
 

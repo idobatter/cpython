@@ -4,12 +4,14 @@
 #define GET_WEAKREFS_LISTPTR(o) \
         ((PyWeakReference **) PyObject_GET_WEAKREFS_LISTPTR(o))
 
-/*[clinic]
+/*[clinic input]
 module _weakref
-[clinic]*/
-/*[clinic checksum: da39a3ee5e6b4b0d3255bfef95601890afd80709]*/
+[clinic start generated code]*/
+/*[clinic end generated code: output=da39a3ee5e6b4b0d input=ffec73b85846596d]*/
 
-/*[clinic]
+#include "clinic/_weakref.c.h"
+
+/*[clinic input]
 
 _weakref.getweakrefcount -> Py_ssize_t
 
@@ -17,41 +19,17 @@ _weakref.getweakrefcount -> Py_ssize_t
   /
 
 Return the number of weak references to 'object'.
-[clinic]*/
-
-PyDoc_STRVAR(_weakref_getweakrefcount__doc__,
-"getweakrefcount(object)\n"
-"Return the number of weak references to \'object\'.");
-
-#define _WEAKREF_GETWEAKREFCOUNT_METHODDEF    \
-    {"getweakrefcount", (PyCFunction)_weakref_getweakrefcount, METH_O, _weakref_getweakrefcount__doc__},
-
-static Py_ssize_t
-_weakref_getweakrefcount_impl(PyModuleDef *module, PyObject *object);
-
-static PyObject *
-_weakref_getweakrefcount(PyModuleDef *module, PyObject *object)
-{
-    PyObject *return_value = NULL;
-    Py_ssize_t _return_value;
-    _return_value = _weakref_getweakrefcount_impl(module, object);
-    if ((_return_value == -1) && PyErr_Occurred())
-        goto exit;
-    return_value = PyLong_FromSsize_t(_return_value);
-
-exit:
-    return return_value;
-}
+[clinic start generated code]*/
 
 static Py_ssize_t
 _weakref_getweakrefcount_impl(PyModuleDef *module, PyObject *object)
-/*[clinic checksum: 436e8fbe0297434375f039d8c2d9fc3a9bbe773c]*/
+/*[clinic end generated code: output=6a6ad0b98285e468 input=cedb69711b6a2507]*/
 {
     PyWeakReference **list;
 
     if (!PyType_SUPPORTS_WEAKREFS(Py_TYPE(object)))
         return 0;
-    
+
     list = GET_WEAKREFS_LISTPTR(object);
     return _PyWeakref_GetWeakrefCount(*list);
 }

@@ -16,7 +16,7 @@ static int numfree = 0;
 /* undefine macro trampoline to PyCFunction_NewEx */
 #undef PyCFunction_New
 
-PyObject *
+PyAPI_FUNC(PyObject *)
 PyCFunction_New(PyMethodDef *ml, PyObject *self)
 {
     return PyCFunction_NewEx(ml, self, NULL);
@@ -29,7 +29,7 @@ PyCFunction_NewEx(PyMethodDef *ml, PyObject *self, PyObject *module)
     op = free_list;
     if (op != NULL) {
         free_list = (PyCFunctionObject *)(op->m_self);
-        PyObject_INIT(op, &PyCFunction_Type);
+        (void)PyObject_INIT(op, &PyCFunction_Type);
         numfree--;
     }
     else {
@@ -37,6 +37,7 @@ PyCFunction_NewEx(PyMethodDef *ml, PyObject *self, PyObject *module)
         if (op == NULL)
             return NULL;
     }
+    op->m_weakreflist = NULL;
     op->m_ml = ml;
     Py_XINCREF(self);
     op->m_self = self;
@@ -77,68 +78,71 @@ PyCFunction_GetFlags(PyObject *op)
 }
 
 PyObject *
-PyCFunction_Call(PyObject *func, PyObject *arg, PyObject *kw)
+PyCFunction_Call(PyObject *func, PyObject *args, PyObject *kwds)
 {
-#define CHECK_RESULT(res) assert(res != NULL || PyErr_Occurred())
-
     PyCFunctionObject* f = (PyCFunctionObject*)func;
     PyCFunction meth = PyCFunction_GET_FUNCTION(func);
     PyObject *self = PyCFunction_GET_SELF(func);
-    PyObject *res;
+    PyObject *arg, *res;
     Py_ssize_t size;
+    int flags;
 
-    switch (PyCFunction_GET_FLAGS(func) & ~(METH_CLASS | METH_STATIC | METH_COEXIST)) {
-    case METH_VARARGS:
-        if (kw == NULL || PyDict_Size(kw) == 0) {
-            res = (*meth)(self, arg);
-            CHECK_RESULT(res);
-            return res;
-        }
-        break;
-    case METH_VARARGS | METH_KEYWORDS:
-        res = (*(PyCFunctionWithKeywords)meth)(self, arg, kw);
-        CHECK_RESULT(res);
-        return res;
-    case METH_NOARGS:
-        if (kw == NULL || PyDict_Size(kw) == 0) {
-            size = PyTuple_GET_SIZE(arg);
-            if (size == 0) {
-                res = (*meth)(self, NULL);
-                CHECK_RESULT(res);
-                return res;
-            }
-            PyErr_Format(PyExc_TypeError,
-                "%.200s() takes no arguments (%zd given)",
-                f->m_ml->ml_name, size);
-            return NULL;
-        }
-        break;
-    case METH_O:
-        if (kw == NULL || PyDict_Size(kw) == 0) {
-            size = PyTuple_GET_SIZE(arg);
-            if (size == 1) {
-                res = (*meth)(self, PyTuple_GET_ITEM(arg, 0));
-                CHECK_RESULT(res);
-                return res;
-            }
-            PyErr_Format(PyExc_TypeError,
-                "%.200s() takes exactly one argument (%zd given)",
-                f->m_ml->ml_name, size);
-            return NULL;
-        }
-        break;
-    default:
-        PyErr_SetString(PyExc_SystemError, "Bad call flags in "
-                        "PyCFunction_Call. METH_OLDARGS is no "
-                        "longer supported!");
+    /* PyCFunction_Call() must not be called with an exception set,
+       because it may clear it (directly or indirectly) and so the
+       caller loses its exception */
+    assert(!PyErr_Occurred());
 
-        return NULL;
+    flags = PyCFunction_GET_FLAGS(func) & ~(METH_CLASS | METH_STATIC | METH_COEXIST);
+
+    if (flags == (METH_VARARGS | METH_KEYWORDS)) {
+        res = (*(PyCFunctionWithKeywords)meth)(self, args, kwds);
     }
-    PyErr_Format(PyExc_TypeError, "%.200s() takes no keyword arguments",
-                 f->m_ml->ml_name);
-    return NULL;
+    else {
+        if (kwds != NULL && PyDict_Size(kwds) != 0) {
+            PyErr_Format(PyExc_TypeError, "%.200s() takes no keyword arguments",
+                         f->m_ml->ml_name);
+            return NULL;
+        }
 
-#undef CHECK_RESULT
+        switch (flags) {
+        case METH_VARARGS:
+            res = (*meth)(self, args);
+            break;
+
+        case METH_NOARGS:
+            size = PyTuple_GET_SIZE(args);
+            if (size != 0) {
+                PyErr_Format(PyExc_TypeError,
+                    "%.200s() takes no arguments (%zd given)",
+                    f->m_ml->ml_name, size);
+                return NULL;
+            }
+
+            res = (*meth)(self, NULL);
+            break;
+
+        case METH_O:
+            size = PyTuple_GET_SIZE(args);
+            if (size != 1) {
+                PyErr_Format(PyExc_TypeError,
+                    "%.200s() takes exactly one argument (%zd given)",
+                    f->m_ml->ml_name, size);
+                return NULL;
+            }
+
+            arg = PyTuple_GET_ITEM(args, 0);
+            res = (*meth)(self, arg);
+            break;
+
+        default:
+            PyErr_SetString(PyExc_SystemError,
+                            "Bad call flags in PyCFunction_Call. "
+                            "METH_OLDARGS is no longer supported!");
+            return NULL;
+        }
+    }
+
+    return _Py_CheckFunctionResult(func, res, NULL);
 }
 
 /* Methods (the standard built-in methods, that is) */
@@ -147,6 +151,9 @@ static void
 meth_dealloc(PyCFunctionObject *m)
 {
     _PyObject_GC_UNTRACK(m);
+    if (m->m_weakreflist != NULL) {
+        PyObject_ClearWeakRefs((PyObject*) m);
+    }
     Py_XDECREF(m->m_self);
     Py_XDECREF(m->m_module);
     if (numfree < PyCFunction_MAXFREELIST) {
@@ -179,75 +186,16 @@ static PyMethodDef meth_methods[] = {
     {NULL, NULL}
 };
 
-/*
- * finds the docstring's introspection signature.
- * if present, returns a pointer pointing to the first '('.
- * otherwise returns NULL.
- */
-static const char *find_signature(PyCFunctionObject *m)
-{
-    const char *trace = m->m_ml->ml_doc;
-    const char *name = m->m_ml->ml_name;
-    size_t length;
-    if (!trace || !name)
-        return NULL;
-    length = strlen(name);
-    if (strncmp(trace, name, length))
-        return NULL;
-    trace += length;
-    if (*trace != '(')
-        return NULL;
-    return trace;
-}
-
-/*
- * skips to the end of the docstring's instrospection signature.
- */
-static const char *skip_signature(const char *trace)
-{
-    while (*trace && *trace != '\n')
-        trace++;
-    return trace;
-}
-
-static const char *skip_eols(const char *trace)
-{
-    while (*trace == '\n')
-        trace++;
-    return trace;
-}
-
 static PyObject *
 meth_get__text_signature__(PyCFunctionObject *m, void *closure)
 {
-    const char *start = find_signature(m);
-    const char *trace;
-
-    if (!start) {
-        Py_INCREF(Py_None);
-        return Py_None;
-    }
-
-    trace = skip_signature(start);
-    return PyUnicode_FromStringAndSize(start, trace - start);
+    return _PyType_GetTextSignatureFromInternalDoc(m->m_ml->ml_name, m->m_ml->ml_doc);
 }
 
 static PyObject *
 meth_get__doc__(PyCFunctionObject *m, void *closure)
 {
-    const char *doc = find_signature(m);
-
-    if (doc)
-        doc = skip_eols(skip_signature(doc));
-    else
-        doc = m->m_ml->ml_doc;
-    
-    if (!doc) {
-        Py_INCREF(Py_None);
-        return Py_None;
-    }
-
-    return PyUnicode_FromString(doc);
+    return _PyType_GetDocFromInternalDoc(m->m_ml->ml_name, m->m_ml->ml_doc);
 }
 
 static PyObject *
@@ -411,7 +359,7 @@ PyTypeObject PyCFunction_Type = {
     (traverseproc)meth_traverse,                /* tp_traverse */
     0,                                          /* tp_clear */
     meth_richcompare,                           /* tp_richcompare */
-    0,                                          /* tp_weaklistoffset */
+    offsetof(PyCFunctionObject, m_weakreflist), /* tp_weaklistoffset */
     0,                                          /* tp_iter */
     0,                                          /* tp_iternext */
     meth_methods,                               /* tp_methods */

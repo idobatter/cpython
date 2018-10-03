@@ -344,9 +344,9 @@ will assume message ids as Unicode strings, not byte strings.
 The entire set of key/value pairs are placed into a dictionary and set as the
 "protected" :attr:`_info` instance variable.
 
-If the :file:`.mo` file's magic number is invalid, or if other problems occur
-while reading the file, instantiating a :class:`GNUTranslations` class can raise
-:exc:`OSError`.
+If the :file:`.mo` file's magic number is invalid, the major version number is
+unexpected, or if other problems occur while reading the file, instantiating a
+:class:`GNUTranslations` class can raise :exc:`OSError`.
 
 The following methods are overridden from the base class implementation:
 
@@ -460,7 +460,7 @@ translatable.  `Babel <http://babel.pocoo.org/>`__ is a Python
 internationalization library that includes a :file:`pybabel` script to
 extract and compile message catalogs.  François Pinard's program
 called :program:`xpot` does a similar job and is available as part of
-his `po-utils package <http://po-utils.progiciels-bpi.ca/>`__.
+his `po-utils package <https://github.com/pinard/po-utils>`__.
 
 (Python also includes pure-Python versions of these programs, called
 :program:`pygettext.py` and :program:`msgfmt.py`; some Python distributions

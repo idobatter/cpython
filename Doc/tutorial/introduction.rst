@@ -1,4 +1,4 @@
-﻿.. _tut-informal:
+.. _tut-informal:
 
 **********************************
 An Informal Introduction to Python
@@ -58,7 +58,7 @@ For example::
 
 The integer numbers (e.g. ``2``, ``4``, ``20``) have type :class:`int`,
 the ones with a fractional part (e.g. ``5.0``, ``1.6``) have type
-:class:`float`.  We will see more about numberic types later in the tutorial.
+:class:`float`.  We will see more about numeric types later in the tutorial.
 
 Division (``/``) always returns a float.  To do :term:`floor division` and
 get an integer result (discarding any fractional result) you can use the ``//``
@@ -74,7 +74,7 @@ operator; to calculate the remainder you can use ``%``::
    >>> 5 * 3 + 2  # result * divisor + remainder
    17
 
-With Python is possible to use the ``**`` operator to calculate powers [#]_::
+With Python, it is possible to use the ``**`` operator to calculate powers [#]_::
 
    >>> 5 ** 2  # 5 squared
    25
@@ -303,9 +303,9 @@ For non-negative indices, the length of a slice is the difference of the
 indices, if both are within bounds.  For example, the length of ``word[1:3]`` is
 2.
 
-Attempting to use a index that is too large will result in an error::
+Attempting to use an index that is too large will result in an error::
 
-   >>> word[42]  # the word only has 7 characters
+   >>> word[42]  # the word only has 6 characters
    Traceback (most recent call last):
      File "<stdin>", line 1, in <module>
    IndexError: string index out of range
@@ -371,9 +371,9 @@ values.  The most versatile is the *list*, which can be written as a list of
 comma-separated values (items) between square brackets.  Lists might contain
 items of different types, but usually the items all have the same type. ::
 
-   >>> squares = [1, 2, 4, 9, 16, 25]
+   >>> squares = [1, 4, 9, 16, 25]
    >>> squares
-   [1, 2, 4, 9, 16, 25]
+   [1, 4, 9, 16, 25]
 
 Like strings (and all other built-in :term:`sequence` type), lists can be
 indexed and sliced::
@@ -389,12 +389,12 @@ All slice operations return a new list containing the requested elements.  This
 means that the following slice returns a new (shallow) copy of the list::
 
    >>> squares[:]
-   [1, 2, 4, 9, 16, 25]
+   [1, 4, 9, 16, 25]
 
-Lists also supports operations like concatenation::
+Lists also support operations like concatenation::
 
    >>> squares + [36, 49, 64, 81, 100]
-   [1, 2, 4, 9, 16, 25, 36, 49, 64, 81, 100]
+   [1, 4, 9, 16, 25, 36, 49, 64, 81, 100]
 
 Unlike strings, which are :term:`immutable`, lists are a :term:`mutable`
 type, i.e. it is possible to change their content::

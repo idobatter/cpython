@@ -325,6 +325,15 @@ which, when run, will produce::
 
     MainThread: Look out!
 
+.. versionchanged:: 3.5
+   Prior to Python 3.5, the :class:`QueueListener` always passed every message
+   received from the queue to every handler it was initialized with. (This was
+   because it was assumed that level filtering was all done on the other side,
+   where the queue is filled.) From 3.5 onwards, this behaviour can be changed
+   by passing a keyword argument ``respect_handler_level=True`` to the
+   listener's constructor. When this is done, the listener compares the level
+   of each message with the handler's level, and only passes a message to a
+   handler if it's appropriate to do so.
 
 .. _network-logging:
 
@@ -416,7 +425,7 @@ module. Here is a basic working example::
        Simple TCP socket-based logging receiver suitable for testing.
        """
 
-       allow_reuse_address = 1
+       allow_reuse_address = True
 
        def __init__(self, host='localhost',
                     port=logging.handlers.DEFAULT_TCP_LOGGING_PORT,
@@ -649,7 +658,7 @@ file from your processes. The existing :class:`FileHandler` and subclasses do
 not make use of :mod:`multiprocessing` at present, though they may do so in the
 future. Note that at present, the :mod:`multiprocessing` module does not provide
 working lock functionality on all platforms (see
-http://bugs.python.org/issue3770).
+https://bugs.python.org/issue3770).
 
 .. currentmodule:: logging.handlers
 
@@ -839,7 +848,7 @@ separate thread::
             },
             'loggers': {
                 'foo': {
-                    'handlers' : ['foofile']
+                    'handlers': ['foofile']
                 }
             },
             'root': {
@@ -1308,7 +1317,7 @@ This dictionary is passed to :func:`~config.dictConfig` to put the configuration
     }
 
 For more information about this configuration, you can see the `relevant
-section <https://docs.djangoproject.com/en/1.3/topics/logging/#configuring-logging>`_
+section <https://docs.djangoproject.com/en/1.6/topics/logging/#configuring-logging>`_
 of the Django documentation.
 
 .. _cookbook-rotator-namer:
@@ -1408,7 +1417,7 @@ works::
     def worker_process(config):
         """
         A number of these are spawned for the purpose of illustration. In
-        practice, they could be a heterogenous bunch of processes rather than
+        practice, they could be a heterogeneous bunch of processes rather than
         ones which are identical to each other.
 
         This initialises logging according to the specified configuration,
@@ -1527,7 +1536,7 @@ works::
             },
             'loggers': {
                 'foo': {
-                    'handlers' : ['foofile']
+                    'handlers': ['foofile']
                 }
             },
             'root': {
@@ -1680,7 +1689,7 @@ as in the following complete example::
 
     def main():
         logging.basicConfig(level=logging.INFO, format='%(message)s')
-        logging.info(_('message 1', set_value=set([1, 2, 3]), snowman='\u2603'))
+        logging.info(_('message 1', set_value={1, 2, 3}, snowman='\u2603'))
 
     if __name__ == '__main__':
         main()
@@ -1691,6 +1700,9 @@ When the above script is run, it prints::
 
 Note that the order of items might be different according to the version of
 Python used.
+
+
+.. _custom-handlers:
 
 .. currentmodule:: logging.config
 
@@ -1827,3 +1839,518 @@ Of course, the approach could also be extended to types of handler other than a
 :class:`~logging.FileHandler` - for example, one of the rotating file handlers,
 or a different type of handler altogether.
 
+
+.. currentmodule:: logging
+
+.. _formatting-styles:
+
+Using particular formatting styles throughout your application
+--------------------------------------------------------------
+
+In Python 3.2, the :class:`~logging.Formatter` gained a ``style`` keyword
+parameter which, while defaulting to ``%`` for backward compatibility, allowed
+the specification of ``{`` or ``$`` to support the formatting approaches
+supported by :meth:`str.format` and :class:`string.Template`. Note that this
+governs the formatting of logging messages for final output to logs, and is
+completely orthogonal to how an individual logging message is constructed.
+
+Logging calls (:meth:`~Logger.debug`, :meth:`~Logger.info` etc.) only take
+positional parameters for the actual logging message itself, with keyword
+parameters used only for determining options for how to handle the logging call
+(e.g. the ``exc_info`` keyword parameter to indicate that traceback information
+should be logged, or the ``extra`` keyword parameter to indicate additional
+contextual information to be added to the log). So you cannot directly make
+logging calls using :meth:`str.format` or :class:`string.Template` syntax,
+because internally the logging package uses %-formatting to merge the format
+string and the variable arguments. There would no changing this while preserving
+backward compatibility, since all logging calls which are out there in existing
+code will be using %-format strings.
+
+There have been suggestions to associate format styles with specific loggers,
+but that approach also runs into backward compatibility problems because any
+existing code could be using a given logger name and using %-formatting.
+
+For logging to work interoperably between any third-party libraries and your
+code, decisions about formatting need to be made at the level of the
+individual logging call. This opens up a couple of ways in which alternative
+formatting styles can be accommodated.
+
+
+Using LogRecord factories
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In Python 3.2, along with the :class:`~logging.Formatter` changes mentioned
+above, the logging package gained the ability to allow users to set their own
+:class:`LogRecord` subclasses, using the :func:`setLogRecordFactory` function.
+You can use this to set your own subclass of :class:`LogRecord`, which does the
+Right Thing by overriding the :meth:`~LogRecord.getMessage` method. The base
+class implementation of this method is where the ``msg % args`` formatting
+happens, and where you can substitute your alternate formatting; however, you
+should be careful to support all formatting styles and allow %-formatting as
+the default, to ensure interoperability with other code. Care should also be
+taken to call ``str(self.msg)``, just as the base implementation does.
+
+Refer to the reference documentation on :func:`setLogRecordFactory` and
+:class:`LogRecord` for more information.
+
+
+Using custom message objects
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+There is another, perhaps simpler way that you can use {}- and $- formatting to
+construct your individual log messages. You may recall (from
+:ref:`arbitrary-object-messages`) that when logging you can use an arbitrary
+object as a message format string, and that the logging package will call
+:func:`str` on that object to get the actual format string. Consider the
+following two classes::
+
+    class BraceMessage(object):
+        def __init__(self, fmt, *args, **kwargs):
+            self.fmt = fmt
+            self.args = args
+            self.kwargs = kwargs
+
+        def __str__(self):
+            return self.fmt.format(*self.args, **self.kwargs)
+
+    class DollarMessage(object):
+        def __init__(self, fmt, **kwargs):
+            self.fmt = fmt
+            self.kwargs = kwargs
+
+        def __str__(self):
+            from string import Template
+            return Template(self.fmt).substitute(**self.kwargs)
+
+Either of these can be used in place of a format string, to allow {}- or
+$-formatting to be used to build the actual "message" part which appears in the
+formatted log output in place of “%(message)s” or “{message}” or “$message”.
+If you find it a little unwieldy to use the class names whenever you want to log
+something, you can make it more palatable if you use an alias such as ``M`` or
+``_`` for the message (or perhaps ``__``, if you are using ``_`` for
+localization).
+
+Examples of this approach are given below. Firstly, formatting with
+:meth:`str.format`::
+
+    >>> __ = BraceMessage
+    >>> print(__('Message with {0} {1}', 2, 'placeholders'))
+    Message with 2 placeholders
+    >>> class Point: pass
+    ...
+    >>> p = Point()
+    >>> p.x = 0.5
+    >>> p.y = 0.5
+    >>> print(__('Message with coordinates: ({point.x:.2f}, {point.y:.2f})', point=p))
+    Message with coordinates: (0.50, 0.50)
+
+Secondly, formatting with :class:`string.Template`::
+
+    >>> __ = DollarMessage
+    >>> print(__('Message with $num $what', num=2, what='placeholders'))
+    Message with 2 placeholders
+    >>>
+
+One thing to note is that you pay no significant performance penalty with this
+approach: the actual formatting happens not when you make the logging call, but
+when (and if) the logged message is actually about to be output to a log by a
+handler. So the only slightly unusual thing which might trip you up is that the
+parentheses go around the format string and the arguments, not just the format
+string. That’s because the __ notation is just syntax sugar for a constructor
+call to one of the ``XXXMessage`` classes shown above.
+
+
+.. _filters-dictconfig:
+
+.. currentmodule:: logging.config
+
+Configuring filters with :func:`dictConfig`
+-------------------------------------------
+
+You *can* configure filters using :func:`~logging.config.dictConfig`, though it
+might not be obvious at first glance how to do it (hence this recipe). Since
+:class:`~logging.Filter` is the only filter class included in the standard
+library, and it is unlikely to cater to many requirements (it's only there as a
+base class), you will typically need to define your own :class:`~logging.Filter`
+subclass with an overridden :meth:`~logging.Filter.filter` method. To do this,
+specify the ``()`` key in the configuration dictionary for the filter,
+specifying a callable which will be used to create the filter (a class is the
+most obvious, but you can provide any callable which returns a
+:class:`~logging.Filter` instance). Here is a complete example::
+
+    import logging
+    import logging.config
+    import sys
+
+    class MyFilter(logging.Filter):
+        def __init__(self, param=None):
+            self.param = param
+
+        def filter(self, record):
+            if self.param is None:
+                allow = True
+            else:
+                allow = self.param not in record.msg
+            if allow:
+                record.msg = 'changed: ' + record.msg
+            return allow
+
+    LOGGING = {
+        'version': 1,
+        'filters': {
+            'myfilter': {
+                '()': MyFilter,
+                'param': 'noshow',
+            }
+        },
+        'handlers': {
+            'console': {
+                'class': 'logging.StreamHandler',
+                'filters': ['myfilter']
+            }
+        },
+        'root': {
+            'level': 'DEBUG',
+            'handlers': ['console']
+        },
+    }
+
+    if __name__ == '__main__':
+        logging.config.dictConfig(LOGGING)
+        logging.debug('hello')
+        logging.debug('hello - noshow')
+
+This example shows how you can pass configuration data to the callable which
+constructs the instance, in the form of keyword parameters. When run, the above
+script will print::
+
+    changed: hello
+
+which shows that the filter is working as configured.
+
+A couple of extra points to note:
+
+* If you can't refer to the callable directly in the configuration (e.g. if it
+  lives in a different module, and you can't import it directly where the
+  configuration dictionary is), you can use the form ``ext://...`` as described
+  in :ref:`logging-config-dict-externalobj`. For example, you could have used
+  the text ``'ext://__main__.MyFilter'`` instead of ``MyFilter`` in the above
+  example.
+
+* As well as for filters, this technique can also be used to configure custom
+  handlers and formatters. See :ref:`logging-config-dict-userdef` for more
+  information on how logging supports using user-defined objects in its
+  configuration, and see the other cookbook recipe :ref:`custom-handlers` above.
+
+
+.. _custom-format-exception:
+
+Customized exception formatting
+-------------------------------
+
+There might be times when you want to do customized exception formatting - for
+argument's sake, let's say you want exactly one line per logged event, even
+when exception information is present. You can do this with a custom formatter
+class, as shown in the following example::
+
+    import logging
+
+    class OneLineExceptionFormatter(logging.Formatter):
+        def formatException(self, exc_info):
+            """
+            Format an exception so that it prints on a single line.
+            """
+            result = super(OneLineExceptionFormatter, self).formatException(exc_info)
+            return repr(result) # or format into one line however you want to
+
+        def format(self, record):
+            s = super(OneLineExceptionFormatter, self).format(record)
+            if record.exc_text:
+                s = s.replace('\n', '') + '|'
+            return s
+
+    def configure_logging():
+        fh = logging.FileHandler('output.txt', 'w')
+        f = OneLineExceptionFormatter('%(asctime)s|%(levelname)s|%(message)s|',
+                                      '%d/%m/%Y %H:%M:%S')
+        fh.setFormatter(f)
+        root = logging.getLogger()
+        root.setLevel(logging.DEBUG)
+        root.addHandler(fh)
+
+    def main():
+        configure_logging()
+        logging.info('Sample message')
+        try:
+            x = 1 / 0
+        except ZeroDivisionError as e:
+            logging.exception('ZeroDivisionError: %s', e)
+
+    if __name__ == '__main__':
+        main()
+
+When run, this produces a file with exactly two lines::
+
+    28/01/2015 07:21:23|INFO|Sample message|
+    28/01/2015 07:21:23|ERROR|ZeroDivisionError: integer division or modulo by zero|'Traceback (most recent call last):\n  File "logtest7.py", line 30, in main\n    x = 1 / 0\nZeroDivisionError: integer division or modulo by zero'|
+
+While the above treatment is simplistic, it points the way to how exception
+information can be formatted to your liking. The :mod:`traceback` module may be
+helpful for more specialized needs.
+
+.. _spoken-messages:
+
+Speaking logging messages
+-------------------------
+
+There might be situations when it is desirable to have logging messages rendered
+in an audible rather than a visible format. This is easy to do if you have text-
+to-speech (TTS) functionality available in your system, even if it doesn't have
+a Python binding. Most TTS systems have a command line program you can run, and
+this can be invoked from a handler using :mod:`subprocess`. It's assumed here
+that TTS command line programs won't expect to interact with users or take a
+long time to complete, and that the frequency of logged messages will be not so
+high as to swamp the user with messages, and that it's acceptable to have the
+messages spoken one at a time rather than concurrently, The example implementation
+below waits for one message to be spoken before the next is processed, and this
+might cause other handlers to be kept waiting. Here is a short example showing
+the approach, which assumes that the ``espeak`` TTS package is available::
+
+    import logging
+    import subprocess
+    import sys
+
+    class TTSHandler(logging.Handler):
+        def emit(self, record):
+            msg = self.format(record)
+            # Speak slowly in a female English voice
+            cmd = ['espeak', '-s150', '-ven+f3', msg]
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT)
+            # wait for the program to finish
+            p.communicate()
+
+    def configure_logging():
+        h = TTSHandler()
+        root = logging.getLogger()
+        root.addHandler(h)
+        # the default formatter just returns the message
+        root.setLevel(logging.DEBUG)
+
+    def main():
+        logging.info('Hello')
+        logging.debug('Goodbye')
+
+    if __name__ == '__main__':
+        configure_logging()
+        sys.exit(main())
+
+When run, this script should say "Hello" and then "Goodbye" in a female voice.
+
+The above approach can, of course, be adapted to other TTS systems and even
+other systems altogether which can process messages via external programs run
+from a command line.
+
+
+.. _buffered-logging:
+
+Buffering logging messages and outputting them conditionally
+------------------------------------------------------------
+
+There might be situations where you want to log messages in a temporary area
+and only output them if a certain condition occurs. For example, you may want to
+start logging debug events in a function, and if the function completes without
+errors, you don't want to clutter the log with the collected debug information,
+but if there is an error, you want all the debug information to be output as well
+as the error.
+
+Here is an example which shows how you could do this using a decorator for your
+functions where you want logging to behave this way. It makes use of the
+:class:`logging.handlers.MemoryHandler`, which allows buffering of logged events
+until some condition occurs, at which point the buffered events are ``flushed``
+- passed to another handler (the ``target`` handler) for processing. By default,
+the ``MemoryHandler`` flushed when its buffer gets filled up or an event whose
+level is greater than or equal to a specified threshold is seen. You can use this
+recipe with a more specialised subclass of ``MemoryHandler`` if you want custom
+flushing behavior.
+
+The example script has a simple function, ``foo``, which just cycles through
+all the logging levels, writing to ``sys.stderr`` to say what level it's about
+to log at, and then actually logging a message that that level. You can pass a
+parameter to ``foo`` which, if true, will log at ERROR and CRITICAL levels -
+otherwise, it only logs at DEBUG, INFO and WARNING levels.
+
+The script just arranges to decorate ``foo`` with a decorator which will do the
+conditional logging that's required. The decorator takes a logger as a parameter
+and attaches a memory handler for the duration of the call to the decorated
+function. The decorator can be additionally parameterised using a target handler,
+a level at which flushing should occur, and a capacity for the buffer. These
+default to a :class:`~logging.StreamHandler` which writes to ``sys.stderr``,
+``logging.ERROR`` and ``100`` respectively.
+
+Here's the script::
+
+    import logging
+    from logging.handlers import MemoryHandler
+    import sys
+
+    logger = logging.getLogger(__name__)
+    logger.addHandler(logging.NullHandler())
+
+    def log_if_errors(logger, target_handler=None, flush_level=None, capacity=None):
+        if target_handler is None:
+            target_handler = logging.StreamHandler()
+        if flush_level is None:
+            flush_level = logging.ERROR
+        if capacity is None:
+            capacity = 100
+        handler = MemoryHandler(capacity, flushLevel=flush_level, target=target_handler)
+
+        def decorator(fn):
+            def wrapper(*args, **kwargs):
+                logger.addHandler(handler)
+                try:
+                    return fn(*args, **kwargs)
+                except Exception:
+                    logger.exception('call failed')
+                    raise
+                finally:
+                    super(MemoryHandler, handler).flush()
+                    logger.removeHandler(handler)
+            return wrapper
+
+        return decorator
+
+    def write_line(s):
+        sys.stderr.write('%s\n' % s)
+
+    def foo(fail=False):
+        write_line('about to log at DEBUG ...')
+        logger.debug('Actually logged at DEBUG')
+        write_line('about to log at INFO ...')
+        logger.info('Actually logged at INFO')
+        write_line('about to log at WARNING ...')
+        logger.warning('Actually logged at WARNING')
+        if fail:
+            write_line('about to log at ERROR ...')
+            logger.error('Actually logged at ERROR')
+            write_line('about to log at CRITICAL ...')
+            logger.critical('Actually logged at CRITICAL')
+        return fail
+
+    decorated_foo = log_if_errors(logger)(foo)
+
+    if __name__ == '__main__':
+        logger.setLevel(logging.DEBUG)
+        write_line('Calling undecorated foo with False')
+        assert not foo(False)
+        write_line('Calling undecorated foo with True')
+        assert foo(True)
+        write_line('Calling decorated foo with False')
+        assert not decorated_foo(False)
+        write_line('Calling decorated foo with True')
+        assert decorated_foo(True)
+
+When this script is run, the following output should be observed::
+
+    Calling undecorated foo with False
+    about to log at DEBUG ...
+    about to log at INFO ...
+    about to log at WARNING ...
+    Calling undecorated foo with True
+    about to log at DEBUG ...
+    about to log at INFO ...
+    about to log at WARNING ...
+    about to log at ERROR ...
+    about to log at CRITICAL ...
+    Calling decorated foo with False
+    about to log at DEBUG ...
+    about to log at INFO ...
+    about to log at WARNING ...
+    Calling decorated foo with True
+    about to log at DEBUG ...
+    about to log at INFO ...
+    about to log at WARNING ...
+    about to log at ERROR ...
+    Actually logged at DEBUG
+    Actually logged at INFO
+    Actually logged at WARNING
+    Actually logged at ERROR
+    about to log at CRITICAL ...
+    Actually logged at CRITICAL
+
+As you can see, actual logging output only occurs when an event is logged whose
+severity is ERROR or greater, but in that case, any previous events at lower
+severities are also logged.
+
+You can of course use the conventional means of decoration::
+
+    @log_if_errors(logger)
+    def foo(fail=False):
+        ...
+
+
+.. _utc-formatting:
+
+Formatting times using UTC (GMT) via configuration
+--------------------------------------------------
+
+Sometimes you want to format times using UTC, which can be done using a class
+such as `UTCFormatter`, shown below::
+
+    import logging
+    import time
+
+    class UTCFormatter(logging.Formatter):
+        converter = time.gmtime
+
+and you can then use the ``UTCFormatter`` in your code instead of
+:class:`~logging.Formatter`. If you want to do that via configuration, you can
+use the :func:`~logging.config.dictConfig` API with an approach illustrated by
+the following complete example::
+
+    import logging
+    import logging.config
+    import time
+
+    class UTCFormatter(logging.Formatter):
+        converter = time.gmtime
+
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'formatters': {
+            'utc': {
+                '()': UTCFormatter,
+                'format': '%(asctime)s %(message)s',
+            },
+            'local': {
+                'format': '%(asctime)s %(message)s',
+            }
+        },
+        'handlers': {
+            'console1': {
+                'class': 'logging.StreamHandler',
+                'formatter': 'utc',
+            },
+            'console2': {
+                'class': 'logging.StreamHandler',
+                'formatter': 'local',
+            },
+        },
+        'root': {
+            'handlers': ['console1', 'console2'],
+       }
+    }
+
+    if __name__ == '__main__':
+        logging.config.dictConfig(LOGGING)
+        logging.warning('The local time is %s', time.asctime())
+
+When this script is run, it should print something like::
+
+    2015-10-17 12:53:29,501 The local time is Sat Oct 17 13:53:29 2015
+    2015-10-17 13:53:29,501 The local time is Sat Oct 17 13:53:29 2015
+
+showing how the time is formatted both as local time and UTC, one for each
+handler.

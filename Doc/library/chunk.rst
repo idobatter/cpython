@@ -47,7 +47,7 @@ Usually an IFF-type file consists of one or more chunks.  The proposed usage of
 the :class:`Chunk` class defined here is to instantiate an instance at the start
 of each chunk and read from the instance until it reaches the end, after which a
 new instance can be instantiated. At the end of the file, creating a new
-instance will fail with a :exc:`EOFError` exception.
+instance will fail with an :exc:`EOFError` exception.
 
 
 .. class:: Chunk(file, align=True, bigendian=True, inclheader=False)
@@ -113,15 +113,15 @@ instance will fail with a :exc:`EOFError` exception.
 
       Read at most *size* bytes from the chunk (less if the read hits the end of
       the chunk before obtaining *size* bytes).  If the *size* argument is
-      negative or omitted, read all data until the end of the chunk.  The bytes
-      are returned as a string object.  An empty string is returned when the end
-      of the chunk is encountered immediately.
+      negative or omitted, read all data until the end of the chunk.  An empty
+      bytes object is returned when the end of the chunk is encountered
+      immediately.
 
 
    .. method:: skip()
 
       Skip to the end of the chunk.  All further calls to :meth:`read` for the
-      chunk will return ``''``.  If you are not interested in the contents of
+      chunk will return ``b''``.  If you are not interested in the contents of
       the chunk, this method should be called so that the file points to the
       start of the next chunk.
 

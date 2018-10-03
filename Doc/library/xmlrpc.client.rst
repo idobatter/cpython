@@ -27,10 +27,14 @@ between conformable Python objects and XML on the wire.
    constructed data.  If you need to parse untrusted or unauthenticated data see
    :ref:`xml-vulnerabilities`.
 
+.. versionchanged:: 3.5
+
+   For https URIs, :mod:`xmlrpc.client` now performs all the necessary
+   certificate and hostname checks by default
 
 .. class:: ServerProxy(uri, transport=None, encoding=None, verbose=False, \
                        allow_none=False, use_datetime=False, \
-                       use_builtin_types=False)
+                       use_builtin_types=False, *, context=None)
 
    .. versionchanged:: 3.3
       The *use_builtin_types* flag was added.
@@ -59,7 +63,9 @@ between conformable Python objects and XML on the wire.
    portion will be base64-encoded as an HTTP 'Authorization' header, and sent to
    the remote server as part of the connection process when invoking an XML-RPC
    method.  You only need to use this if the remote server requires a Basic
-   Authentication user and password.
+   Authentication user and password. If an HTTPS url is provided, *context* may
+   be :class:`ssl.SSLContext` and configures the SSL settings of the underlying
+   HTTPS connection.
 
    The returned instance is a proxy object with methods that can be used to invoke
    corresponding RPC calls on the remote server.  If the remote server supports the
@@ -122,6 +128,9 @@ between conformable Python objects and XML on the wire.
 
    :class:`Server` is retained as an alias for :class:`ServerProxy` for backwards
    compatibility.  New code should use :class:`ServerProxy`.
+
+   .. versionchanged:: 3.5
+      Added the *context* argument.
 
 
 .. seealso::
@@ -191,6 +200,11 @@ grouped under the reserved :attr:`system` attribute:
    no such string is available, an empty string is returned. The documentation
    string may contain HTML markup.
 
+.. versionchanged:: 3.5
+
+   Instances of :class:`ServerProxy` support the :term:`context manager` protocol
+   for closing the underlying transport.
+
 
 A working example follows. The server code::
 
@@ -208,9 +222,9 @@ The client code for the preceding server::
 
    import xmlrpc.client
 
-   proxy = xmlrpc.client.ServerProxy("http://localhost:8000/")
-   print("3 is even: %s" % str(proxy.is_even(3)))
-   print("100 is even: %s" % str(proxy.is_even(100)))
+   with xmlrpc.client.ServerProxy("http://localhost:8000/") as proxy:
+       print("3 is even: %s" % str(proxy.is_even(3)))
+       print("100 is even: %s" % str(proxy.is_even(100)))
 
 .. _datetime-objects:
 
@@ -518,14 +532,14 @@ Example of Client Usage
    from xmlrpc.client import ServerProxy, Error
 
    # server = ServerProxy("http://localhost:8000") # local server
-   server = ServerProxy("http://betty.userland.com")
+   with ServerProxy("http://betty.userland.com") as proxy:
 
-   print(server)
+       print(proxy)
 
-   try:
-       print(server.examples.getStateName(41))
-   except Error as v:
-       print("ERROR", v)
+       try:
+           print(proxy.examples.getStateName(41))
+       except Error as v:
+           print("ERROR", v)
 
 To access an XML-RPC server through a proxy, you need to define  a custom
 transport.  The following example shows how:

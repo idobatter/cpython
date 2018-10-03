@@ -32,11 +32,11 @@ For a while people just wrote programs that didn't display accents.
 In the mid-1980s an Apple II BASIC program written by a French speaker
 might have lines like these::
 
-   PRINT "FICHIER EST COMPLETE."
-   PRINT "CARACTERE NON ACCEPTE."
+   PRINT "MISE A JOUR TERMINEE"
+   PRINT "PARAMETRES ENREGISTRES"
 
-Those messages should contain accents (completé, caractère, accepté),
-and they just look wrong to someone who can read French.
+Those messages should contain accents (terminée, paramètre, enregistrés) and
+they just look wrong to someone who can read French.
 
 In the 1980s, almost all personal computers were 8-bit, meaning that bytes could
 hold values ranging from 0 to 255.  ASCII codes only went up to 127, so some
@@ -49,7 +49,7 @@ another and managed to catch on.
 
 255 characters aren't very many.  For example, you can't fit both the accented
 characters used in Western Europe and the Cyrillic alphabet used for Russian
-into the 128--255 range because there are more than 127 such characters.
+into the 128--255 range because there are more than 128 such characters.
 
 You could write files using different codes (all your Russian files in a coding
 system called KOI8, all your French files in a different coding system called
@@ -246,7 +246,7 @@ include a Unicode character in a string literal::
    try:
        with open('/tmp/input.txt', 'r') as f:
            ...
-   except IOError:
+   except OSError:
        # 'File not found' error message.
        print("Fichier non trouvé")
 
@@ -280,8 +280,9 @@ and optionally an *errors* argument.
 The *errors* argument specifies the response when the input string can't be
 converted according to the encoding's rules.  Legal values for this argument are
 ``'strict'`` (raise a :exc:`UnicodeDecodeError` exception), ``'replace'`` (use
-``U+FFFD``, ``REPLACEMENT CHARACTER``), or ``'ignore'`` (just leave the
-character out of the Unicode result).
+``U+FFFD``, ``REPLACEMENT CHARACTER``), ``'ignore'`` (just leave the
+character out of the Unicode result), or ``'backslashreplace'`` (inserts a
+``\xNN`` escape sequence).
 The following examples show the differences::
 
     >>> b'\x80abc'.decode("utf-8", "strict")  #doctest: +NORMALIZE_WHITESPACE
@@ -291,6 +292,8 @@ The following examples show the differences::
       invalid start byte
     >>> b'\x80abc'.decode("utf-8", "replace")
     '\ufffdabc'
+    >>> b'\x80abc'.decode("utf-8", "backslashreplace")
+    '\\x80abc'
     >>> b'\x80abc'.decode("utf-8", "ignore")
     'abc'
 
@@ -325,8 +328,9 @@ The *errors* parameter is the same as the parameter of the
 :meth:`~bytes.decode` method but supports a few more possible handlers. As well as
 ``'strict'``, ``'ignore'``, and ``'replace'`` (which in this case
 inserts a question mark instead of the unencodable character), there is
-also ``'xmlcharrefreplace'`` (inserts an XML character reference) and
-``backslashreplace`` (inserts a ``\uNNNN`` escape sequence).
+also ``'xmlcharrefreplace'`` (inserts an XML character reference),
+``backslashreplace`` (inserts a ``\uNNNN`` escape sequence) and
+``namereplace`` (inserts a ``\N{...}`` escape sequence).
 
 The following example shows the different results::
 
@@ -346,6 +350,8 @@ The following example shows the different results::
     b'&#40960;abcd&#1972;'
     >>> u.encode('ascii', 'backslashreplace')
     b'\\ua000abcd\\u07b4'
+    >>> u.encode('ascii', 'namereplace')
+    b'\\N{YI SYLLABLE IT}abcd\\u07b4'
 
 The low-level routines for registering and accessing the available
 encodings are found in the :mod:`codecs` module.  Implementing new
@@ -493,10 +499,11 @@ The documentation for the :mod:`unicodedata` module.
 
 The documentation for the :mod:`codecs` module.
 
-Marc-André Lemburg gave `a presentation titled "Python and Unicode" (PDF slides) <http://downloads.egenix.com/python/Unicode-EPC2002-Talk.pdf>`_ at
-EuroPython 2002.  The slides are an excellent overview of the design
-of Python 2's Unicode features (where the Unicode string type is
-called ``unicode`` and literals start with ``u``).
+Marc-André Lemburg gave `a presentation titled "Python and Unicode" (PDF slides)
+<https://downloads.egenix.com/python/Unicode-EPC2002-Talk.pdf>`_ at
+EuroPython 2002.  The slides are an excellent overview of the design of Python
+2's Unicode features (where the Unicode string type is called ``unicode`` and
+literals start with ``u``).
 
 
 Reading and Writing Unicode Data
@@ -696,13 +703,20 @@ encoding the data and writing it back out.
 References
 ----------
 
-One section of `Mastering Python 3 Input/Output <http://pyvideo.org/video/289/pycon-2010--mastering-python-3-i-o>`_,  a PyCon 2010 talk by David Beazley, discusses text processing and binary data handling.
+One section of `Mastering Python 3 Input/Output
+<http://pyvideo.org/video/289/pycon-2010--mastering-python-3-i-o>`_,
+a PyCon 2010 talk by David Beazley, discusses text processing and binary data handling.
 
-The `PDF slides for Marc-André Lemburg's presentation "Writing Unicode-aware Applications in Python" <http://downloads.egenix.com/python/LSM2005-Developing-Unicode-aware-applications-in-Python.pdf>`_
+The `PDF slides for Marc-André Lemburg's presentation "Writing Unicode-aware
+Applications in Python"
+<https://downloads.egenix.com/python/LSM2005-Developing-Unicode-aware-applications-in-Python.pdf>`_
 discuss questions of character encodings as well as how to internationalize
 and localize an application.  These slides cover Python 2.x only.
 
-`The Guts of Unicode in Python <http://pyvideo.org/video/1768/the-guts-of-unicode-in-python>`_ is a PyCon 2013 talk by Benjamin Peterson that discusses the internal Unicode representation in Python 3.3.
+`The Guts of Unicode in Python
+<http://pyvideo.org/video/1768/the-guts-of-unicode-in-python>`_
+is a PyCon 2013 talk by Benjamin Peterson that discusses the internal Unicode
+representation in Python 3.3.
 
 
 Acknowledgements

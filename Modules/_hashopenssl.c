@@ -16,6 +16,7 @@
 #include "Python.h"
 #include "structmember.h"
 #include "hashlib.h"
+#include "pystrhex.h"
 
 
 /* EVP is the preferred interface to hashing in OpenSSL */
@@ -31,10 +32,6 @@
 #define HASH_OBJ_CONSTRUCTOR 0
 #endif
 
-/* Minimum OpenSSL version needed to support sha224 and higher. */
-#if defined(OPENSSL_VERSION_NUMBER) && (OPENSSL_VERSION_NUMBER >= 0x00908000)
-#define _OPENSSL_SUPPORTS_SHA2
-#endif
 
 typedef struct {
     PyObject_HEAD
@@ -56,12 +53,10 @@ static PyTypeObject EVPtype;
 
 DEFINE_CONSTS_FOR_NEW(md5)
 DEFINE_CONSTS_FOR_NEW(sha1)
-#ifdef _OPENSSL_SUPPORTS_SHA2
 DEFINE_CONSTS_FOR_NEW(sha224)
 DEFINE_CONSTS_FOR_NEW(sha256)
 DEFINE_CONSTS_FOR_NEW(sha384)
 DEFINE_CONSTS_FOR_NEW(sha512)
-#endif
 
 
 static EVPobject *
@@ -163,9 +158,7 @@ EVP_hexdigest(EVPobject *self, PyObject *unused)
 {
     unsigned char digest[EVP_MAX_MD_SIZE];
     EVP_MD_CTX temp_ctx;
-    PyObject *retval;
-    char *hex_digest;
-    unsigned int i, j, digest_size;
+    unsigned int digest_size;
 
     /* Get the raw (binary) digest value */
     locked_EVP_MD_CTX_copy(&temp_ctx, self);
@@ -174,22 +167,7 @@ EVP_hexdigest(EVPobject *self, PyObject *unused)
 
     EVP_MD_CTX_cleanup(&temp_ctx);
 
-    /* Allocate a new buffer */
-    hex_digest = PyMem_Malloc(digest_size * 2 + 1);
-    if (!hex_digest)
-        return PyErr_NoMemory();
-
-    /* Make hex version of the digest */
-    for(i=j=0; i<digest_size; i++) {
-        unsigned char c;
-        c = (digest[i] >> 4) & 0xf;
-        hex_digest[j++] = Py_hexdigits[c];
-        c = (digest[i] & 0xf);
-        hex_digest[j++] = Py_hexdigits[c];
-    }
-    retval = PyUnicode_FromStringAndSize(hex_digest, digest_size * 2);
-    PyMem_Free(hex_digest);
-    return retval;
+    return _Py_strhex((const char *)digest, digest_size);
 }
 
 PyDoc_STRVAR(EVP_update__doc__,
@@ -508,8 +486,8 @@ PKCS5_PBKDF2_HMAC_fast(const char *pass, int passlen,
         HMAC_CTX_cleanup(&hctx_tpl);
         return 0;
     }
-    while(tkeylen) {
-        if(tkeylen > mdlen)
+    while (tkeylen) {
+        if (tkeylen > mdlen)
             cplen = mdlen;
         else
             cplen = tkeylen;
@@ -557,6 +535,7 @@ PKCS5_PBKDF2_HMAC_fast(const char *pass, int passlen,
     return 1;
 }
 
+/* LCOV_EXCL_START */
 static PyObject *
 _setException(PyObject *exc)
 {
@@ -585,6 +564,7 @@ _setException(PyObject *exc)
     }
     return NULL;
 }
+/* LCOV_EXCL_STOP */
 
 PyDoc_STRVAR(pbkdf2_hmac__doc__,
 "pbkdf2_hmac(hash_name, password, salt, iterations, dklen=None) -> key\n\
@@ -704,7 +684,7 @@ _openssl_hash_name_mapper(const OBJ_NAME *openssl_obj_name, void *arg)
     if (openssl_obj_name == NULL)
         return;
     /* Ignore aliased names, they pollute the list and OpenSSL appears to
-     * have a its own definition of alias as the resulting list still
+     * have its own definition of alias as the resulting list still
      * contains duplicate and alternate names for several algorithms.     */
     if (openssl_obj_name->alias)
         return;
@@ -796,12 +776,10 @@ generate_hash_name_list(void)
 
 GEN_CONSTRUCTOR(md5)
 GEN_CONSTRUCTOR(sha1)
-#ifdef _OPENSSL_SUPPORTS_SHA2
 GEN_CONSTRUCTOR(sha224)
 GEN_CONSTRUCTOR(sha256)
 GEN_CONSTRUCTOR(sha384)
 GEN_CONSTRUCTOR(sha512)
-#endif
 
 /* List of functions exported by this module */
 
@@ -813,12 +791,10 @@ static struct PyMethodDef EVP_functions[] = {
 #endif
     CONSTRUCTOR_METH_DEF(md5),
     CONSTRUCTOR_METH_DEF(sha1),
-#ifdef _OPENSSL_SUPPORTS_SHA2
     CONSTRUCTOR_METH_DEF(sha224),
     CONSTRUCTOR_METH_DEF(sha256),
     CONSTRUCTOR_METH_DEF(sha384),
     CONSTRUCTOR_METH_DEF(sha512),
-#endif
     {NULL,      NULL}            /* Sentinel */
 };
 
@@ -875,11 +851,9 @@ PyInit__hashlib(void)
     /* these constants are used by the convenience constructors */
     INIT_CONSTRUCTOR_CONSTANTS(md5);
     INIT_CONSTRUCTOR_CONSTANTS(sha1);
-#ifdef _OPENSSL_SUPPORTS_SHA2
     INIT_CONSTRUCTOR_CONSTANTS(sha224);
     INIT_CONSTRUCTOR_CONSTANTS(sha256);
     INIT_CONSTRUCTOR_CONSTANTS(sha384);
     INIT_CONSTRUCTOR_CONSTANTS(sha512);
-#endif
     return m;
 }

@@ -1,15 +1,17 @@
 from .. import util
-from . import util as source_util
 
 machinery = util.import_importlib('importlib.machinery')
 
 import codecs
+import importlib.util
 import re
 import sys
+import types
 # Because sys.path gets essentially blanked, need to have unicodedata already
 # imported for the parser to use.
 import unicodedata
 import unittest
+import warnings
 
 
 CODING_RE = re.compile(r'^[ \t\f]*#.*coding[:=][ \t]*([-\w.]+)', re.ASCII)
@@ -34,12 +36,12 @@ class EncodingTest:
     module_name = '_temp'
 
     def run_test(self, source):
-        with source_util.create_modules(self.module_name) as mapping:
+        with util.create_modules(self.module_name) as mapping:
             with open(mapping[self.module_name], 'wb') as file:
                 file.write(source)
             loader = self.machinery.SourceFileLoader(self.module_name,
                                                   mapping[self.module_name])
-            return loader.load_module(self.module_name)
+            return self.load(loader)
 
     def create_source(self, encoding):
         encoding_line = "# coding={0}".format(encoding)
@@ -86,7 +88,32 @@ class EncodingTest:
         with self.assertRaises(SyntaxError):
             self.run_test(source)
 
-Frozen_EncodingTest, Source_EncodingTest = util.test_both(EncodingTest, machinery=machinery)
+
+class EncodingTestPEP451(EncodingTest):
+
+    def load(self, loader):
+        module = types.ModuleType(self.module_name)
+        module.__spec__ = importlib.util.spec_from_loader(self.module_name, loader)
+        loader.exec_module(module)
+        return module
+
+
+(Frozen_EncodingTestPEP451,
+ Source_EncodingTestPEP451
+ ) = util.test_both(EncodingTestPEP451, machinery=machinery)
+
+
+class EncodingTestPEP302(EncodingTest):
+
+    def load(self, loader):
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', DeprecationWarning)
+            return loader.load_module(self.module_name)
+
+
+(Frozen_EncodingTestPEP302,
+ Source_EncodingTestPEP302
+ ) = util.test_both(EncodingTestPEP302, machinery=machinery)
 
 
 class LineEndingTest:
@@ -98,12 +125,12 @@ class LineEndingTest:
         module_name = '_temp'
         source_lines = [b"a = 42", b"b = -13", b'']
         source = line_ending.join(source_lines)
-        with source_util.create_modules(module_name) as mapping:
+        with util.create_modules(module_name) as mapping:
             with open(mapping[module_name], 'wb') as file:
                 file.write(source)
             loader = self.machinery.SourceFileLoader(module_name,
-                                                 mapping[module_name])
-            return loader.load_module(module_name)
+                                                     mapping[module_name])
+            return self.load(loader, module_name)
 
     # [cr]
     def test_cr(self):
@@ -117,8 +144,32 @@ class LineEndingTest:
     def test_lf(self):
         self.run_test(b'\n')
 
-Frozen_LineEndings, Source_LineEndings = util.test_both(LineEndingTest, machinery=machinery)
 
+class LineEndingTestPEP451(LineEndingTest):
+
+    def load(self, loader, module_name):
+        module = types.ModuleType(module_name)
+        module.__spec__ = importlib.util.spec_from_loader(module_name, loader)
+        loader.exec_module(module)
+        return module
+
+
+(Frozen_LineEndingTestPEP451,
+ Source_LineEndingTestPEP451
+ ) = util.test_both(LineEndingTestPEP451, machinery=machinery)
+
+
+class LineEndingTestPEP302(LineEndingTest):
+
+    def load(self, loader, module_name):
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', DeprecationWarning)
+            return loader.load_module(module_name)
+
+
+(Frozen_LineEndingTestPEP302,
+ Source_LineEndingTestPEP302
+ ) = util.test_both(LineEndingTestPEP302, machinery=machinery)
 
 
 if __name__ == '__main__':

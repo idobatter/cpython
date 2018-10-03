@@ -45,6 +45,7 @@ in any early abort case).
 Unless otherwise stated, buffers are not NUL-terminated.
 
 .. note::
+
    For all ``#`` variants of formats (``s#``, ``y#``, etc.), the type of
    the length argument (int or :c:type:`Py_ssize_t`) is controlled by
    defining the macro :c:macro:`PY_SSIZE_T_CLEAN` before including
@@ -64,19 +65,20 @@ Unless otherwise stated, buffers are not NUL-terminated.
    :exc:`UnicodeError` is raised.
 
    .. note::
-      This format does not accept bytes-like objects.  If you want to accept
+      This format does not accept :term:`bytes-like objects
+      <bytes-like object>`.  If you want to accept
       filesystem paths and convert them to C character strings, it is
       preferable to use the ``O&`` format with :c:func:`PyUnicode_FSConverter`
       as *converter*.
 
-``s*`` (:class:`str`, :class:`bytes`, :class:`bytearray` or buffer compatible object) [Py_buffer]
-   This format accepts Unicode objects as well as :term:`bytes-like object`\ s.
+``s*`` (:class:`str` or :term:`bytes-like object`) [Py_buffer]
+   This format accepts Unicode objects as well as bytes-like objects.
    It fills a :c:type:`Py_buffer` structure provided by the caller.
    In this case the resulting C string may contain embedded NUL bytes.
    Unicode objects are converted to C strings using ``'utf-8'`` encoding.
 
-``s#`` (:class:`str`, :class:`bytes` or read-only buffer compatible object) [const char \*, int or :c:type:`Py_ssize_t`]
-   Like ``s*``, except that it doesn't accept mutable buffer-like objects
+``s#`` (:class:`str`, read-only :term:`bytes-like object`) [const char \*, int or :c:type:`Py_ssize_t`]
+   Like ``s*``, except that it doesn't accept mutable bytes-like objects
    such as :class:`bytearray`.  The result is stored into two C variables,
    the first one a pointer to a C string, the second one its length.
    The string may contain embedded null bytes. Unicode objects are converted
@@ -86,28 +88,28 @@ Unless otherwise stated, buffers are not NUL-terminated.
    Like ``s``, but the Python object may also be ``None``, in which case the C
    pointer is set to *NULL*.
 
-``z*`` (:class:`str`, :class:`bytes`, :class:`bytearray`, buffer compatible object or ``None``) [Py_buffer]
+``z*`` (:class:`str`, :term:`bytes-like object` or ``None``) [Py_buffer]
    Like ``s*``, but the Python object may also be ``None``, in which case the
    ``buf`` member of the :c:type:`Py_buffer` structure is set to *NULL*.
 
-``z#`` (:class:`str`, :class:`bytes`, read-only buffer compatible object or ``None``) [const char \*, int]
+``z#`` (:class:`str`, read-only :term:`bytes-like object` or ``None``) [const char \*, int]
    Like ``s#``, but the Python object may also be ``None``, in which case the C
    pointer is set to *NULL*.
 
-``y`` (:class:`bytes`) [const char \*]
+``y`` (read-only :term:`bytes-like object`) [const char \*]
    This format converts a bytes-like object to a C pointer to a character
    string; it does not accept Unicode objects.  The bytes buffer must not
    contain embedded NUL bytes; if it does, a :exc:`TypeError`
    exception is raised.
 
-``y*`` (:class:`bytes`, :class:`bytearray` or :term:`bytes-like object`) [Py_buffer]
+``y*`` (:term:`bytes-like object`) [Py_buffer]
    This variant on ``s*`` doesn't accept Unicode objects, only
-   :term:`bytes-like object`\ s.  **This is the recommended way to accept
+   bytes-like objects.  **This is the recommended way to accept
    binary data.**
 
-``y#`` (:class:`bytes`) [const char \*, int]
-   This variant on ``s#`` doesn't accept Unicode objects, only :term:`bytes-like
-   object`\ s.
+``y#`` (read-only :term:`bytes-like object`) [const char \*, int]
+   This variant on ``s#`` doesn't accept Unicode objects, only bytes-like
+   objects.
 
 ``S`` (:class:`bytes`) [PyBytesObject \*]
    Requires that the Python object is a :class:`bytes` object, without
@@ -150,7 +152,7 @@ Unless otherwise stated, buffers are not NUL-terminated.
    any conversion.  Raises :exc:`TypeError` if the object is not a Unicode
    object.  The C variable may also be declared as :c:type:`PyObject\*`.
 
-``w*`` (:class:`bytearray` or read-write byte-oriented buffer) [Py_buffer]
+``w*`` (read-write :term:`bytes-like object`) [Py_buffer]
    This format accepts any object which implements the read-write buffer
    interface. It fills a :c:type:`Py_buffer` structure provided by the caller.
    The buffer may contain embedded null bytes. The caller have to call
@@ -294,6 +296,8 @@ Other objects
    the object pointer is stored.  If the Python object does not have the required
    type, :exc:`TypeError` is raised.
 
+.. _o_ampersand:
+
 ``O&`` (object) [*converter*, *anything*]
    Convert a Python object to a C variable through a *converter* function.  This
    takes two arguments: the first is a function, the second is the address of a C
@@ -318,7 +322,7 @@ Other objects
       ``Py_CLEANUP_SUPPORTED`` was added.
 
 ``p`` (:class:`bool`) [int]
-   Tests the value passed in for truth (a boolean **p**\redicate) and converts
+   Tests the value passed in for truth (a boolean **p**\ redicate) and converts
    the result to its equivalent C true/false integer value.
    Sets the int to 1 if the expression was true and 0 if it was false.
    This accepts any valid Python value.  See :ref:`truth` for more
@@ -426,10 +430,11 @@ API Functions
 
    Function used to deconstruct the argument lists of "old-style" functions ---
    these are functions which use the :const:`METH_OLDARGS` parameter parsing
-   method.  This is not recommended for use in parameter parsing in new code, and
-   most code in the standard interpreter has been modified to no longer use this
-   for that purpose.  It does remain a convenient way to decompose other tuples,
-   however, and may continue to be used for that purpose.
+   method, which has been removed in Python 3.  This is not recommended for use
+   in parameter parsing in new code, and most code in the standard interpreter
+   has been modified to no longer use this for that purpose.  It does remain a
+   convenient way to decompose other tuples, however, and may continue to be
+   used for that purpose.
 
 
 .. c:function:: int PyArg_UnpackTuple(PyObject *args, const char *name, Py_ssize_t min, Py_ssize_t max, ...)
@@ -513,7 +518,7 @@ Building values
       ``None`` is returned.
 
    ``y`` (:class:`bytes`) [char \*]
-      This converts a C string to a Python :func:`bytes` object.  If the C
+      This converts a C string to a Python :class:`bytes` object.  If the C
       string pointer is *NULL*, ``None`` is returned.
 
    ``y#`` (:class:`bytes`) [char \*, int]

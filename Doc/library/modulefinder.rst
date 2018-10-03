@@ -53,7 +53,7 @@ report of the imported modules will be printed.
    .. attribute:: modules
 
       A dictionary mapping module names to modules. See
-      :ref:`modulefinder-example`
+      :ref:`modulefinder-example`.
 
 
 .. _modulefinder-example:
@@ -104,7 +104,7 @@ Sample output (may vary depending on the architecture)::
     re:  __module__,finditer,_expand
     itertools:
     __main__:  re,itertools,baconhameggs
-    sre_parse:  __getslice__,_PATTERNENDERS,SRE_FLAG_UNICODE
+    sre_parse:  _PATTERNENDERS,SRE_FLAG_UNICODE
     array:
     types:  __module__,IntType,TypeType
     ---------------------------------------------------

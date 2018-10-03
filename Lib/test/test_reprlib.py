@@ -10,7 +10,7 @@ import importlib
 import importlib.util
 import unittest
 
-from test.support import run_unittest, create_empty_file, verbose
+from test.support import create_empty_file, verbose
 from reprlib import repr as r # Don't shadow builtin repr
 from reprlib import Repr
 from reprlib import recursive_repr
@@ -70,18 +70,18 @@ class ReprTests(unittest.TestCase):
         eq(r([1, 2, 3, 4, 5, 6, 7]), "[1, 2, 3, 4, 5, 6, ...]")
 
         # Sets give up after 6 as well
-        eq(r(set([])), "set([])")
-        eq(r(set([1])), "set([1])")
-        eq(r(set([1, 2, 3])), "set([1, 2, 3])")
-        eq(r(set([1, 2, 3, 4, 5, 6])), "set([1, 2, 3, 4, 5, 6])")
-        eq(r(set([1, 2, 3, 4, 5, 6, 7])), "set([1, 2, 3, 4, 5, 6, ...])")
+        eq(r(set([])), "set()")
+        eq(r(set([1])), "{1}")
+        eq(r(set([1, 2, 3])), "{1, 2, 3}")
+        eq(r(set([1, 2, 3, 4, 5, 6])), "{1, 2, 3, 4, 5, 6}")
+        eq(r(set([1, 2, 3, 4, 5, 6, 7])), "{1, 2, 3, 4, 5, 6, ...}")
 
         # Frozensets give up after 6 as well
-        eq(r(frozenset([])), "frozenset([])")
-        eq(r(frozenset([1])), "frozenset([1])")
-        eq(r(frozenset([1, 2, 3])), "frozenset([1, 2, 3])")
-        eq(r(frozenset([1, 2, 3, 4, 5, 6])), "frozenset([1, 2, 3, 4, 5, 6])")
-        eq(r(frozenset([1, 2, 3, 4, 5, 6, 7])), "frozenset([1, 2, 3, 4, 5, 6, ...])")
+        eq(r(frozenset([])), "frozenset()")
+        eq(r(frozenset([1])), "frozenset({1})")
+        eq(r(frozenset([1, 2, 3])), "frozenset({1, 2, 3})")
+        eq(r(frozenset([1, 2, 3, 4, 5, 6])), "frozenset({1, 2, 3, 4, 5, 6})")
+        eq(r(frozenset([1, 2, 3, 4, 5, 6, 7])), "frozenset({1, 2, 3, 4, 5, 6, ...})")
 
         # collections.deque after 6
         eq(r(deque([1, 2, 3, 4, 5, 6, 7])), "deque([1, 2, 3, 4, 5, 6, ...])")
@@ -94,7 +94,7 @@ class ReprTests(unittest.TestCase):
         eq(r(d), "{'alice': 1, 'arthur': 1, 'bob': 2, 'charles': 3, ...}")
 
         # array.array after 5.
-        eq(r(array('i')), "array('i', [])")
+        eq(r(array('i')), "array('i')")
         eq(r(array('i', [1])), "array('i', [1])")
         eq(r(array('i', [1, 2])), "array('i', [1, 2])")
         eq(r(array('i', [1, 2, 3])), "array('i', [1, 2, 3])")
@@ -102,6 +102,20 @@ class ReprTests(unittest.TestCase):
         eq(r(array('i', [1, 2, 3, 4, 5])), "array('i', [1, 2, 3, 4, 5])")
         eq(r(array('i', [1, 2, 3, 4, 5, 6])),
                    "array('i', [1, 2, 3, 4, 5, ...])")
+
+    def test_set_literal(self):
+        eq = self.assertEqual
+        eq(r({1}), "{1}")
+        eq(r({1, 2, 3}), "{1, 2, 3}")
+        eq(r({1, 2, 3, 4, 5, 6}), "{1, 2, 3, 4, 5, 6}")
+        eq(r({1, 2, 3, 4, 5, 6, 7}), "{1, 2, 3, 4, 5, 6, ...}")
+
+    def test_frozenset(self):
+        eq = self.assertEqual
+        eq(r(frozenset({1})), "frozenset({1})")
+        eq(r(frozenset({1, 2, 3})), "frozenset({1, 2, 3})")
+        eq(r(frozenset({1, 2, 3, 4, 5, 6})), "frozenset({1, 2, 3, 4, 5, 6})")
+        eq(r(frozenset({1, 2, 3, 4, 5, 6, 7})), "frozenset({1, 2, 3, 4, 5, 6, ...})")
 
     def test_numbers(self):
         eq = self.assertEqual
@@ -123,7 +137,7 @@ class ReprTests(unittest.TestCase):
         eq(r(i2), expected)
 
         i3 = ClassWithFailingRepr()
-        eq(r(i3), ("<ClassWithFailingRepr instance at %x>"%id(i3)))
+        eq(r(i3), ("<ClassWithFailingRepr instance at %#x>"%id(i3)))
 
         s = r(ClassWithFailingRepr)
         self.assertTrue(s.startswith("<class "))
@@ -167,8 +181,15 @@ class ReprTests(unittest.TestCase):
         eq(r([[[[[[[{}]]]]]]]), "[[[[[[[...]]]]]]]")
 
     def test_cell(self):
-        # XXX Hmm? How to get at a cell object?
-        pass
+        def get_cell():
+            x = 42
+            def inner():
+                return x
+            return inner
+        x = get_cell().__closure__[0]
+        self.assertRegex(repr(x), r'<cell at 0x[0-9A-Fa-f]+: '
+                                  r'int object at 0x[0-9A-Fa-f]+>')
+        self.assertRegex(r(x), r'<cell at 0x.*\.\.\..*>')
 
     def test_descriptors(self):
         eq = self.assertEqual
@@ -274,6 +295,7 @@ class foo(object):
         eq(repr(foo.foo),
                "<class '%s.foo'>" % foo.__name__)
 
+    @unittest.skip('need a suitable object')
     def test_object(self):
         # XXX Test the repr of a type with a really long tp_name but with no
         # tp_repr.  WIBNI we had ::Inline? :)
@@ -321,6 +343,7 @@ class aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
             '<bound method aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.amethod of <%s.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa object at 0x' \
             % (qux.__name__,) ), r)
 
+    @unittest.skip('needs a built-in function with a really long name')
     def test_builtin_function(self):
         # XXX test built-in functions and methods with really long names
         pass
@@ -364,11 +387,5 @@ class TestRecursiveRepr(unittest.TestCase):
         m.append(m)
         self.assertEqual(repr(m), '<a, b, c, d, e, +++, x, +++>')
 
-def test_main():
-    run_unittest(ReprTests)
-    run_unittest(LongReprTest)
-    run_unittest(TestRecursiveRepr)
-
-
 if __name__ == "__main__":
-    test_main()
+    unittest.main()

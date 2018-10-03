@@ -3,6 +3,8 @@
 
 import sys, os, importlib.machinery, re, optparse
 from glob import glob
+import importlib._bootstrap
+import importlib.util
 import sysconfig
 
 from distutils import log
@@ -16,6 +18,17 @@ from distutils.command.build_scripts import build_scripts
 from distutils.spawn import find_executable
 
 cross_compiling = "_PYTHON_HOST_PLATFORM" in os.environ
+
+# Add special CFLAGS reserved for building the interpreter and the stdlib
+# modules (Issue #21121).
+cflags = sysconfig.get_config_var('CFLAGS')
+py_cflags_nodist = sysconfig.get_config_var('PY_CFLAGS_NODIST')
+sysconfig.get_config_vars()['CFLAGS'] = cflags + ' ' + py_cflags_nodist
+
+class Dummy:
+    """Hack for parallel build"""
+    ProcessPoolExecutor = None
+sys.modules['concurrent.futures.process'] = Dummy
 
 def get_platform():
     # cross build
@@ -165,6 +178,9 @@ class PyBuildExt(build_ext):
     def __init__(self, dist):
         build_ext.__init__(self, dist)
         self.failed = []
+        self.failed_on_import = []
+        if '-j' in os.environ.get('MAKEFLAGS', ''):
+            self.parallel = True
 
     def build_extensions(self):
 
@@ -244,9 +260,13 @@ class PyBuildExt(build_ext):
 
         build_ext.build_extensions(self)
 
-        longest = max([len(e.name) for e in self.extensions])
-        if self.failed:
-            longest = max(longest, max([len(name) for name in self.failed]))
+        for ext in self.extensions:
+            self.check_extension_import(ext)
+
+        longest = max([len(e.name) for e in self.extensions], default=0)
+        if self.failed or self.failed_on_import:
+            all_failed = self.failed + self.failed_on_import
+            longest = max(longest, max([len(name) for name in all_failed]))
 
         def print_three_column(lst):
             lst.sort(key=str.lower)
@@ -274,6 +294,14 @@ class PyBuildExt(build_ext):
             print_three_column(failed)
             print()
 
+        if self.failed_on_import:
+            failed = self.failed_on_import[:]
+            print()
+            print("Following modules built successfully"
+                  " but were removed because they could not be imported:")
+            print_three_column(failed)
+            print()
+
     def build_extension(self, ext):
 
         if ext.name == '_ctypes':
@@ -287,6 +315,15 @@ class PyBuildExt(build_ext):
                           (ext.name, sys.exc_info()[1]))
             self.failed.append(ext.name)
             return
+
+    def check_extension_import(self, ext):
+        # Don't try to import an extension that has failed to compile
+        if ext.name in self.failed:
+            self.announce(
+                'WARNING: skipping import check for failed build "%s"' %
+                ext.name, level=1)
+            return
+
         # Workaround for Mac OS X: The Carbon-based modules cannot be
         # reliably imported into a command-line Python
         if 'Carbon' in ext.extra_link_args:
@@ -327,10 +364,12 @@ class PyBuildExt(build_ext):
             return
 
         loader = importlib.machinery.ExtensionFileLoader(ext.name, ext_filename)
+        spec = importlib.util.spec_from_file_location(ext.name, ext_filename,
+                                                      loader=loader)
         try:
-            loader.load_module()
+            importlib._bootstrap._load(spec)
         except ImportError as why:
-            self.failed.append(ext.name)
+            self.failed_on_import.append(ext.name)
             self.announce('*** WARNING: renaming "%s" since importing it'
                           ' failed: %s' % (ext.name, why), level=3)
             assert not self.inplace
@@ -340,17 +379,6 @@ class PyBuildExt(build_ext):
                 os.remove(newname)
             os.rename(ext_filename, newname)
 
-            # XXX -- This relies on a Vile HACK in
-            # distutils.command.build_ext.build_extension().  The
-            # _built_objects attribute is stored there strictly for
-            # use here.
-            # If there is a failure, _built_objects may not be there,
-            # so catch the AttributeError and move on.
-            try:
-                for filename in self._built_objects:
-                    os.remove(filename)
-            except AttributeError:
-                self.announce('unable to remove files (ignored)')
         except:
             exc_type, why, tb = sys.exc_info()
             self.announce('*** WARNING: importing extension "%s" '
@@ -592,6 +620,8 @@ class PyBuildExt(build_ext):
         exts.append( Extension('_testbuffer', ['_testbuffer.c']) )
         # Test loading multiple modules from one compiled file (http://bugs.python.org/issue16421)
         exts.append( Extension('_testimportmultiple', ['_testimportmultiple.c']) )
+        # Test multi-phase extension module init (PEP 489)
+        exts.append( Extension('_testmultiphase', ['_testmultiphase.c']) )
         # profiler (_lsprof is for cProfile.py)
         exts.append( Extension('_lsprof', ['_lsprof.c', 'rotatingtree.c']) )
         # static Unicode character database
@@ -693,7 +723,9 @@ class PyBuildExt(build_ext):
         if host_platform == 'darwin':
             os_release = int(os.uname()[2].split('.')[0])
             dep_target = sysconfig.get_config_var('MACOSX_DEPLOYMENT_TARGET')
-            if dep_target and dep_target.split('.') < ['10', '5']:
+            if (dep_target and
+                    (tuple(int(n) for n in dep_target.split('.')[0:2])
+                        < (10, 5) ) ):
                 os_release = 8
             if os_release < 9:
                 # MacOSX 10.4 has a broken readline. Don't try to build
@@ -826,15 +858,6 @@ class PyBuildExt(build_ext):
                                depends=['hashlib.h']) )
         exts.append( Extension('_sha1', ['sha1module.c'],
                                depends=['hashlib.h']) )
-
-        # SHA-3 (Keccak) module
-        sha3_depends = ['hashlib.h']
-        keccak = os.path.join(os.getcwd(), srcdir, 'Modules', '_sha3',
-                              'keccak')
-        for pattern in ('*.c', '*.h', '*.macros'):
-            sha3_depends.extend(glob(os.path.join(keccak, pattern)))
-        exts.append(Extension("_sha3", ["_sha3/sha3module.c"],
-                              depends=sha3_depends))
 
         # Modules that provide persistent dictionary-like semantics.  You will
         # probably want to arrange for at least one of them to be available on
@@ -1027,8 +1050,16 @@ class PyBuildExt(build_ext):
             if db_setup_debug:
                 print("bsddb using BerkeleyDB lib:", db_ver, dblib)
                 print("bsddb lib dir:", dblib_dir, " inc dir:", db_incdir)
-            db_incs = [db_incdir]
             dblibs = [dblib]
+            # Only add the found library and include directories if they aren't
+            # already being searched. This avoids an explicit runtime library
+            # dependency.
+            if db_incdir in inc_dirs:
+                db_incs = None
+            else:
+                db_incs = [db_incdir]
+            if dblib_dir[0] in lib_dirs:
+                dblib_dir = None
         else:
             if db_setup_debug: print("db: no appropriate library found")
             db_incs = None
@@ -1139,11 +1170,13 @@ class PyBuildExt(build_ext):
             # can end up with a bad search path order.
             if sqlite_incdir not in self.compiler.include_dirs:
                 include_dirs.append(sqlite_incdir)
+            # avoid a runtime library path for a system library dir
+            if sqlite_libdir and sqlite_libdir[0] in lib_dirs:
+                sqlite_libdir = None
             exts.append(Extension('_sqlite3', sqlite_srcs,
                                   define_macros=sqlite_defines,
                                   include_dirs=include_dirs,
                                   library_dirs=sqlite_libdir,
-                                  runtime_library_dirs=sqlite_libdir,
                                   extra_link_args=sqlite_extra_link_args,
                                   libraries=["sqlite3",]))
         else:
@@ -1208,7 +1241,7 @@ class PyBuildExt(build_ext):
                                 libraries = gdbm_libs)
                             break
                 elif cand == "bdb":
-                    if db_incs is not None:
+                    if dblibs:
                         if dbm_setup_debug: print("building dbm using bdb")
                         dbmext = Extension('_dbm', ['_dbmmodule.c'],
                                            library_dirs=dblib_dir,
@@ -1544,7 +1577,7 @@ class PyBuildExt(build_ext):
 
         if 'd' not in sys.abiflags:
             ext = Extension('xxlimited', ['xxlimited.c'],
-                            define_macros=[('Py_LIMITED_API', 1)])
+                            define_macros=[('Py_LIMITED_API', '0x03050000')])
             self.extensions.append(ext)
 
         return missing

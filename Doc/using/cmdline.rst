@@ -1,7 +1,7 @@
-.. highlightlang:: none
+.. highlightlang:: sh
 
 .. ATTENTION: You probably should update Misc/python.man, too, if you modify
-.. this file.
+   this file.
 
 .. _using-on-general:
 
@@ -41,7 +41,7 @@ additional methods of invocation:
 
 * When called with standard input connected to a tty device, it prompts for
   commands and executes them until an EOF (an end-of-file character, you can
-  produce that with *Ctrl-D* on UNIX or *Ctrl-Z, Enter* on Windows) is read.
+  produce that with :kbd:`Ctrl-D` on UNIX or :kbd:`Ctrl-Z, Enter` on Windows) is read.
 * When called with a file name argument or with a file as standard input, it
   reads and executes a script from that file.
 * When called with a directory name argument, it reads and executes an
@@ -77,11 +77,12 @@ source.
    the :mod:`__main__` module.
 
    Since the argument is a *module* name, you must not give a file extension
-   (``.py``).  The ``module-name`` should be a valid Python module name, but
+   (``.py``).  The module name should be a valid absolute Python module name, but
    the implementation may not always enforce this (e.g. it may allow you to
    use a name that includes a hyphen).
 
-   Package names are also permitted. When a package name is supplied instead
+   Package names (including namespace packages) are also permitted. When a
+   package name is supplied instead
    of a normal module, the interpreter will execute ``<pkg>.__main__`` as
    the main module. This behaviour is deliberately similar to the handling
    of directories and zipfiles that are passed to the interpreter as the
@@ -115,6 +116,9 @@ source.
    .. versionchanged:: 3.1
       Supply the package name to run a ``__main__`` submodule.
 
+   .. versionchanged:: 3.4
+      namespace packages are also supported
+
 
 .. describe:: -
 
@@ -144,6 +148,10 @@ source.
    added to the start of :data:`sys.path` and the ``__main__.py`` file in
    that location is executed as the :mod:`__main__` module.
 
+   .. seealso::
+      :func:`runpy.run_path`
+         Equivalent functionality directly available to Python code
+
 
 If no interface option is given, :option:`-i` is implied, ``sys.argv[0]`` is
 an empty string (``""``) and the current directory will be added to the
@@ -151,10 +159,10 @@ start of :data:`sys.path`.  Also, tab-completion and history editing is
 automatically enabled, if available on your platform (see
 :ref:`rlcompleter-config`).
 
+.. seealso::  :ref:`tut-invoking`
+
 .. versionchanged:: 3.4
    Automatic enabling of tab-completion and history editing.
-
-.. seealso::  :ref:`tut-invoking`
 
 
 Generic options
@@ -182,13 +190,16 @@ Miscellaneous options
 
 .. cmdoption:: -b
 
-   Issue a warning when comparing str and bytes. Issue an error when the
+   Issue a warning when comparing :class:`bytes` or :class:`bytearray` with
+   :class:`str` or :class:`bytes` with :class:`int`.  Issue an error when the
    option is given twice (:option:`-bb`).
 
+   .. versionchanged: 3.5
+      Affects comparisons of :class:`bytes` with :class:`int`.
 
 .. cmdoption:: -B
 
-   If given, Python won't try to write ``.pyc`` or ``.pyo`` files on the
+   If given, Python won't try to write ``.pyc`` files on the
    import of source modules.  See also :envvar:`PYTHONDONTWRITEBYTECODE`.
 
 
@@ -407,7 +418,7 @@ Options you shouldn't use
 
    Reserved for use by Jython_.
 
-.. _Jython: http://jython.org
+.. _Jython: http://www.jython.org/
 
 
 .. _using-on-envvars:
@@ -462,14 +473,6 @@ conflict.
    that objects defined or imported in it can be used without qualification in
    the interactive session.  You can also change the prompts :data:`sys.ps1` and
    :data:`sys.ps2` and the hook :data:`sys.__interactivehook__` in this file.
-
-
-.. envvar:: PYTHONY2K
-
-   Set this to a non-empty string to cause the :mod:`time` module to require
-   dates specified as strings to include 4-digit years, otherwise 2-digit years
-   are converted based on rules described in the :mod:`time` module
-   documentation.
 
 
 .. envvar:: PYTHONOPTIMIZE
@@ -606,6 +609,14 @@ conflict.
    the variable is the maximum number of frames stored in a traceback of a
    trace. For example, ``PYTHONTRACEMALLOC=1`` stores only the most recent
    frame. See the :func:`tracemalloc.start` for more information.
+
+   .. versionadded:: 3.4
+
+
+.. envvar:: PYTHONASYNCIODEBUG
+
+   If this environment variable is set to a non-empty string, enable the
+   :ref:`debug mode <asyncio-debug-mode>` of the :mod:`asyncio` module.
 
    .. versionadded:: 3.4
 

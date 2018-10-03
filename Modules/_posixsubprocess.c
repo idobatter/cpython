@@ -14,8 +14,17 @@
 #ifdef HAVE_SYS_SYSCALL_H
 #include <sys/syscall.h>
 #endif
+#if defined(HAVE_SYS_RESOURCE_H)
+#include <sys/resource.h>
+#endif
 #ifdef HAVE_DIRENT_H
 #include <dirent.h>
+#endif
+
+#if defined(__ANDROID__) && !defined(SYS_getdents64)
+/* Android doesn't expose syscalls, add the definition manually. */
+# include <sys/linux-syscalls.h>
+# define SYS_getdents64  __NR_getdents64
 #endif
 
 #if defined(sun)
@@ -38,28 +47,32 @@
 #define POSIX_CALL(call)   do { if ((call) == -1) goto error; } while (0)
 
 
-/* Maximum file descriptor, initialized on module load. */
-static long max_fd;
-
-
-/* Given the gc module call gc.enable() and return 0 on success. */
+/* If gc was disabled, call gc.enable().  Return 0 on success. */
 static int
-_enable_gc(PyObject *gc_module)
+_enable_gc(int need_to_reenable_gc, PyObject *gc_module)
 {
     PyObject *result;
     _Py_IDENTIFIER(enable);
+    PyObject *exctype, *val, *tb;
 
-    result = _PyObject_CallMethodId(gc_module, &PyId_enable, NULL);
-    if (result == NULL)
-        return 1;
-    Py_DECREF(result);
+    if (need_to_reenable_gc) {
+        PyErr_Fetch(&exctype, &val, &tb);
+        result = _PyObject_CallMethodId(gc_module, &PyId_enable, NULL);
+        if (exctype != NULL) {
+            PyErr_Restore(exctype, val, tb);
+        }
+        if (result == NULL) {
+            return 1;
+        }
+        Py_DECREF(result);
+    }
     return 0;
 }
 
 
 /* Convert ASCII to a positive int, no libc call. no overflow. -1 on error. */
 static int
-_pos_int_from_ascii(char *name)
+_pos_int_from_ascii(const char *name)
 {
     int num = 0;
     while (*name >= '0' && *name <= '9') {
@@ -104,10 +117,11 @@ _sanity_check_python_fd_sequence(PyObject *fd_sequence)
     for (seq_idx = 0; seq_idx < seq_len; ++seq_idx) {
         PyObject* py_fd = PySequence_Fast_GET_ITEM(fd_sequence, seq_idx);
         long iter_fd = PyLong_AsLong(py_fd);
-        if (iter_fd < 0 || iter_fd < prev_fd || iter_fd > INT_MAX) {
+        if (iter_fd < 0 || iter_fd <= prev_fd || iter_fd > INT_MAX) {
             /* Negative, overflow, not a Long, unsorted, too big for a fd. */
             return 1;
         }
+        prev_fd = iter_fd;
     }
     return 0;
 }
@@ -160,14 +174,46 @@ make_inheritable(PyObject *py_fds_to_keep, int errpipe_write)
 }
 
 
-/* Close all file descriptors in the range start_fd inclusive to
- * end_fd exclusive except for those in py_fds_to_keep.  If the
- * range defined by [start_fd, end_fd) is large this will take a
- * long time as it calls close() on EVERY possible fd.
+/* Get the maximum file descriptor that could be opened by this process.
+ * This function is async signal safe for use between fork() and exec().
+ */
+static long
+safe_get_max_fd(void)
+{
+    long local_max_fd;
+#if defined(__NetBSD__)
+    local_max_fd = fcntl(0, F_MAXFD);
+    if (local_max_fd >= 0)
+        return local_max_fd;
+#endif
+#if defined(HAVE_SYS_RESOURCE_H) && defined(__OpenBSD__)
+    struct rlimit rl;
+    /* Not on the POSIX async signal safe functions list but likely
+     * safe.  TODO - Someone should audit OpenBSD to make sure. */
+    if (getrlimit(RLIMIT_NOFILE, &rl) >= 0)
+        return (long) rl.rlim_max;
+#endif
+#ifdef _SC_OPEN_MAX
+    local_max_fd = sysconf(_SC_OPEN_MAX);
+    if (local_max_fd == -1)
+#endif
+        local_max_fd = 256;  /* Matches legacy Lib/subprocess.py behavior. */
+    return local_max_fd;
+}
+
+
+/* Close all file descriptors in the range from start_fd and higher
+ * except for those in py_fds_to_keep.  If the range defined by
+ * [start_fd, safe_get_max_fd()) is large this will take a long
+ * time as it calls close() on EVERY possible fd.
+ *
+ * It isn't possible to know for sure what the max fd to go up to
+ * is for processes with the capability of raising their maximum.
  */
 static void
-_close_fds_by_brute_force(int start_fd, int end_fd, PyObject *py_fds_to_keep)
+_close_fds_by_brute_force(long start_fd, PyObject *py_fds_to_keep)
 {
+    long end_fd = safe_get_max_fd();
     Py_ssize_t num_fds_to_keep = PySequence_Length(py_fds_to_keep);
     Py_ssize_t keep_seq_idx;
     int fd_num;
@@ -180,13 +226,13 @@ _close_fds_by_brute_force(int start_fd, int end_fd, PyObject *py_fds_to_keep)
         if (keep_fd < start_fd)
             continue;
         for (fd_num = start_fd; fd_num < keep_fd; ++fd_num) {
-            while (close(fd_num) < 0 && errno == EINTR);
+            close(fd_num);
         }
         start_fd = keep_fd + 1;
     }
     if (start_fd <= end_fd) {
         for (fd_num = start_fd; fd_num < end_fd; ++fd_num) {
-            while (close(fd_num) < 0 && errno == EINTR);
+            close(fd_num);
         }
     }
 }
@@ -207,8 +253,8 @@ struct linux_dirent64 {
    char           d_name[256];  /* Filename (null-terminated) */
 };
 
-/* Close all open file descriptors in the range start_fd inclusive to end_fd
- * exclusive. Do not close any in the sorted py_fds_to_keep list.
+/* Close all open file descriptors in the range from start_fd and higher
+ * Do not close any in the sorted py_fds_to_keep list.
  *
  * This version is async signal safe as it does not make any unsafe C library
  * calls, malloc calls or handle any locks.  It is _unfortunate_ to be forced
@@ -223,16 +269,14 @@ struct linux_dirent64 {
  * it with some cpp #define magic to work on other OSes as well if you want.
  */
 static void
-_close_open_fd_range_safe(int start_fd, int end_fd, PyObject* py_fds_to_keep)
+_close_open_fds_safe(int start_fd, PyObject* py_fds_to_keep)
 {
     int fd_dir_fd;
-    if (start_fd >= end_fd)
-        return;
 
-    fd_dir_fd = _Py_open(FD_DIR, O_RDONLY);
+    fd_dir_fd = _Py_open_noraise(FD_DIR, O_RDONLY);
     if (fd_dir_fd == -1) {
         /* No way to get a list of open fds. */
-        _close_fds_by_brute_force(start_fd, end_fd, py_fds_to_keep);
+        _close_fds_by_brute_force(start_fd, py_fds_to_keep);
         return;
     } else {
         char buffer[sizeof(struct linux_dirent64)];
@@ -247,9 +291,9 @@ _close_open_fd_range_safe(int start_fd, int end_fd, PyObject* py_fds_to_keep)
                 entry = (struct linux_dirent64 *)(buffer + offset);
                 if ((fd = _pos_int_from_ascii(entry->d_name)) < 0)
                     continue;  /* Not a number. */
-                if (fd != fd_dir_fd && fd >= start_fd && fd < end_fd &&
+                if (fd != fd_dir_fd && fd >= start_fd &&
                     !_is_fd_in_sorted_fd_sequence(fd, py_fds_to_keep)) {
-                    while (close(fd) < 0 && errno == EINTR);
+                    close(fd);
                 }
             }
         }
@@ -257,13 +301,13 @@ _close_open_fd_range_safe(int start_fd, int end_fd, PyObject* py_fds_to_keep)
     }
 }
 
-#define _close_open_fd_range _close_open_fd_range_safe
+#define _close_open_fds _close_open_fds_safe
 
 #else  /* NOT (defined(__linux__) && defined(HAVE_SYS_SYSCALL_H)) */
 
 
-/* Close all open file descriptors in the range start_fd inclusive to end_fd
- * exclusive. Do not close any in the sorted py_fds_to_keep list.
+/* Close all open file descriptors from start_fd and higher.
+ * Do not close any in the sorted py_fds_to_keep list.
  *
  * This function violates the strict use of async signal safe functions. :(
  * It calls opendir(), readdir() and closedir().  Of these, the one most
@@ -276,26 +320,20 @@ _close_open_fd_range_safe(int start_fd, int end_fd, PyObject* py_fds_to_keep)
  *   http://womble.decadent.org.uk/readdir_r-advisory.html
  */
 static void
-_close_open_fd_range_maybe_unsafe(int start_fd, int end_fd,
-                                  PyObject* py_fds_to_keep)
+_close_open_fds_maybe_unsafe(long start_fd, PyObject* py_fds_to_keep)
 {
     DIR *proc_fd_dir;
 #ifndef HAVE_DIRFD
-    while (_is_fd_in_sorted_fd_sequence(start_fd, py_fds_to_keep) &&
-           (start_fd < end_fd)) {
+    while (_is_fd_in_sorted_fd_sequence(start_fd, py_fds_to_keep)) {
         ++start_fd;
     }
-    if (start_fd >= end_fd)
-        return;
     /* Close our lowest fd before we call opendir so that it is likely to
      * reuse that fd otherwise we might close opendir's file descriptor in
      * our loop.  This trick assumes that fd's are allocated on a lowest
      * available basis. */
-    while (close(start_fd) < 0 && errno == EINTR);
+    close(start_fd);
     ++start_fd;
 #endif
-    if (start_fd >= end_fd)
-        return;
 
 #if defined(__FreeBSD__)
     if (!_is_fdescfs_mounted_on_dev_fd())
@@ -305,7 +343,7 @@ _close_open_fd_range_maybe_unsafe(int start_fd, int end_fd,
         proc_fd_dir = opendir(FD_DIR);
     if (!proc_fd_dir) {
         /* No way to get a list of open fds. */
-        _close_fds_by_brute_force(start_fd, end_fd, py_fds_to_keep);
+        _close_fds_by_brute_force(start_fd, py_fds_to_keep);
     } else {
         struct dirent *dir_entry;
 #ifdef HAVE_DIRFD
@@ -318,21 +356,21 @@ _close_open_fd_range_maybe_unsafe(int start_fd, int end_fd,
             int fd;
             if ((fd = _pos_int_from_ascii(dir_entry->d_name)) < 0)
                 continue;  /* Not a number. */
-            if (fd != fd_used_by_opendir && fd >= start_fd && fd < end_fd &&
+            if (fd != fd_used_by_opendir && fd >= start_fd &&
                 !_is_fd_in_sorted_fd_sequence(fd, py_fds_to_keep)) {
-                while (close(fd) < 0 && errno == EINTR);
+                close(fd);
             }
             errno = 0;
         }
         if (errno) {
             /* readdir error, revert behavior. Highly Unlikely. */
-            _close_fds_by_brute_force(start_fd, end_fd, py_fds_to_keep);
+            _close_fds_by_brute_force(start_fd, py_fds_to_keep);
         }
         closedir(proc_fd_dir);
     }
 }
 
-#define _close_open_fd_range _close_open_fd_range_maybe_unsafe
+#define _close_open_fds _close_open_fds_maybe_unsafe
 
 #endif  /* else NOT (defined(__linux__) && defined(HAVE_SYS_SYSCALL_H)) */
 
@@ -363,7 +401,7 @@ child_exec(char *const exec_array[],
            PyObject *preexec_fn,
            PyObject *preexec_fn_args_tuple)
 {
-    int i, saved_errno, unused, reached_preexec = 0;
+    int i, saved_errno, reached_preexec = 0;
     PyObject *result;
     const char* err_msg = "";
     /* Buffer large enough to hold a hex integer.  We can't malloc. */
@@ -451,14 +489,8 @@ child_exec(char *const exec_array[],
 
     /* close FDs after executing preexec_fn, which might open FDs */
     if (close_fds) {
-        int local_max_fd = max_fd;
-#if defined(__NetBSD__)
-        local_max_fd = fcntl(0, F_MAXFD);
-        if (local_max_fd < 0)
-            local_max_fd = max_fd;
-#endif
         /* TODO HP-UX could use pstat_getproc() if anyone cares about it. */
-        _close_open_fd_range(3, local_max_fd, py_fds_to_keep);
+        _close_open_fds(3, py_fds_to_keep);
     }
 
     /* This loop matches the Lib/os.py _execvpe()'s PATH search when */
@@ -483,28 +515,29 @@ error:
     saved_errno = errno;
     /* Report the posix error to our parent process. */
     /* We ignore all write() return values as the total size of our writes is
-     * less than PIPEBUF and we cannot do anything about an error anyways. */
+       less than PIPEBUF and we cannot do anything about an error anyways.
+       Use _Py_write_noraise() to retry write() if it is interrupted by a
+       signal (fails with EINTR). */
     if (saved_errno) {
         char *cur;
-        unused = write(errpipe_write, "OSError:", 8);
+        _Py_write_noraise(errpipe_write, "OSError:", 8);
         cur = hex_errno + sizeof(hex_errno);
         while (saved_errno != 0 && cur > hex_errno) {
-            *--cur = "0123456789ABCDEF"[saved_errno % 16];
+            *--cur = Py_hexdigits[saved_errno % 16];
             saved_errno /= 16;
         }
-        unused = write(errpipe_write, cur, hex_errno + sizeof(hex_errno) - cur);
-        unused = write(errpipe_write, ":", 1);
+        _Py_write_noraise(errpipe_write, cur, hex_errno + sizeof(hex_errno) - cur);
+        _Py_write_noraise(errpipe_write, ":", 1);
         if (!reached_preexec) {
             /* Indicate to the parent that the error happened before exec(). */
-            unused = write(errpipe_write, "noexec", 6);
+            _Py_write_noraise(errpipe_write, "noexec", 6);
         }
         /* We can't call strerror(saved_errno).  It is not async signal safe.
          * The parent process will look the error message up. */
     } else {
-        unused = write(errpipe_write, "SubprocessError:0:", 18);
-        unused = write(errpipe_write, err_msg, strlen(err_msg));
+        _Py_write_noraise(errpipe_write, "SubprocessError:0:", 18);
+        _Py_write_noraise(errpipe_write, err_msg, strlen(err_msg));
     }
-    if (unused) return;  /* silly? yes! avoids gcc compiler warning. */
 }
 
 
@@ -525,6 +558,9 @@ subprocess_fork_exec(PyObject* self, PyObject *args)
     int need_to_reenable_gc = 0;
     char *const *exec_array, *const *argv = NULL, *const *envp = NULL;
     Py_ssize_t arg_num;
+#ifdef WITH_THREAD
+    int import_lock_held = 0;
+#endif
 
     if (!PyArg_ParseTuple(
             args, "OOpOOOiiiiiiiiiiO:fork_exec",
@@ -577,10 +613,8 @@ subprocess_fork_exec(PyObject* self, PyObject *args)
     }
 
     exec_array = _PySequence_BytesToCharpArray(executable_list);
-    if (!exec_array) {
-        Py_XDECREF(gc_module);
-        return NULL;
-    }
+    if (!exec_array)
+        goto cleanup;
 
     /* Convert args and env into appropriate arguments for exec() */
     /* These conversions are done in the parent process to avoid allocating
@@ -621,7 +655,10 @@ subprocess_fork_exec(PyObject* self, PyObject *args)
         preexec_fn_args_tuple = PyTuple_New(0);
         if (!preexec_fn_args_tuple)
             goto cleanup;
+#ifdef WITH_THREAD
         _PyImport_AcquireLock();
+        import_lock_held = 1;
+#endif
     }
 
     if (cwd_obj != Py_None) {
@@ -664,11 +701,15 @@ subprocess_fork_exec(PyObject* self, PyObject *args)
         /* Capture the errno exception before errno can be clobbered. */
         PyErr_SetFromErrno(PyExc_OSError);
     }
-    if (preexec_fn != Py_None &&
-        _PyImport_ReleaseLock() < 0 && !PyErr_Occurred()) {
+#ifdef WITH_THREAD
+    if (preexec_fn != Py_None
+        && _PyImport_ReleaseLock() < 0 && !PyErr_Occurred()) {
         PyErr_SetString(PyExc_RuntimeError,
                         "not holding the import lock");
+        pid = -1;
     }
+    import_lock_held = 0;
+#endif
 
     /* Parent process */
     if (envp)
@@ -678,9 +719,8 @@ subprocess_fork_exec(PyObject* self, PyObject *args)
     _Py_FreeCharPArray(exec_array);
 
     /* Reenable gc in the parent process (or if fork failed). */
-    if (need_to_reenable_gc && _enable_gc(gc_module)) {
-        Py_XDECREF(gc_module);
-        return NULL;
+    if (_enable_gc(need_to_reenable_gc, gc_module)) {
+        pid = -1;
     }
     Py_XDECREF(preexec_fn_args_tuple);
     Py_XDECREF(gc_module);
@@ -691,18 +731,20 @@ subprocess_fork_exec(PyObject* self, PyObject *args)
     return PyLong_FromPid(pid);
 
 cleanup:
+#ifdef WITH_THREAD
+    if (import_lock_held)
+        _PyImport_ReleaseLock();
+#endif
     if (envp)
         _Py_FreeCharPArray(envp);
     if (argv)
         _Py_FreeCharPArray(argv);
-    _Py_FreeCharPArray(exec_array);
+    if (exec_array)
+        _Py_FreeCharPArray(exec_array);
     Py_XDECREF(converted_args);
     Py_XDECREF(fast_args);
     Py_XDECREF(preexec_fn_args_tuple);
-
-    /* Reenable gc if it was disabled. */
-    if (need_to_reenable_gc)
-        _enable_gc(gc_module);
+    _enable_gc(need_to_reenable_gc, gc_module);
     Py_XDECREF(gc_module);
     return NULL;
 }
@@ -753,11 +795,5 @@ static struct PyModuleDef _posixsubprocessmodule = {
 PyMODINIT_FUNC
 PyInit__posixsubprocess(void)
 {
-#ifdef _SC_OPEN_MAX
-    max_fd = sysconf(_SC_OPEN_MAX);
-    if (max_fd == -1)
-#endif
-        max_fd = 256;  /* Matches Lib/subprocess.py */
-
     return PyModule_Create(&_posixsubprocessmodule);
 }

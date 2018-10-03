@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-#
 # Argument Clinic
 # Copyright 2012-2013 by Larry Hastings.
 # Licensed to the PSF under a contributor agreement.
@@ -11,8 +9,10 @@ from clinic import DSLParser
 import collections
 import inspect
 from test import support
+import sys
 import unittest
 from unittest import TestCase
+
 
 class FakeConverter:
     def __init__(self, name, args):
@@ -35,16 +35,46 @@ class FakeConvertersDict:
     def get(self, name, default):
         return self.used_converters.setdefault(name, FakeConverterFactory(name))
 
+clinic.Clinic.presets_text = ''
+c = clinic.Clinic(language='C')
+
 class FakeClinic:
     def __init__(self):
         self.converters = FakeConvertersDict()
         self.legacy_converters = FakeConvertersDict()
-        self.language = clinic.CLanguage()
+        self.language = clinic.CLanguage(None)
         self.filename = None
         self.block_parser = clinic.BlockParser('', self.language)
         self.modules = collections.OrderedDict()
+        self.classes = collections.OrderedDict()
         clinic.clinic = self
         self.name = "FakeClinic"
+        self.line_prefix = self.line_suffix = ''
+        self.destinations = {}
+        self.add_destination("block", "buffer")
+        self.add_destination("file", "buffer")
+        self.add_destination("suppress", "suppress")
+        d = self.destinations.get
+        self.field_destinations = collections.OrderedDict((
+            ('docstring_prototype', d('suppress')),
+            ('docstring_definition', d('block')),
+            ('methoddef_define', d('block')),
+            ('impl_prototype', d('block')),
+            ('parser_prototype', d('suppress')),
+            ('parser_definition', d('block')),
+            ('impl_definition', d('block')),
+        ))
+
+    def get_destination(self, name):
+        d = self.destinations.get(name)
+        if not d:
+            sys.exit("Destination does not exist: " + repr(name))
+        return d
+
+    def add_destination(self, name, type, *args):
+        if name in self.destinations:
+            sys.exit("Destination already exists: " + repr(name))
+        self.destinations[name] = clinic.Destination(name, type, self, *args)
 
     def is_directive(self, name):
         return name == "module"
@@ -53,6 +83,25 @@ class FakeClinic:
         self.called_directives[name] = args
 
     _module_and_class = clinic.Clinic._module_and_class
+
+class ClinicWholeFileTest(TestCase):
+    def test_eol(self):
+        # regression test:
+        # clinic's block parser didn't recognize
+        # the "end line" for the block if it
+        # didn't end in "\n" (as in, the last)
+        # byte of the file was '/'.
+        # so it woudl spit out an end line for you.
+        # and since you really already had one,
+        # the last line of the block got corrupted.
+        c = clinic.Clinic(clinic.CLanguage(None))
+        raw = "/*[clinic]\nfoo\n[clinic]*/"
+        cooked = c.parse(raw).splitlines()
+        end_line = cooked[2].rstrip()
+        # this test is redundant, it's just here explicitly to catch
+        # the regression test so we don't forget what it looked like
+        self.assertNotEqual(end_line, "[clinic]*/[clinic]*/")
+        self.assertEqual(end_line, "[clinic]*/")
 
 
 
@@ -173,7 +222,7 @@ class CopyParser:
 
 class ClinicBlockParserTest(TestCase):
     def _test(self, input, output):
-        language = clinic.CLanguage()
+        language = clinic.CLanguage(None)
 
         blocks = list(clinic.BlockParser(input, language))
         writer = clinic.BlockPrinter(language)
@@ -203,7 +252,7 @@ xyz
 """)
 
     def _test_clinic(self, input, output):
-        language = clinic.CLanguage()
+        language = clinic.CLanguage(None)
         c = clinic.Clinic(language)
         c.parsers['inert'] = InertParser(c)
         c.parsers['copy'] = CopyParser(c)
@@ -214,20 +263,20 @@ xyz
         self._test_clinic("""
     verbatim text here
     lah dee dah
-/*[copy]
+/*[copy input]
 def
-[copy]*/
+[copy start generated code]*/
 abc
-/*[copy checksum: 03cfd743661f07975fa2f1220c5194cbaff48451]*/
+/*[copy end generated code: output=03cfd743661f0797 input=7b18d017f89f61cf]*/
 xyz
 """, """
     verbatim text here
     lah dee dah
-/*[copy]
+/*[copy input]
 def
-[copy]*/
+[copy start generated code]*/
 def
-/*[copy checksum: 7b18d017f89f61cf17d47f92749ea6930a3f1deb]*/
+/*[copy end generated code: output=7b18d017f89f61cf input=7b18d017f89f61cf]*/
 xyz
 """)
 
@@ -250,7 +299,7 @@ class ClinicParserTest(TestCase):
     def test_param(self):
         function = self.parse_function("module os\nos.access\n   path: int")
         self.assertEqual("access", function.name)
-        self.assertEqual(1, len(function.parameters))
+        self.assertEqual(2, len(function.parameters))
         p = function.parameters['path']
         self.assertEqual('path', p.name)
         self.assertIsInstance(p.converter, clinic.int_converter)
@@ -260,31 +309,45 @@ class ClinicParserTest(TestCase):
         p = function.parameters['follow_symlinks']
         self.assertEqual(True, p.default)
 
+    def test_param_with_continuations(self):
+        function = self.parse_function("module os\nos.access\n    follow_symlinks: \\\n   bool \\\n   =\\\n    True")
+        p = function.parameters['follow_symlinks']
+        self.assertEqual(True, p.default)
+
+    def test_param_default_expression(self):
+        function = self.parse_function("module os\nos.access\n    follow_symlinks: int(c_default='MAXSIZE') = sys.maxsize")
+        p = function.parameters['follow_symlinks']
+        self.assertEqual(sys.maxsize, p.default)
+        self.assertEqual("MAXSIZE", p.converter.c_default)
+
+        s = self.parse_function_should_fail("module os\nos.access\n    follow_symlinks: int = sys.maxsize")
+        self.assertEqual(s, "Error on line 0:\nWhen you specify a named constant ('sys.maxsize') as your default value,\nyou MUST specify a valid c_default.\n")
+
     def test_param_no_docstring(self):
         function = self.parse_function("""
 module os
 os.access
     follow_symlinks: bool = True
-    something_else: str""")
+    something_else: str = ''""")
         p = function.parameters['follow_symlinks']
-        self.assertEqual(2, len(function.parameters))
+        self.assertEqual(3, len(function.parameters))
         self.assertIsInstance(function.parameters['something_else'].converter, clinic.str_converter)
+
+    def test_param_default_parameters_out_of_order(self):
+        s = self.parse_function_should_fail("""
+module os
+os.access
+    follow_symlinks: bool = True
+    something_else: str""")
+        self.assertEqual(s, """Error on line 0:
+Can't have a parameter without a default ('something_else')
+after a parameter with a default!
+""")
 
     def disabled_test_converter_arguments(self):
         function = self.parse_function("module os\nos.access\n    path: path_t(allow_fd=1)")
         p = function.parameters['path']
         self.assertEqual(1, p.converter.args['allow_fd'])
-
-    def test_param_docstring(self):
-        function = self.parse_function("""
-module os
-os.stat as os_stat_fn -> object(doc_default='stat_result')
-
-   path: str
-       Path to be examined""")
-        p = function.parameters['path']
-        self.assertEqual("Path to be examined", p.docstring)
-        self.assertEqual(function.return_converter.doc_default, 'stat_result')
 
     def test_function_docstring(self):
         function = self.parse_function("""
@@ -296,9 +359,11 @@ os.stat as os_stat_fn
 
 Perform a stat system call on the given path.""")
         self.assertEqual("""
+stat($module, /, path)
+--
+
 Perform a stat system call on the given path.
 
-os.stat(path)
   path
     Path to be examined
 """.strip(), function.docstring)
@@ -316,9 +381,11 @@ This is the documentation for foo.
 Okay, we're done here.
 """)
         self.assertEqual("""
+bar($module, /, x, y)
+--
+
 This is the documentation for foo.
 
-foo.bar(x, y)
   x
     Documentation for x.
 
@@ -332,7 +399,7 @@ os.stat
     path: str
 This/used to break Clinic!
 """)
-        self.assertEqual("os.stat(path)\n\nThis/used to break Clinic!", function.docstring)
+        self.assertEqual("stat($module, /, path)\n--\n\nThis/used to break Clinic!", function.docstring)
 
     def test_c_name(self):
         function = self.parse_function("module os\nos.stat as os_stat_fn")
@@ -356,7 +423,7 @@ This/used to break Clinic!
     def test_left_group(self):
         function = self.parse_function("""
 module curses
-curses.window.addch
+curses.addch
    [
    y: int
      Y-coordinate.
@@ -380,7 +447,9 @@ curses.window.addch
             self.assertEqual(p.group, group)
             self.assertEqual(p.kind, inspect.Parameter.POSITIONAL_ONLY)
         self.assertEqual(function.docstring.strip(), """
-curses.window.addch([y, x,] ch, [attr])
+addch([y, x,] ch, [attr])
+
+
   y
     Y-coordinate.
   x
@@ -394,7 +463,7 @@ curses.window.addch([y, x,] ch, [attr])
     def test_nested_groups(self):
         function = self.parse_function("""
 module curses
-curses.window.imaginary
+curses.imaginary
    [
    [
    y1: int
@@ -439,7 +508,10 @@ curses.window.imaginary
             self.assertEqual(p.kind, inspect.Parameter.POSITIONAL_ONLY)
 
         self.assertEqual(function.docstring.strip(), """
-curses.window.imaginary([[y1, y2,] x1, x2,] ch, [attr1, attr2, attr3, [attr4, attr5, attr6]])
+imaginary([[y1, y2,] x1, x2,] ch, [attr1, attr2, attr3, [attr4, attr5,
+          attr6]])
+
+
   y1
     Y-coordinate.
   y2
@@ -484,7 +556,7 @@ foo.two_top_groups_on_left
             """)
         self.assertEqual(s,
             ('Error on line 0:\n'
-            'Function two_top_groups_on_left has an unsupported group configuration. (Unexpected state 2)\n'))
+            'Function two_top_groups_on_left has an unsupported group configuration. (Unexpected state 2.b)\n'))
 
     def test_disallowed_grouping__two_top_groups_on_right(self):
         self.parse_function_should_fail("""
@@ -557,8 +629,22 @@ foo.bar
 Docstring
 
 """)
-        self.assertEqual("Docstring\n\nfoo.bar()", function.docstring)
-        self.assertEqual(0, len(function.parameters))
+        self.assertEqual("bar($module, /)\n--\n\nDocstring", function.docstring)
+        self.assertEqual(1, len(function.parameters)) # self!
+
+    def test_init_with_no_parameters(self):
+        function = self.parse_function("""
+module foo
+class foo.Bar "unused" "notneeded"
+foo.Bar.__init__
+
+Docstring
+
+""", signatures_in_block=3, function_index=2)
+        # self is not in the signature
+        self.assertEqual("Bar()\n--\n\nDocstring", function.docstring)
+        # but it *is* a parameter
+        self.assertEqual(1, len(function.parameters))
 
     def test_illegal_module_line(self):
         self.parse_function_should_fail("""
@@ -652,9 +738,11 @@ foo.bar
   Not at column 0!
 """)
         self.assertEqual("""
+bar($module, /, x, *, y)
+--
+
 Not at column 0!
 
-foo.bar(x, *, y)
   x
     Nested docstring here, goeth.
 """.strip(), function.docstring)
@@ -666,7 +754,7 @@ os.stat
     path: str
 This/used to break Clinic!
 """)
-        self.assertEqual("This/used to break Clinic!\n\nos.stat(path)", function.docstring)
+        self.assertEqual("stat($module, /, path)\n--\n\nThis/used to break Clinic!", function.docstring)
 
     def test_directive(self):
         c = FakeClinic()
@@ -689,13 +777,13 @@ This/used to break Clinic!
         parser.parse(block)
         return block
 
-    def parse_function(self, text):
+    def parse_function(self, text, signatures_in_block=2, function_index=1):
         block = self.parse(text)
         s = block.signatures
-        assert len(s) == 2
+        self.assertEqual(len(s), signatures_in_block)
         assert isinstance(s[0], clinic.Module)
-        assert isinstance(s[1], clinic.Function)
-        return s[1]
+        assert isinstance(s[function_index], clinic.Function)
+        return s[function_index]
 
     def test_scaffolding(self):
         # test repr on special values

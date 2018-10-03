@@ -1,12 +1,9 @@
-#!/usr/bin/env python3
-
 """Unit tests for the keyword only argument specified in PEP 3102."""
 
 __author__ = "Jiwon Seo"
 __email__ = "seojiwon at gmail dot com"
 
 import unittest
-from test.support import run_unittest
 
 def posonly_sum(pos_arg1, *arg, **kwarg):
     return pos_arg1 + sum(arg) + sum(kwarg.values())
@@ -188,8 +185,5 @@ class KeywordOnlyArgTestCase(unittest.TestCase):
         self.assertEqual(str(err.exception), "name 'b' is not defined")
 
 
-def test_main():
-    run_unittest(KeywordOnlyArgTestCase)
-
 if __name__ == "__main__":
-    test_main()
+    unittest.main()

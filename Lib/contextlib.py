@@ -5,7 +5,7 @@ from collections import deque
 from functools import wraps
 
 __all__ = ["contextmanager", "closing", "ContextDecorator", "ExitStack",
-           "redirect_stdout", "suppress"]
+           "redirect_stdout", "redirect_stderr", "suppress"]
 
 
 class ContextDecorator(object):
@@ -34,7 +34,7 @@ class ContextDecorator(object):
 class _GeneratorContextManager(ContextDecorator):
     """Helper for @contextmanager decorator."""
 
-    def __init__(self, func, *args, **kwds):
+    def __init__(self, func, args, kwds):
         self.gen = func(*args, **kwds)
         self.func, self.args, self.kwds = func, args, kwds
         # Issue 19330: ensure context manager instances have good docstrings
@@ -52,7 +52,7 @@ class _GeneratorContextManager(ContextDecorator):
         # _GCM instances are one-shot context managers, so the
         # CM must be recreated each time a decorated function is
         # called
-        return self.__class__(self.func, *self.args, **self.kwds)
+        return self.__class__(self.func, self.args, self.kwds)
 
     def __enter__(self):
         try:
@@ -77,10 +77,17 @@ class _GeneratorContextManager(ContextDecorator):
                 self.gen.throw(type, value, traceback)
                 raise RuntimeError("generator didn't stop after throw()")
             except StopIteration as exc:
-                # Suppress the exception *unless* it's the same exception that
+                # Suppress StopIteration *unless* it's the same exception that
                 # was passed to throw().  This prevents a StopIteration
-                # raised inside the "with" statement from being suppressed
+                # raised inside the "with" statement from being suppressed.
                 return exc is not value
+            except RuntimeError as exc:
+                # Likewise, avoid suppressing if a StopIteration exception
+                # was passed to throw() and later wrapped into a RuntimeError
+                # (see PEP 479).
+                if exc.__cause__ is value:
+                    return False
+                raise
             except:
                 # only re-raise if it's *not* the exception that was
                 # passed to throw(), because __exit__() must not raise
@@ -123,7 +130,7 @@ def contextmanager(func):
     """
     @wraps(func)
     def helper(*args, **kwds):
-        return _GeneratorContextManager(func, *args, **kwds)
+        return _GeneratorContextManager(func, args, kwds)
     return helper
 
 
@@ -151,8 +158,27 @@ class closing(object):
     def __exit__(self, *exc_info):
         self.thing.close()
 
-class redirect_stdout:
-    """Context manager for temporarily redirecting stdout to another file
+
+class _RedirectStream:
+
+    _stream = None
+
+    def __init__(self, new_target):
+        self._new_target = new_target
+        # We use a list of old targets to make this CM re-entrant
+        self._old_targets = []
+
+    def __enter__(self):
+        self._old_targets.append(getattr(sys, self._stream))
+        setattr(sys, self._stream, self._new_target)
+        return self._new_target
+
+    def __exit__(self, exctype, excinst, exctb):
+        setattr(sys, self._stream, self._old_targets.pop())
+
+
+class redirect_stdout(_RedirectStream):
+    """Context manager for temporarily redirecting stdout to another file.
 
         # How to send help() to stderr
         with redirect_stdout(sys.stderr):
@@ -164,18 +190,13 @@ class redirect_stdout:
                 help(pow)
     """
 
-    def __init__(self, new_target):
-        self._new_target = new_target
-        # We use a list of old targets to make this CM re-entrant
-        self._old_targets = []
+    _stream = "stdout"
 
-    def __enter__(self):
-        self._old_targets.append(sys.stdout)
-        sys.stdout = self._new_target
-        return self._new_target
 
-    def __exit__(self, exctype, excinst, exctb):
-        sys.stdout = self._old_targets.pop()
+class redirect_stderr(_RedirectStream):
+    """Context manager for temporarily redirecting stderr to another file."""
+
+    _stream = "stderr"
 
 
 class suppress:
@@ -298,11 +319,17 @@ class ExitStack(object):
         # we were actually nesting multiple with statements
         frame_exc = sys.exc_info()[1]
         def _fix_exception_context(new_exc, old_exc):
+            # Context may not be correct, so find the end of the chain
             while 1:
                 exc_context = new_exc.__context__
-                if exc_context in (None, frame_exc):
+                if exc_context is old_exc:
+                    # Context is already set correctly (see issue 20317)
+                    return
+                if exc_context is None or exc_context is frame_exc:
                     break
                 new_exc = exc_context
+            # Change the end of the chain to point to the exception
+            # we expect it to reference
             new_exc.__context__ = old_exc
 
         # Callbacks are invoked in LIFO order to match the behaviour of

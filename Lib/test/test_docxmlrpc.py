@@ -10,7 +10,7 @@ import unittest
 PORT = None
 
 def make_request_and_skipIf(condition, reason):
-    # If we skip the test, we have to make a request because the
+    # If we skip the test, we have to make a request because
     # the server created in setUp blocks expecting one to come in.
     if not condition:
         return lambda func: func
@@ -87,10 +87,11 @@ class DocXMLRPCHTTPGETServer(unittest.TestCase):
         threading.Thread(target=server, args=(self.evt, 1)).start()
 
         # wait for port to be assigned
-        n = 1000
-        while n > 0 and PORT is None:
-            time.sleep(0.001)
-            n -= 1
+        deadline = time.monotonic() + 10.0
+        while PORT is None:
+            time.sleep(0.010)
+            if time.monotonic() > deadline:
+                break
 
         self.client = http.client.HTTPConnection("localhost:%d" % PORT)
 
@@ -202,16 +203,15 @@ class DocXMLRPCHTTPGETServer(unittest.TestCase):
         """ Test that annotations works as expected """
         self.client.request("GET", "/")
         response = self.client.getresponse()
+        docstring = (b'' if sys.flags.optimize >= 2 else
+                     b'<dd><tt>Use&nbsp;function&nbsp;annotations.</tt></dd>')
         self.assertIn(
             (b'<dl><dt><a name="-annotation"><strong>annotation</strong></a>'
-             b'(x: int)</dt><dd><tt>Use&nbsp;function&nbsp;annotations.</tt>'
-             b'</dd></dl>\n<dl><dt><a name="-method_annotation"><strong>'
+             b'(x: int)</dt>' + docstring + b'</dl>\n'
+             b'<dl><dt><a name="-method_annotation"><strong>'
              b'method_annotation</strong></a>(x: bytes)</dt></dl>'),
             response.read())
 
 
-def test_main():
-    support.run_unittest(DocXMLRPCHTTPGETServer)
-
 if __name__ == '__main__':
-    test_main()
+    unittest.main()

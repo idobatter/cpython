@@ -1,6 +1,5 @@
 """Test relative imports (PEP 328)."""
 from .. import util
-from . import util as import_util
 import sys
 import unittest
 
@@ -64,7 +63,7 @@ class RelativeImports:
                 uncache_names.append(name)
             else:
                 uncache_names.append(name[:-len('.__init__')])
-        with util.mock_modules(*create) as importer:
+        with util.mock_spec(*create) as importer:
             with util.import_state(meta_path=[importer]):
                 for global_ in globals_:
                     with util.uncache(*uncache_names):
@@ -208,8 +207,10 @@ class RelativeImports:
         with self.assertRaises(KeyError):
             self.__import__('sys', level=1)
 
-Frozen_RelativeImports, Source_RelativeImports = util.test_both(
-        RelativeImports, __import__=import_util.__import__)
+
+(Frozen_RelativeImports,
+ Source_RelativeImports
+ ) = util.test_both(RelativeImports, __import__=util.__import__)
 
 
 if __name__ == '__main__':

@@ -22,14 +22,14 @@ also syntactically compound statements.
    single: clause
    single: suite
 
-Compound statements consist of one or more 'clauses.'  A clause consists of a
+A compound statement consists of one or more 'clauses.'  A clause consists of a
 header and a 'suite.'  The clause headers of a particular compound statement are
 all at the same indentation level. Each clause header begins with a uniquely
 identifying keyword and ends with a colon.  A suite is a group of statements
 controlled by a clause.  A suite can be one or more semicolon-separated simple
 statements on the same line as the header, following the header's colon, or it
 can be one or more indented statements on subsequent lines.  Only the latter
-form of suite can contain nested compound statements; the following is illegal,
+form of a suite can contain nested compound statements; the following is illegal,
 mostly because it wouldn't be clear to which :keyword:`if` clause a following
 :keyword:`else` clause would belong::
 
@@ -51,6 +51,9 @@ Summarizing:
                 : | `with_stmt`
                 : | `funcdef`
                 : | `classdef`
+                : | `async_with_stmt`
+                : | `async_for_stmt`
+                : | `async_funcdef`
    suite: `stmt_list` NEWLINE | NEWLINE INDENT `statement`+ DEDENT
    statement: `stmt_list` NEWLINE | `compound_stmt`
    stmt_list: `simple_stmt` (";" `simple_stmt`)* [";"]
@@ -156,8 +159,8 @@ The :keyword:`for` statement is used to iterate over the elements of a sequence
 
 The expression list is evaluated once; it should yield an iterable object.  An
 iterator is created for the result of the ``expression_list``.  The suite is
-then executed once for each item provided by the iterator, in the order of
-ascending indices.  Each item in turn is assigned to the target list using the
+then executed once for each item provided by the iterator, in the order returned
+by the iterator.  Each item in turn is assigned to the target list using the
 standard rules for assignments (see :ref:`assignment`), and then the suite is
 executed.  When the items are exhausted (which is immediately when the sequence
 is empty or an iterator raises a :exc:`StopIteration` exception), the suite in
@@ -170,17 +173,25 @@ the :keyword:`else` clause, if present, is executed, and the loop terminates.
 A :keyword:`break` statement executed in the first suite terminates the loop
 without executing the :keyword:`else` clause's suite.  A :keyword:`continue`
 statement executed in the first suite skips the rest of the suite and continues
-with the next item, or with the :keyword:`else` clause if there was no next
+with the next item, or with the :keyword:`else` clause if there is no next
 item.
 
-The suite may assign to the variable(s) in the target list; this does not affect
-the next item assigned to it.
+The for-loop makes assignments to the variables(s) in the target list.
+This overwrites all previous assignments to those variables including
+those made in the suite of the for-loop::
+
+   for i in range(10):
+       print(i)
+       i = 5             # this will not affect the for-loop
+                         # because i will be overwritten with the next
+                         # index in the range
+
 
 .. index::
    builtin: range
 
 Names in the target list are not deleted when the loop is finished, but if the
-sequence is empty, it will not have been assigned to at all by the loop.  Hint:
+sequence is empty, they will not have been assigned to at all by the loop.  Hint:
 the built-in function :func:`range` returns an iterator of integers suitable to
 emulate the effect of Pascal's ``for i := a to b do``; e.g., ``list(range(3))``
 returns the list ``[0, 1, 2]``.
@@ -226,7 +237,7 @@ for a group of statements:
 .. productionlist::
    try_stmt: try1_stmt | try2_stmt
    try1_stmt: "try" ":" `suite`
-            : ("except" [`expression` ["as" `target`]] ":" `suite`)+
+            : ("except" [`expression` ["as" `identifier`]] ":" `suite`)+
             : ["else" ":" `suite`]
             : ["finally" ":" `suite`]
    try2_stmt: "try" ":" `suite`
@@ -284,7 +295,7 @@ keeping all locals in that frame alive until the next garbage collection occurs.
    object: traceback
 
 Before an except clause's suite is executed, details about the exception are
-stored in the :mod:`sys` module and can be access via :func:`sys.exc_info`.
+stored in the :mod:`sys` module and can be accessed via :func:`sys.exc_info`.
 :func:`sys.exc_info` returns a 3-tuple consisting of the exception class, the
 exception instance and a traceback object (see section :ref:`types`) identifying
 the point in the program where the exception occurred.  :func:`sys.exc_info`
@@ -313,14 +324,14 @@ exception, the saved exception is set as the context of the new exception.
 If the :keyword:`finally` clause executes a :keyword:`return` or :keyword:`break`
 statement, the saved exception is discarded::
 
-    def f():
-        try:
-            1/0
-        finally:
-            return 42
-
-    >>> f()
-    42
+   >>> def f():
+   ...     try:
+   ...         1/0
+   ...     finally:
+   ...         return 42
+   ...
+   >>> f()
+   42
 
 The exception information is not available to the program during execution of
 the :keyword:`finally` clause.
@@ -337,6 +348,20 @@ statement, the :keyword:`finally` clause is also executed 'on the way out.' A
 reason is a problem with the current implementation --- this restriction may be
 lifted in the future).
 
+The return value of a function is determined by the last :keyword:`return`
+statement executed.  Since the :keyword:`finally` clause always executes, a
+:keyword:`return` statement executed in the :keyword:`finally` clause will
+always be the last one executed::
+
+   >>> def foo():
+   ...     try:
+   ...         return 'try'
+   ...     finally:
+   ...         return 'finally'
+   ...
+   >>> foo()
+   'finally'
+
 Additional information on exceptions can be found in section :ref:`exceptions`,
 and information on using the :keyword:`raise` statement to generate exceptions
 may be found in section :ref:`raise`.
@@ -348,7 +373,9 @@ may be found in section :ref:`raise`.
 The :keyword:`with` statement
 =============================
 
-.. index:: statement: with
+.. index::
+    statement: with
+    single: as; with statement
 
 The :keyword:`with` statement is used to wrap the execution of a block with
 methods defined by a context manager (see section :ref:`context-managers`).
@@ -444,10 +471,10 @@ A function definition defines a user-defined function object (see section
    decorators: `decorator`+
    decorator: "@" `dotted_name` ["(" [`parameter_list` [","]] ")"] NEWLINE
    dotted_name: `identifier` ("." `identifier`)*
-   parameter_list: (`defparameter` ",")*
-                 : ( "*" [`parameter`] ("," `defparameter`)* ["," "**" `parameter`]
-                 : | "**" `parameter`
-                 : | `defparameter` [","] )
+   parameter_list: `defparameter` ("," `defparameter`)* ["," [`parameter_list_starargs`]]
+                 : | `parameter_list_starargs`
+   parameter_list_starargs: "*" [`parameter`] ("," `defparameter`)* ["," ["**" `parameter` [","]]]
+                         : | "**" `parameter` [","]
    parameter: `identifier` [":" `expression`]
    defparameter: `parameter` ["=" `expression`]
    funcname: `identifier`
@@ -634,6 +661,130 @@ can be used to create instance variables with different implementation details.
 
    :pep:`3115` - Metaclasses in Python 3
    :pep:`3129` - Class Decorators
+
+
+Coroutines
+==========
+
+.. versionadded:: 3.5
+
+.. index:: statement: async def
+.. _`async def`:
+
+Coroutine function definition
+-----------------------------
+
+.. productionlist::
+   async_funcdef: [`decorators`] "async" "def" `funcname` "(" [`parameter_list`] ")" ["->" `expression`] ":" `suite`
+
+.. index::
+   keyword: async
+   keyword: await
+
+Execution of Python coroutines can be suspended and resumed at many points
+(see :term:`coroutine`).  In the body of a coroutine, any ``await`` and
+``async`` identifiers become reserved keywords; :keyword:`await` expressions,
+:keyword:`async for` and :keyword:`async with` can only be used in
+coroutine bodies.
+
+Functions defined with ``async def`` syntax are always coroutine functions,
+even if they do not contain ``await`` or ``async`` keywords.
+
+It is a :exc:`SyntaxError` to use :keyword:`yield` expressions in
+``async def`` coroutines.
+
+An example of a coroutine function::
+
+    async def func(param1, param2):
+        do_stuff()
+        await some_coroutine()
+
+
+.. index:: statement: async for
+.. _`async for`:
+
+The :keyword:`async for` statement
+----------------------------------
+
+.. productionlist::
+   async_for_stmt: "async" `for_stmt`
+
+An :term:`asynchronous iterable` is able to call asynchronous code in its
+*iter* implementation, and :term:`asynchronous iterator` can call asynchronous
+code in its *next* method.
+
+The ``async for`` statement allows convenient iteration over asynchronous
+iterators.
+
+The following code::
+
+    async for TARGET in ITER:
+        BLOCK
+    else:
+        BLOCK2
+
+Is semantically equivalent to::
+
+    iter = (ITER)
+    iter = await type(iter).__aiter__(iter)
+    running = True
+    while running:
+        try:
+            TARGET = await type(iter).__anext__(iter)
+        except StopAsyncIteration:
+            running = False
+        else:
+            BLOCK
+    else:
+        BLOCK2
+
+See also :meth:`__aiter__` and :meth:`__anext__` for details.
+
+It is a :exc:`SyntaxError` to use ``async for`` statement outside of an
+:keyword:`async def` function.
+
+
+.. index:: statement: async with
+.. _`async with`:
+
+The :keyword:`async with` statement
+-----------------------------------
+
+.. productionlist::
+   async_with_stmt: "async" `with_stmt`
+
+An :term:`asynchronous context manager` is a :term:`context manager` that is
+able to suspend execution in its *enter* and *exit* methods.
+
+The following code::
+
+    async with EXPR as VAR:
+        BLOCK
+
+Is semantically equivalent to::
+
+    mgr = (EXPR)
+    aexit = type(mgr).__aexit__
+    aenter = type(mgr).__aenter__(mgr)
+    exc = True
+
+    VAR = await aenter
+    try:
+        BLOCK
+    except:
+        if not await aexit(mgr, *sys.exc_info()):
+            raise
+    else:
+        await aexit(mgr, None, None, None)
+
+See also :meth:`__aenter__` and :meth:`__aexit__` for details.
+
+It is a :exc:`SyntaxError` to use ``async with`` statement outside of an
+:keyword:`async def` function.
+
+.. seealso::
+
+   :pep:`492` - Coroutines with async and await syntax
 
 
 .. rubric:: Footnotes

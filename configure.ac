@@ -3,7 +3,7 @@ dnl * Please run autoreconf to test your changes! *
 dnl ***********************************************
 
 # Set VERSION so we only need to edit in one place (i.e., here)
-m4_define(PYTHON_VERSION, 3.4)
+m4_define(PYTHON_VERSION, 3.6)
 
 AC_PREREQ(2.65)
 
@@ -52,6 +52,9 @@ AC_CONFIG_HEADER(pyconfig.h)
 AC_CANONICAL_HOST
 AC_SUBST(build)
 AC_SUBST(host)
+
+# pybuilddir.txt will be created by --generate-posix-vars in the Makefile
+rm -f pybuilddir.txt
 
 if test "$cross_compiling" = yes; then
     AC_MSG_CHECKING([for python interpreter for cross build])
@@ -422,7 +425,7 @@ if test "$cross_compiling" = yes; then
 	esac
 	_PYTHON_HOST_PLATFORM="$MACHDEP${_host_cpu:+-$_host_cpu}"
 fi
-	
+
 # Some systems cannot stand _XOPEN_SOURCE being defined at all; they
 # disable features if it is defined, without any means to access these
 # features as extensions. For these systems, we skip the definition of
@@ -522,6 +525,19 @@ then
   AC_DEFINE(_POSIX_C_SOURCE, 200809L, Define to activate features from IEEE Stds 1003.1-2008)
 fi
 
+# On HP-UX mbstate_t requires _INCLUDE__STDC_A1_SOURCE
+case $ac_sys_system in
+  hp*|HP*)
+    define_stdc_a1=yes;;
+  *)
+    define_stdc_a1=no;;
+esac
+
+if test $define_stdc_a1 = yes
+then
+  AC_DEFINE(_INCLUDE__STDC_A1_SOURCE, 1, Define to include mbstate_t for mbrtowc)
+fi
+
 #
 # SGI compilers allow the specification of the both the ABI and the
 # ISA on the command line.  Depending on the values of these switches,
@@ -576,6 +592,22 @@ AC_ARG_WITH(gcc,
 	*)	without_gcc=no;;
 	esac])
 AC_MSG_RESULT($without_gcc)
+
+AC_MSG_CHECKING(for --with-icc)
+AC_ARG_WITH(icc,
+            AS_HELP_STRING([--with-icc], [build with icc]),
+[
+	case $withval in
+	no)	CC=${CC:-cc}
+		with_icc=no;;
+	yes)	CC=icc
+		CXX=icpc
+		with_icc=yes;;
+	*)	CC=$withval
+		with_icc=$withval;;
+	esac], [
+	with_icc=no])
+AC_MSG_RESULT($with_icc)
 
 # If the user switches compilers, we can't believe the cache
 if test ! -z "$ac_cv_prog_CC" -a ! -z "$CC" -a "$CC" != "$ac_cv_prog_CC"
@@ -648,6 +680,8 @@ then
 	fi
 fi
 AC_PROG_CC
+AC_PROG_CPP
+AC_PROG_GREP
 
 AC_SUBST(CXX)
 AC_SUBST(MAINCC)
@@ -681,6 +715,7 @@ then
         gcc)    AC_PATH_TOOL(CXX, [g++], [g++], [notfound]) ;;
         cc)     AC_PATH_TOOL(CXX, [c++], [c++], [notfound]) ;;
         clang|*/clang)     AC_PATH_TOOL(CXX, [clang++], [clang++], [notfound]) ;;
+        icc|*/icc)         AC_PATH_TOOL(CXX, [icpc], [icpc], [notfound]) ;;
         esac
 	if test "$CXX" = "notfound"
 	then
@@ -703,6 +738,142 @@ then
   If this is not intended, then set CXX on the configure command line.
   ])
 fi
+
+
+MULTIARCH=$($CC --print-multiarch 2>/dev/null)
+AC_SUBST(MULTIARCH)
+
+AC_MSG_CHECKING([for the platform triplet based on compiler characteristics])
+cat >> conftest.c <<EOF
+#undef bfin
+#undef cris
+#undef fr30
+#undef linux
+#undef hppa
+#undef hpux
+#undef i386
+#undef mips
+#undef powerpc
+#undef sparc
+#undef unix
+#if defined(__linux__)
+# if defined(__x86_64__) && defined(__LP64__)
+        x86_64-linux-gnu
+# elif defined(__x86_64__) && defined(__ILP32__)
+        x86_64-linux-gnux32
+# elif defined(__i386__)
+        i386-linux-gnu
+# elif defined(__aarch64__) && defined(__AARCH64EL__)
+#  if defined(__ILP32__)
+        aarch64_ilp32-linux-gnu
+#  else
+        aarch64-linux-gnu
+#  endif
+# elif defined(__aarch64__) && defined(__AARCH64EB__)
+#  if defined(__ILP32__)
+        aarch64_be_ilp32-linux-gnu
+#  else
+        aarch64_be-linux-gnu
+#  endif
+# elif defined(__alpha__)
+        alpha-linux-gnu
+# elif defined(__ARM_EABI__) && defined(__ARM_PCS_VFP)
+#  if defined(__ARMEL__)
+        arm-linux-gnueabihf
+#  else
+        armeb-linux-gnueabihf
+#  endif
+# elif defined(__ARM_EABI__) && !defined(__ARM_PCS_VFP)
+#  if defined(__ARMEL__)
+        arm-linux-gnueabi
+#  else
+        armeb-linux-gnueabi
+#  endif
+# elif defined(__hppa__)
+        hppa-linux-gnu
+# elif defined(__ia64__)
+        ia64-linux-gnu
+# elif defined(__m68k__) && !defined(__mcoldfire__)
+        m68k-linux-gnu
+# elif defined(__mips_hard_float) && defined(_MIPSEL)
+#  if _MIPS_SIM == _ABIO32
+        mipsel-linux-gnu
+#  elif _MIPS_SIM == _ABIN32
+        mips64el-linux-gnuabin32
+#  elif _MIPS_SIM == _ABI64
+        mips64el-linux-gnuabi64
+#  else
+#   error unknown platform triplet
+#  endif
+# elif defined(__mips_hard_float)
+#  if _MIPS_SIM == _ABIO32
+        mips-linux-gnu
+#  elif _MIPS_SIM == _ABIN32
+        mips64-linux-gnuabin32
+#  elif _MIPS_SIM == _ABI64
+        mips64-linux-gnuabi64
+#  else
+#   error unknown platform triplet
+#  endif
+# elif defined(__or1k__)
+        or1k-linux-gnu
+# elif defined(__powerpc__) && defined(__SPE__)
+        powerpc-linux-gnuspe
+# elif defined(__powerpc64__)
+#  if defined(__LITTLE_ENDIAN__)
+        powerpc64le-linux-gnu
+#  else
+        powerpc64-linux-gnu
+#  endif
+# elif defined(__powerpc__)
+        powerpc-linux-gnu
+# elif defined(__s390x__)
+        s390x-linux-gnu
+# elif defined(__s390__)
+        s390-linux-gnu
+# elif defined(__sh__) && defined(__LITTLE_ENDIAN__)
+        sh4-linux-gnu
+# elif defined(__sparc__) && defined(__arch64__)
+        sparc64-linux-gnu
+# elif defined(__sparc__)
+        sparc-linux-gnu
+# else
+#   error unknown platform triplet
+# endif
+#elif defined(__FreeBSD_kernel__)
+# if defined(__LP64__)
+        x86_64-kfreebsd-gnu
+# elif defined(__i386__)
+        i386-kfreebsd-gnu
+# else
+#   error unknown platform triplet
+# endif
+#elif defined(__gnu_hurd__)
+        i386-gnu
+#elif defined(__APPLE__)
+        darwin
+#else
+# error unknown platform triplet
+#endif
+
+EOF
+
+if $CPP conftest.c >conftest.out 2>/dev/null; then
+  PLATFORM_TRIPLET=`grep -v '^#' conftest.out | grep -v '^ *$' | tr -d ' 	'`
+  AC_MSG_RESULT([$PLATFORM_TRIPLET])
+else
+  AC_MSG_RESULT([none])
+fi
+rm -f conftest.c conftest.out
+
+if test x$PLATFORM_TRIPLET != x && test x$MULTIARCH != x; then
+  if test x$PLATFORM_TRIPLET != x$MULTIARCH; then
+    AC_MSG_ERROR([internal configure error for the platform triplet, please file a bug report])
+  fi
+fi 
+PLATDIR=plat-$MACHDEP
+AC_SUBST(PLATDIR)
+AC_SUBST(PLATFORM_TRIPLET)
 
 
 AC_MSG_CHECKING([for -Wl,--no-as-needed])
@@ -771,10 +942,6 @@ hp*|HP*)
     cc|*/cc) CC="$CC -Ae";;
     esac;;
 esac
-
-MULTIARCH=$($CC --print-multiarch 2>/dev/null)
-AC_SUBST(MULTIARCH)
-
 
 AC_SUBST(LIBRARY)
 AC_MSG_CHECKING(LIBRARY)
@@ -915,7 +1082,7 @@ AC_MSG_CHECKING(LDLIBRARY)
 if test "$enable_framework"
 then
   LDLIBRARY='$(PYTHONFRAMEWORKDIR)/Versions/$(VERSION)/$(PYTHONFRAMEWORK)'
-  RUNSHARED=DYLD_FRAMEWORK_PATH="`pwd`:$DYLD_FRAMEWORK_PATH"
+  RUNSHARED=DYLD_FRAMEWORK_PATH=`pwd`${DYLD_FRAMEWORK_PATH:+:${DYLD_FRAMEWORK_PATH}}
   BLDLIBRARY=''
 else
   BLDLIBRARY='$(LDLIBRARY)'
@@ -933,7 +1100,7 @@ if test $enable_shared = "yes"; then
     SunOS*)
 	  LDLIBRARY='libpython$(LDVERSION).so'
 	  BLDLIBRARY='-Wl,-R,$(LIBDIR) -L. -lpython$(LDVERSION)'
-	  RUNSHARED=LD_LIBRARY_PATH=`pwd`:${LD_LIBRARY_PATH}
+	  RUNSHARED=LD_LIBRARY_PATH=`pwd`${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
 	  INSTSONAME="$LDLIBRARY".$SOVERSION
 	  if test "$with_pydebug" != yes
 	  then
@@ -943,12 +1110,7 @@ if test $enable_shared = "yes"; then
     Linux*|GNU*|NetBSD*|FreeBSD*|DragonFly*|OpenBSD*)
 	  LDLIBRARY='libpython$(LDVERSION).so'
 	  BLDLIBRARY='-L. -lpython$(LDVERSION)'
-	  RUNSHARED=LD_LIBRARY_PATH=`pwd`:${LD_LIBRARY_PATH}
-	  case $ac_sys_system in
-	      FreeBSD*)
-		SOVERSION=`echo $SOVERSION|cut -d "." -f 1`
-		;;
-	  esac
+	  RUNSHARED=LD_LIBRARY_PATH=`pwd`${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
 	  INSTSONAME="$LDLIBRARY".$SOVERSION
 	  if test "$with_pydebug" != yes
           then
@@ -965,16 +1127,16 @@ if test $enable_shared = "yes"; then
 			;;
 	  esac
 	  BLDLIBRARY='-Wl,+b,$(LIBDIR) -L. -lpython$(LDVERSION)'
-	  RUNSHARED=SHLIB_PATH=`pwd`:${SHLIB_PATH}
+	  RUNSHARED=SHLIB_PATH=`pwd`${SHLIB_PATH:+:${SHLIB_PATH}}
 	  ;;
     Darwin*)
     	LDLIBRARY='libpython$(LDVERSION).dylib'
 	BLDLIBRARY='-L. -lpython$(LDVERSION)'
-	RUNSHARED='DYLD_LIBRARY_PATH=`pwd`:${DYLD_LIBRARY_PATH}'
+	RUNSHARED=DYLD_LIBRARY_PATH=`pwd`${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}
 	;;
     AIX*)
 	LDLIBRARY='libpython$(LDVERSION).so'
-	RUNSHARED=LIBPATH=`pwd`:${LIBPATH}
+	RUNSHARED=LIBPATH=`pwd`${LIBPATH:+:${LIBPATH}}
 	;;
 
   esac
@@ -1023,6 +1185,15 @@ else
     ASDLGEN="$PYTHON"
 fi
 
+AC_SUBST(OPCODEHGEN)
+AC_CHECK_PROGS(PYTHON, python$PACKAGE_VERSION python3 python, not-found)
+if test "$PYTHON" = not-found; then
+    OPCODEHGEN="@echo python: $PYTHON! cannot run Tools/scripts/generate_opcode_h.py"
+else
+    OPCODEHGEN="$PYTHON"
+fi
+
+
 
 case $MACHDEP in
 bsdos*|hp*|HP*)
@@ -1064,6 +1235,55 @@ else AC_MSG_RESULT(no); Py_DEBUG='false'
 fi],
 [AC_MSG_RESULT(no)])
 
+# Enable PGO flags.
+AC_SUBST(PGO_PROF_GEN_FLAG)
+AC_SUBST(PGO_PROF_USE_FLAG)
+AC_SUBST(LLVM_PROF_MERGER)
+AC_SUBST(LLVM_PROF_FILE)
+AC_SUBST(LLVM_PROF_ERR)
+AC_SUBST(LLVM_PROF_FOUND)
+AC_CHECK_PROG(LLVM_PROF_FOUND, llvm-profdata, found, not-found)
+LLVM_PROF_ERR=no
+case $CC in
+  *clang*)
+    # Any changes made here should be reflected in the GCC+Darwin case below
+    PGO_PROF_GEN_FLAG="-fprofile-instr-generate"
+    PGO_PROF_USE_FLAG="-fprofile-instr-use=code.profclangd"
+    LLVM_PROF_MERGER="llvm-profdata merge -output=code.profclangd *.profclangr"
+    LLVM_PROF_FILE="LLVM_PROFILE_FILE=\"code-%p.profclangr\""
+    if test $LLVM_PROF_FOUND = not-found
+    then
+      LLVM_PROF_ERR=yes
+    fi
+    ;;
+  *gcc*)
+    case $ac_sys_system in
+      Darwin*)
+        PGO_PROF_GEN_FLAG="-fprofile-instr-generate"
+        PGO_PROF_USE_FLAG="-fprofile-instr-use=code.profclangd"
+        LLVM_PROF_MERGER="llvm-profdata merge -output=code.profclangd *.profclangr"
+        LLVM_PROF_FILE="LLVM_PROFILE_FILE=\"code-%p.profclangr\""
+        if test $LLVM_PROF_FOUND = not-found
+        then
+          LLVM_PROF_ERR=yes
+        fi
+        ;;
+      *)
+        PGO_PROF_GEN_FLAG="-fprofile-generate"
+        PGO_PROF_USE_FLAG="-fprofile-use -fprofile-correction"
+        LLVM_PROF_MERGER="true"
+        LLVM_PROF_FILE=""
+        ;;
+    esac
+    ;;
+  *icc*)
+    PGO_PROF_GEN_FLAG="-prof-gen"
+    PGO_PROF_USE_FLAG="-prof-use"
+    LLVM_PROF_MERGER="true"
+    LLVM_PROF_FILE=""
+    ;;
+esac
+
 # XXX Shouldn't the code above that fiddles with BASECFLAGS and OPT be
 # merged with this chunk of code?
 
@@ -1103,7 +1323,11 @@ then
 	    if test "$Py_DEBUG" = 'true' ; then
 		# Optimization messes up debuggers, so turn it off for
 		# debug builds.
-		OPT="-g -O0 -Wall $STRICT_PROTO"
+                if "$CC" -v --help 2>/dev/null |grep -- -Og > /dev/null; then
+                    OPT="-g -Og -Wall $STRICT_PROTO"
+                else
+                    OPT="-g -O0 -Wall $STRICT_PROTO"
+                fi
 	    else
 		OPT="-g $WRAP -O3 -Wall $STRICT_PROTO"
 	    fi
@@ -1125,6 +1349,7 @@ then
 fi
 
 AC_SUBST(BASECFLAGS)
+AC_SUBST(CFLAGS_NODIST)
 
 # The -arch flags for universal builds on OSX
 UNIVERSAL_ARCH_FLAGS=
@@ -1168,6 +1393,13 @@ yes)
       BASECFLAGS="$BASECFLAGS -fno-strict-aliasing"
     fi
 
+    # ICC doesn't recognize the option, but only emits a warning
+    ## XXX does it emit an unused result warning and can it be disabled?
+    case "$CC" in
+    *icc*)
+    ac_cv_disable_unused_result_warning=no
+    ;;
+    *)
     AC_MSG_CHECKING(if we can turn off $CC unused result warning)
      ac_save_cc="$CC"
      CC="$CC -Wunused-result -Werror"
@@ -1184,6 +1416,8 @@ yes)
      CFLAGS="$save_CFLAGS"
      CC="$ac_save_cc"
     AC_MSG_RESULT($ac_cv_disable_unused_result_warning)
+    ;;
+    esac
 
     if test $ac_cv_disable_unused_result_warning = yes
     then
@@ -1209,7 +1443,53 @@ yes)
 
     if test $ac_cv_declaration_after_statement_warning = yes
     then
-      BASECFLAGS="$BASECFLAGS -Werror=declaration-after-statement"
+      CFLAGS_NODIST="$CFLAGS_NODIST -Werror=declaration-after-statement"
+    fi
+
+    AC_MSG_CHECKING(if we can turn on $CC mixed sign comparison warning)
+     ac_save_cc="$CC"
+     CC="$CC -Wsign-compare"
+     save_CFLAGS="$CFLAGS"
+     AC_CACHE_VAL(ac_cv_enable_sign_compare_warning,
+       AC_COMPILE_IFELSE(
+         [
+	   AC_LANG_PROGRAM([[]], [[]])
+	 ],[
+           ac_cv_enable_sign_compare_warning=yes
+	 ],[
+           ac_cv_enable_sign_compare_warning=no
+	 ]))
+     CFLAGS="$save_CFLAGS"
+     CC="$ac_save_cc"
+    AC_MSG_RESULT($ac_cv_enable_sign_compare_warning)
+
+    if test $ac_cv_enable_sign_compare_warning = yes
+    then
+      BASECFLAGS="$BASECFLAGS -Wsign-compare"
+    fi
+
+    AC_MSG_CHECKING(if we can turn on $CC unreachable code warning)
+     ac_save_cc="$CC"
+     CC="$CC -Wunreachable-code"
+     save_CFLAGS="$CFLAGS"
+     AC_CACHE_VAL(ac_cv_enable_unreachable_code_warning,
+       AC_COMPILE_IFELSE(
+         [
+	   AC_LANG_PROGRAM([[]], [[]])
+	 ],[
+           ac_cv_enable_unreachable_code_warning=yes
+	 ],[
+           ac_cv_enable_unreachable_code_warning=no
+	 ]))
+     CFLAGS="$save_CFLAGS"
+     CC="$ac_save_cc"
+    AC_MSG_RESULT($ac_cv_enable_unreachable_code_warning)
+
+    # Don't enable unreachable code warning in debug mode, since it usually
+    # results in non-standard code paths.
+    if test $ac_cv_enable_unreachable_code_warning = yes && test "$Py_DEBUG" != "true"
+    then
+      BASECFLAGS="$BASECFLAGS -Wunreachable-code"
     fi
 
     # if using gcc on alpha, use -mieee to get (near) full IEEE 754
@@ -1305,10 +1585,16 @@ yes)
         # 4. If we are running on OS X 10.2 or earlier, good luck!
 
         AC_MSG_CHECKING(which MACOSX_DEPLOYMENT_TARGET to use)
-        cur_target=`sw_vers -productVersion | sed 's/\(10\.[[0-9]]*\).*/\1/'`
-        if test ${cur_target} '>' 10.2 && \
-           test ${cur_target} '<' 10.6
+        cur_target_major=`sw_vers -productVersion | \
+                sed 's/\([[0-9]]*\)\.\([[0-9]]*\).*/\1/'`
+        cur_target_minor=`sw_vers -productVersion | \
+                sed 's/\([[0-9]]*\)\.\([[0-9]]*\).*/\2/'`
+        cur_target="${cur_target_major}.${cur_target_minor}"
+        if test ${cur_target_major} -eq 10 && \
+           test ${cur_target_minor} -ge 3 && \
+           test ${cur_target_minor} -le 5
         then
+            # OS X 10.3 through 10.5
             cur_target=10.3
             if test ${enable_universalsdk}
             then
@@ -1351,6 +1637,13 @@ yes)
 	BASECFLAGS="$BASECFLAGS -belf -Ki486 -DSCO5"
 	;;
     esac
+    ;;
+esac
+
+# ICC needs -fp-model strict or floats behave badly
+case "$CC" in
+*icc*)
+    CFLAGS_NODIST="$CFLAGS_NODIST -fp-model strict"
     ;;
 esac
 
@@ -1533,11 +1826,9 @@ dnl AC_MSG_RESULT($cpp_type)
 
 # checks for header files
 AC_HEADER_STDC
-ac_save_cppflags="$CPPFLAGS"
-CPPFLAGS="$CPPFLAGS -I/usr/include/ncursesw"
-AC_CHECK_HEADERS(asm/types.h conio.h curses.h direct.h dlfcn.h errno.h \
+AC_CHECK_HEADERS(asm/types.h conio.h direct.h dlfcn.h errno.h \
 fcntl.h grp.h \
-ieeefp.h io.h langinfo.h libintl.h ncurses.h process.h pthread.h \
+ieeefp.h io.h langinfo.h libintl.h process.h pthread.h \
 sched.h shadow.h signal.h stdint.h stropts.h termios.h \
 unistd.h utime.h \
 poll.h sys/devpoll.h sys/epoll.h sys/poll.h \
@@ -1549,7 +1840,6 @@ sys/times.h sys/types.h sys/uio.h sys/un.h sys/utsname.h sys/wait.h pty.h \
 libutil.h sys/resource.h netpacket/packet.h sysexits.h bluetooth.h \
 bluetooth/bluetooth.h linux/tipc.h spawn.h util.h alloca.h endian.h \
 sys/endian.h)
-CPPFLAGS=$ac_save_cppflags
 AC_HEADER_DIRENT
 AC_HEADER_MAJOR
 
@@ -1566,14 +1856,6 @@ AC_CHECK_HEADERS([net/if.h], [], [],
 #endif
 #ifdef HAVE_SYS_SOCKET_H
 # include <sys/socket.h>
-#endif
-])
-
-
-# On Solaris, term.h requires curses.h
-AC_CHECK_HEADERS(term.h,,,[
-#ifdef HAVE_CURSES_H
-#include <curses.h>
 #endif
 ])
 
@@ -2015,12 +2297,14 @@ then
 		# Use -undefined dynamic_lookup whenever possible (10.3 and later).
 		# This allows an extension to be used in any Python
 
-		if test ${MACOSX_DEPLOYMENT_TARGET} '>' 10.2
+		dep_target_major=`echo ${MACOSX_DEPLOYMENT_TARGET} | \
+				sed 's/\([[0-9]]*\)\.\([[0-9]]*\).*/\1/'`
+		dep_target_minor=`echo ${MACOSX_DEPLOYMENT_TARGET} | \
+				sed 's/\([[0-9]]*\)\.\([[0-9]]*\).*/\2/'`
+		if test ${dep_target_major} -eq 10 && \
+		   test ${dep_target_minor} -le 2
 		then
-			LDSHARED='$(CC) -bundle -undefined dynamic_lookup'
-			LDCXXSHARED='$(CXX) -bundle -undefined dynamic_lookup'
-			BLDSHARED="$LDSHARED"
-		else
+			# building for OS X 10.0 through 10.2
 			LDSHARED='$(CC) -bundle'
 			LDCXXSHARED='$(CXX) -bundle'
 			if test "$enable_framework" ; then
@@ -2034,6 +2318,11 @@ then
 				LDSHARED="$LDSHARED "'-bundle_loader $(BINDIR)/python$(VERSION)$(EXE)'
 				LDCXXSHARED="$LDCXXSHARED "'-bundle_loader $(BINDIR)/python$(VERSION)$(EXE)'
 			fi
+		else
+			# building for OS X 10.3 and later
+			LDSHARED='$(CC) -bundle -undefined dynamic_lookup'
+			LDCXXSHARED='$(CXX) -bundle -undefined dynamic_lookup'
+			BLDSHARED="$LDSHARED"
 		fi
 		;;
 	Linux*|GNU*|QNX*)
@@ -2219,6 +2508,9 @@ AC_MSG_RESULT($SHLIBS)
 AC_CHECK_LIB(sendfile, sendfile)
 AC_CHECK_LIB(dl, dlopen)	# Dynamic linking for SunOS/Solaris and SYSV
 AC_CHECK_LIB(dld, shl_load)	# Dynamic linking for HP-UX
+AC_CHECK_LIB(crypto, RAND_egd,
+             AC_DEFINE(HAVE_RAND_EGD, 1,
+             [Define if the libcrypto has RAND_egd]))
 
 # only check for sem_init if thread support is requested
 if test "$with_threads" = "yes" -o -z "$with_threads"; then
@@ -2303,6 +2595,17 @@ esac
 ],
 [AC_MSG_RESULT(default)])
 
+AC_MSG_CHECKING(for --with-address-sanitizer)
+AC_ARG_WITH(address_sanitizer,
+            AS_HELP_STRING([--with-address-sanitizer],
+                           [enable AddressSanitizer]),
+[
+AC_MSG_RESULT($withval)
+BASECFLAGS="-fsanitize=address -fno-omit-frame-pointer $BASECFLAGS"
+LDFLAGS="-fsanitize=address $LDFLAGS"
+],
+[AC_MSG_RESULT(no)])
+
 # Most SVR4 platforms (e.g. Solaris) need -lsocket and -lnsl.
 AC_CHECK_LIB(nsl, t_open, [LIBS="-lnsl $LIBS"]) # SVR4
 AC_CHECK_LIB(socket, socket, [LIBS="-lsocket $LIBS"], [], $LIBS) # SVR4 sockets
@@ -2316,7 +2619,7 @@ LIBS="$withval $LIBS"
 ],
 [AC_MSG_RESULT(no)])
 
-AC_PATH_TOOL([PKG_CONFIG], [pkg-config])
+PKG_PROG_PKG_CONFIG
 
 # Check for use of the system expat library
 AC_MSG_CHECKING(for --with-system-expat)
@@ -2786,6 +3089,16 @@ if test "$ipv6" = "yes" -a "$ipv6lib" != "none"; then
 	fi
 fi
 
+AC_MSG_CHECKING(for CAN_RAW_FD_FRAMES)
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ /* CAN_RAW_FD_FRAMES available check */
+#include <linux/can/raw.h>]],
+[[int can_raw_fd_frames = CAN_RAW_FD_FRAMES;]])],[
+  AC_DEFINE(HAVE_LINUX_CAN_RAW_FD_FRAMES, 1, [Define if compiling using Linux 3.6 or later.])
+  AC_MSG_RESULT(yes)
+],[
+  AC_MSG_RESULT(no)
+])
+
 AC_MSG_CHECKING(for OSX 10.5 SDK or later)
 AC_COMPILE_IFELSE([
   AC_LANG_PROGRAM([[#include <Carbon/Carbon.h>]], [[FSIORefNum fRef = 0]])
@@ -2916,7 +3229,7 @@ fi
 AC_CHECK_FUNCS(alarm accept4 setitimer getitimer bind_textdomain_codeset chown \
  clock confstr ctermid dup3 execv faccessat fchmod fchmodat fchown fchownat \
  fexecve fdopendir fork fpathconf fstatat ftime ftruncate futimesat \
- futimens futimes gai_strerror \
+ futimens futimes gai_strerror getentropy \
  getgrouplist getgroups getlogin getloadavg getpeername getpgid getpid \
  getpriority getresuid getresgid getpwent getspnam getspent getsid getwd \
  if_nameindex \
@@ -3234,6 +3547,7 @@ AC_CHECK_FUNCS(gettimeofday,
 
 AC_CHECK_FUNCS(clock_gettime, [], [
     AC_CHECK_LIB(rt, clock_gettime, [
+        LIBS="$LIBS -lrt"
         AC_DEFINE(HAVE_CLOCK_GETTIME, 1)
         AC_DEFINE(TIMEMODULE_LIB, [rt],
                   [Library needed by timemodule.c: librt may be needed for clock_gettime()])
@@ -3678,7 +3992,7 @@ fi],
 # **************************************
 
 AC_MSG_CHECKING(for x64 gcc inline assembler)
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[]], [[
+AC_LINK_IFELSE(   [AC_LANG_PROGRAM([[]], [[
   __asm__ __volatile__ ("movq %rcx, %rax");
 ]])],[have_gcc_asm_for_x64=yes],[have_gcc_asm_for_x64=no])
 AC_MSG_RESULT($have_gcc_asm_for_x64)
@@ -3776,7 +4090,7 @@ fi
 # so we try it on all platforms.
 
 AC_MSG_CHECKING(whether we can use gcc inline assembler to get and set x87 control word)
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[]], [[
+AC_LINK_IFELSE(   [AC_LANG_PROGRAM([[]], [[
   unsigned short cw;
   __asm__ __volatile__ ("fnstcw %0" : "=m" (cw));
   __asm__ __volatile__ ("fldcw %0" : : "m" (cw));
@@ -3786,6 +4100,19 @@ if test "$have_gcc_asm_for_x87" = yes
 then
     AC_DEFINE(HAVE_GCC_ASM_FOR_X87, 1,
     [Define if we can use gcc inline assembler to get and set x87 control word])
+fi
+
+AC_MSG_CHECKING(whether we can use gcc inline assembler to get and set mc68881 fpcr)
+AC_LINK_IFELSE(   [AC_LANG_PROGRAM([[]], [[
+  unsigned int fpcr;
+  __asm__ __volatile__ ("fmove.l %%fpcr,%0" : "=g" (fpcr));
+  __asm__ __volatile__ ("fmove.l %0,%%fpcr" : : "g" (fpcr));
+]])],[have_gcc_asm_for_mc68881=yes],[have_gcc_asm_for_mc68881=no])
+AC_MSG_RESULT($have_gcc_asm_for_mc68881)
+if test "$have_gcc_asm_for_mc68881" = yes
+then
+    AC_DEFINE(HAVE_GCC_ASM_FOR_MC68881, 1,
+    [Define if we can use gcc inline assembler to get and set mc68881 fpcr])
 fi
 
 # Detect whether system arithmetic is subject to x87-style double
@@ -4069,12 +4396,12 @@ AC_SUBST(SOABI)
 AC_MSG_CHECKING(ABIFLAGS)
 AC_MSG_RESULT($ABIFLAGS)
 AC_MSG_CHECKING(SOABI)
-SOABI='cpython-'`echo $VERSION | tr -d .`${ABIFLAGS}
+SOABI='cpython-'`echo $VERSION | tr -d .`${ABIFLAGS}${PLATFORM_TRIPLET:+-$PLATFORM_TRIPLET}
 AC_MSG_RESULT($SOABI)
 
 AC_SUBST(EXT_SUFFIX)
 case $ac_sys_system in
-    Linux*|GNU*)
+    Linux*|GNU*|Darwin)
 	EXT_SUFFIX=.${SOABI}${SHLIB_SUFFIX};;
     *)
 	EXT_SUFFIX=${SHLIB_SUFFIX};;
@@ -4086,7 +4413,7 @@ AC_MSG_RESULT($LDVERSION)
 
 dnl define LIBPL after ABIFLAGS and LDVERSION is defined.
 AC_SUBST(PY_ENABLE_SHARED)
-LIBPL="${prefix}/lib/python${VERSION}/config-${LDVERSION}"
+LIBPL='$(prefix)'"/lib/python${VERSION}/config-${LDVERSION}"
 AC_SUBST(LIBPL)
 
 # Check whether right shifting a negative integer extends the sign bit
@@ -4208,6 +4535,10 @@ then
   AC_DEFINE(HAVE_RL_CATCH_SIGNAL, 1,
   [Define if you can turn off readline's signal handling.]), )
 fi
+
+AC_CHECK_LIB(readline, append_history,
+	AC_DEFINE(HAVE_RL_APPEND_HISTORY, 1,
+        [Define if readline supports append_history]), ,$READLINE_LIBS)
 
 # End of readline checks: restore LIBS
 LIBS=$LIBS_no_readline
@@ -4378,8 +4709,19 @@ then
   [Define if you have struct stat.st_mtimensec])
 fi
 
+# first curses header check
 ac_save_cppflags="$CPPFLAGS"
 CPPFLAGS="$CPPFLAGS -I/usr/include/ncursesw"
+
+AC_CHECK_HEADERS(curses.h ncurses.h)
+
+# On Solaris, term.h requires curses.h
+AC_CHECK_HEADERS(term.h,,,[
+#ifdef HAVE_CURSES_H
+#include <curses.h>
+#endif
+])
+
 # On HP/UX 11.0, mvwdelch is a block with a return statement
 AC_MSG_CHECKING(whether mvwdelch is an expression)
 AC_CACHE_VAL(ac_cv_mvwdelch_is_expression,
@@ -4675,7 +5017,7 @@ do
 done
 
 AC_SUBST(SRCDIRS)
-SRCDIRS="Parser Grammar Objects Python Modules Mac"
+SRCDIRS="Parser Grammar Objects Python Modules Mac Programs"
 AC_MSG_CHECKING(for build directories)
 for dir in $SRCDIRS; do
     if test ! -d $dir; then
@@ -4767,6 +5109,47 @@ if test "$have_gcc_asm_for_x87" = yes; then
     esac
 fi
 
+# Check for stdatomic.h
+AC_MSG_CHECKING(for stdatomic.h)
+AC_LINK_IFELSE(
+[
+  AC_LANG_SOURCE([[
+    #include <stdatomic.h>
+    atomic_int value = ATOMIC_VAR_INIT(1);
+    _Atomic void *py_atomic_address = (void*) &value;
+    int main() {
+      int loaded_value = atomic_load(&value);
+      return 0;
+    }
+  ]])
+],[have_stdatomic_h=yes],[have_stdatomic_h=no])
+
+AC_MSG_RESULT($have_stdatomic_h)
+
+if test "$have_stdatomic_h" = yes; then
+    AC_DEFINE(HAVE_STD_ATOMIC, 1,
+              [Has stdatomic.h, atomic_int and _Atomic void* types work])
+fi
+
+# Check for GCC >= 4.7 __atomic builtins
+AC_MSG_CHECKING(for GCC >= 4.7 __atomic builtins)
+AC_LINK_IFELSE(
+[
+  AC_LANG_SOURCE([[
+    volatile int val = 1;
+    int main() {
+      __atomic_load_n(&val, __ATOMIC_SEQ_CST);
+      return 0;
+    }
+  ]])
+],[have_builtin_atomic=yes],[have_builtin_atomic=no])
+
+AC_MSG_RESULT($have_builtin_atomic)
+
+if test "$have_builtin_atomic" = yes; then
+    AC_DEFINE(HAVE_BUILTIN_ATOMIC, 1, [Has builtin atomics])
+fi
+
 # ensurepip option
 AC_MSG_CHECKING(for ensurepip)
 AC_ARG_WITH(ensurepip,
@@ -4781,6 +5164,75 @@ AS_CASE($with_ensurepip,
     [AC_MSG_ERROR([--with-ensurepip=upgrade|install|no])])
 AC_MSG_RESULT($ENSUREPIP)
 AC_SUBST(ENSUREPIP)
+
+# check if the dirent structure of a d_type field and DT_UNKNOWN is defined
+AC_MSG_CHECKING(if the dirent structure of a d_type field)
+AC_LINK_IFELSE(
+[
+  AC_LANG_SOURCE([[
+    #include <dirent.h>
+
+    int main() {
+      struct dirent entry;
+      return entry.d_type == DT_UNKNOWN;
+    }
+  ]])
+],[have_dirent_d_type=yes],[have_dirent_d_type=no])
+AC_MSG_RESULT($have_dirent_d_type)
+
+if test "$have_dirent_d_type" = yes; then
+    AC_DEFINE(HAVE_DIRENT_D_TYPE, 1,
+              [Define to 1 if the dirent structure has a d_type field])
+fi
+
+# check if the Linux getrandom() syscall is available
+AC_MSG_CHECKING(for the Linux getrandom() syscall)
+AC_LINK_IFELSE(
+[
+  AC_LANG_SOURCE([[
+    #include <sys/syscall.h>
+
+    int main() {
+        char buffer[1];
+        const size_t buflen = sizeof(buffer);
+        const int flags = 0;
+        /* ignore the result, Python checks for ENOSYS at runtime */
+        (void)syscall(SYS_getrandom, buffer, buflen, flags);
+        return 0;
+    }
+  ]])
+],[have_getrandom_syscall=yes],[have_getrandom_syscall=no])
+AC_MSG_RESULT($have_getrandom_syscall)
+
+if test "$have_getrandom_syscall" = yes; then
+    AC_DEFINE(HAVE_GETRANDOM_SYSCALL, 1,
+              [Define to 1 if the Linux getrandom() syscall is available])
+fi
+
+# check if the getrandom() function is available
+# the test was written for the Solaris function of <sys/random.h>
+AC_MSG_CHECKING(for the getrandom() function)
+AC_LINK_IFELSE(
+[
+  AC_LANG_SOURCE([[
+    #include <sys/random.h>
+
+    int main() {
+        char buffer[1];
+        const size_t buflen = sizeof(buffer);
+        const int flags = 0;
+        /* ignore the result, Python checks for ENOSYS at runtime */
+        (void)getrandom(buffer, buflen, flags);
+        return 0;
+    }
+  ]])
+],[have_getrandom=yes],[have_getrandom=no])
+AC_MSG_RESULT($have_getrandom)
+
+if test "$have_getrandom" = yes; then
+    AC_DEFINE(HAVE_GETRANDOM, 1,
+              [Define to 1 if the getrandom() function is available])
+fi
 
 # generate output files
 AC_CONFIG_FILES(Makefile.pre Modules/Setup.config Misc/python.pc Misc/python-config.sh)

@@ -15,7 +15,7 @@
 Model interface, with an API similar to that in other languages.  It is intended
 to be simpler than the full DOM and also significantly smaller.  Users who are
 not already proficient with the DOM should consider using the
-:mod:`xml.etree.ElementTree` module for their XML processing instead
+:mod:`xml.etree.ElementTree` module for their XML processing instead.
 
 
 .. warning::
@@ -54,7 +54,7 @@ instead:
 
 .. function:: parseString(string, parser=None)
 
-   Return a :class:`Document` that represents the *string*. This method creates a
+   Return a :class:`Document` that represents the *string*. This method creates an
    :class:`io.StringIO` object for the string and passes that on to :func:`parse`.
 
 Both functions return a :class:`Document` object representing the content of the
@@ -252,4 +252,4 @@ utility to most DOM users.
    "UTF8" is not valid in an XML document's declaration, even though
    Python accepts it as an encoding name.
    See http://www.w3.org/TR/2006/REC-xml11-20060816/#NT-EncodingDecl
-   and http://www.iana.org/assignments/character-sets .
+   and http://www.iana.org/assignments/character-sets/character-sets.xhtml.

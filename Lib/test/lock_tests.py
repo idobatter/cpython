@@ -7,6 +7,7 @@ import time
 from _thread import start_new_thread, TIMEOUT_MAX
 import threading
 import unittest
+import weakref
 
 from test import support
 
@@ -39,8 +40,12 @@ class Bunch(object):
                 self.finished.append(tid)
                 while not self._can_exit:
                     _wait()
-        for i in range(n):
-            start_new_thread(task, ())
+        try:
+            for i in range(n):
+                start_new_thread(task, ())
+        except:
+            self._can_exit = True
+            raise
 
     def wait_for_started(self):
         while len(self.started) < self.n:
@@ -82,7 +87,13 @@ class BaseLockTests(BaseTestCase):
 
     def test_repr(self):
         lock = self.locktype()
-        repr(lock)
+        self.assertRegex(repr(lock), "<unlocked .* object (.*)?at .*>")
+        del lock
+
+    def test_locked_repr(self):
+        lock = self.locktype()
+        lock.acquire()
+        self.assertRegex(repr(lock), "<locked .* object (.*)?at .*>")
         del lock
 
     def test_acquire_destroy(self):
@@ -187,6 +198,17 @@ class BaseLockTests(BaseTestCase):
         Bunch(f, 1).wait_for_finished()
         self.assertFalse(results[0])
         self.assertTimeout(results[1], 0.5)
+
+    def test_weakref_exists(self):
+        lock = self.locktype()
+        ref = weakref.ref(lock)
+        self.assertIsNotNone(ref())
+
+    def test_weakref_deleted(self):
+        lock = self.locktype()
+        ref = weakref.ref(lock)
+        del lock
+        self.assertIsNone(ref())
 
 
 class LockTests(BaseLockTests):
@@ -383,6 +405,14 @@ class EventTests(BaseTestCase):
         evt.clear()
         b.wait_for_finished()
         self.assertEqual(results, [True] * N)
+
+    def test_reset_internal_locks(self):
+        evt = self.eventtype()
+        old_lock = evt._cond._lock
+        evt._reset_internal_locks()
+        new_lock = evt._cond._lock
+        self.assertIsNot(new_lock, old_lock)
+        self.assertIs(type(new_lock), type(old_lock))
 
 
 class ConditionTests(BaseTestCase):

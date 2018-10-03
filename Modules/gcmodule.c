@@ -25,6 +25,7 @@
 
 #include "Python.h"
 #include "frameobject.h"        /* for PyFrame_ClearFreeList */
+#include "pytime.h"             /* for _PyTime_GetMonotonicClock() */
 
 /* Get an object's GC head */
 #define AS_GC(o) ((PyGC_Head *)(o)-1)
@@ -166,7 +167,6 @@ static Py_ssize_t long_lived_pending = 0;
                 DEBUG_UNCOLLECTABLE | \
                 DEBUG_SAVEALL
 static int debug;
-static PyObject *tmod = NULL;
 
 /* Running stats per generation */
 struct gc_generation_stats {
@@ -738,7 +738,7 @@ handle_weakrefs(PyGC_Head *unreachable, PyGC_Head *old)
 }
 
 static void
-debug_cycle(char *msg, PyObject *op)
+debug_cycle(const char *msg, PyObject *op)
 {
     PySys_FormatStderr("gc: %s <%s %p>\n",
                        msg, Py_TYPE(op)->tp_name, op);
@@ -776,28 +776,40 @@ handle_legacy_finalizers(PyGC_Head *finalizers, PyGC_Head *old)
     return 0;
 }
 
+/* Run first-time finalizers (if any) on all the objects in collectable.
+ * Note that this may remove some (or even all) of the objects from the
+ * list, due to refcounts falling to 0.
+ */
 static void
-finalize_garbage(PyGC_Head *collectable, PyGC_Head *old)
+finalize_garbage(PyGC_Head *collectable)
 {
     destructor finalize;
-    PyGC_Head *gc = collectable->gc.gc_next;
+    PyGC_Head seen;
 
-    for (; gc != collectable; gc = gc->gc.gc_next) {
+    /* While we're going through the loop, `finalize(op)` may cause op, or
+     * other objects, to be reclaimed via refcounts falling to zero.  So
+     * there's little we can rely on about the structure of the input
+     * `collectable` list across iterations.  For safety, we always take the
+     * first object in that list and move it to a temporary `seen` list.
+     * If objects vanish from the `collectable` and `seen` lists we don't
+     * care.
+     */
+    gc_list_init(&seen);
+
+    while (!gc_list_is_empty(collectable)) {
+        PyGC_Head *gc = collectable->gc.gc_next;
         PyObject *op = FROM_GC(gc);
-
+        gc_list_move(gc, &seen);
         if (!_PyGCHead_FINALIZED(gc) &&
-            PyType_HasFeature(Py_TYPE(op), Py_TPFLAGS_HAVE_FINALIZE) &&
-            (finalize = Py_TYPE(op)->tp_finalize) != NULL) {
+                PyType_HasFeature(Py_TYPE(op), Py_TPFLAGS_HAVE_FINALIZE) &&
+                (finalize = Py_TYPE(op)->tp_finalize) != NULL) {
             _PyGCHead_SET_FINALIZED(gc, 1);
             Py_INCREF(op);
             finalize(op);
-            if (Py_REFCNT(op) == 1) {
-                /* op will be destroyed */
-                gc = gc->gc.gc_prev;
-            }
             Py_DECREF(op);
         }
     }
+    gc_list_merge(&seen, collectable);
 }
 
 /* Walk the collectable list and check that they are really unreachable
@@ -882,26 +894,6 @@ clear_freelists(void)
     (void)PySet_ClearFreeList();
 }
 
-static double
-get_time(void)
-{
-    double result = 0;
-    if (tmod != NULL) {
-        _Py_IDENTIFIER(time);
-
-        PyObject *f = _PyObject_CallMethodId(tmod, &PyId_time, NULL);
-        if (f == NULL) {
-            PyErr_Clear();
-        }
-        else {
-            if (PyFloat_Check(f))
-                result = PyFloat_AsDouble(f);
-            Py_DECREF(f);
-        }
-    }
-    return result;
-}
-
 /* This is the main function.  Read this to understand how the
  * collection process works. */
 static Py_ssize_t
@@ -916,7 +908,8 @@ collect(int generation, Py_ssize_t *n_collected, Py_ssize_t *n_uncollectable,
     PyGC_Head unreachable; /* non-problematic unreachable trash */
     PyGC_Head finalizers;  /* objects with, & reachable from, __del__ */
     PyGC_Head *gc;
-    double t1 = 0.0;
+    _PyTime_t t1 = 0;   /* initialize to prevent a compiler warning */
+
     struct gc_generation_stats *stats = &generation_stats[generation];
 
     if (debug & DEBUG_STATS) {
@@ -924,9 +917,10 @@ collect(int generation, Py_ssize_t *n_collected, Py_ssize_t *n_uncollectable,
                           generation);
         PySys_WriteStderr("gc: objects in each generation:");
         for (i = 0; i < NUM_GENERATIONS; i++)
-            PySys_WriteStderr(" %" PY_FORMAT_SIZE_T "d",
+            PySys_FormatStderr(" %zd",
                               gc_list_size(GEN_HEAD(i)));
-        t1 = get_time();
+        t1 = _PyTime_GetMonotonicClock();
+
         PySys_WriteStderr("\n");
     }
 
@@ -1006,7 +1000,7 @@ collect(int generation, Py_ssize_t *n_collected, Py_ssize_t *n_uncollectable,
     m += handle_weakrefs(&unreachable, old);
 
     /* Call tp_finalize on objects which have one. */
-    finalize_garbage(&unreachable, old);
+    finalize_garbage(&unreachable);
 
     if (check_garbage(&unreachable)) {
         revive_garbage(&unreachable);
@@ -1030,19 +1024,16 @@ collect(int generation, Py_ssize_t *n_collected, Py_ssize_t *n_uncollectable,
             debug_cycle("uncollectable", FROM_GC(gc));
     }
     if (debug & DEBUG_STATS) {
-        double t2 = get_time();
+        _PyTime_t t2 = _PyTime_GetMonotonicClock();
+
         if (m == 0 && n == 0)
             PySys_WriteStderr("gc: done");
         else
-            PySys_WriteStderr(
-                "gc: done, "
-                "%" PY_FORMAT_SIZE_T "d unreachable, "
-                "%" PY_FORMAT_SIZE_T "d uncollectable",
+            PySys_FormatStderr(
+                "gc: done, %zd unreachable, %zd uncollectable",
                 n+m, n);
-        if (t1 && t2) {
-            PySys_WriteStderr(", %.4fs elapsed", t2-t1);
-        }
-        PySys_WriteStderr(".\n");
+        PySys_WriteStderr(", %.4fs elapsed\n",
+                          _PyTime_AsSecondsDouble(t2 - t1));
     }
 
     /* Append instances in the uncollectable set to a Python
@@ -1498,6 +1489,7 @@ PyDoc_STRVAR(gc__doc__,
 "isenabled() -- Returns true if automatic collection is enabled.\n"
 "collect() -- Do a full collection right now.\n"
 "get_count() -- Return the current collection counts.\n"
+"get_stats() -- Return list of dictionaries containing per-generation stats.\n"
 "set_debug() -- Set debugging flags.\n"
 "get_debug() -- Get debugging flags.\n"
 "set_threshold() -- Set the collection thresholds.\n"
@@ -1567,18 +1559,6 @@ PyInit_gc(void)
     Py_INCREF(callbacks);
     if (PyModule_AddObject(m, "callbacks", callbacks) < 0)
         return NULL;
-
-    /* Importing can't be done in collect() because collect()
-     * can be called via PyGC_Collect() in Py_Finalize().
-     * This wouldn't be a problem, except that <initialized> is
-     * reset to 0 before calling collect which trips up
-     * the import and triggers an assertion.
-     */
-    if (tmod == NULL) {
-        tmod = PyImport_ImportModuleNoBlock("time");
-        if (tmod == NULL)
-            PyErr_Clear();
-    }
 
 #define ADD_INT(NAME) if (PyModule_AddIntConstant(m, #NAME, NAME) < 0) return NULL
     ADD_INT(DEBUG_STATS);
@@ -1668,7 +1648,6 @@ void
 _PyGC_Fini(void)
 {
     Py_CLEAR(callbacks);
-    Py_CLEAR(tmod);
 }
 
 /* for debugging */
@@ -1692,13 +1671,6 @@ PyObject_GC_Track(void *op)
     _PyObject_GC_TRACK(op);
 }
 
-/* for binary compatibility with 2.2 */
-void
-_PyObject_GC_Track(PyObject *op)
-{
-    PyObject_GC_Track(op);
-}
-
 void
 PyObject_GC_UnTrack(void *op)
 {
@@ -1709,22 +1681,19 @@ PyObject_GC_UnTrack(void *op)
         _PyObject_GC_UNTRACK(op);
 }
 
-/* for binary compatibility with 2.2 */
-void
-_PyObject_GC_UnTrack(PyObject *op)
-{
-    PyObject_GC_UnTrack(op);
-}
-
-PyObject *
-_PyObject_GC_Malloc(size_t basicsize)
+static PyObject *
+_PyObject_GC_Alloc(int use_calloc, size_t basicsize)
 {
     PyObject *op;
     PyGC_Head *g;
+    size_t size;
     if (basicsize > PY_SSIZE_T_MAX - sizeof(PyGC_Head))
         return PyErr_NoMemory();
-    g = (PyGC_Head *)PyObject_MALLOC(
-        sizeof(PyGC_Head) + basicsize);
+    size = sizeof(PyGC_Head) + basicsize;
+    if (use_calloc)
+        g = (PyGC_Head *)PyObject_Calloc(1, size);
+    else
+        g = (PyGC_Head *)PyObject_Malloc(size);
     if (g == NULL)
         return PyErr_NoMemory();
     g->gc.gc_refs = 0;
@@ -1741,6 +1710,18 @@ _PyObject_GC_Malloc(size_t basicsize)
     }
     op = FROM_GC(g);
     return op;
+}
+
+PyObject *
+_PyObject_GC_Malloc(size_t basicsize)
+{
+    return _PyObject_GC_Alloc(0, basicsize);
+}
+
+PyObject *
+_PyObject_GC_Calloc(size_t basicsize)
+{
+    return _PyObject_GC_Alloc(1, basicsize);
 }
 
 PyObject *

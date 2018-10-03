@@ -1,6 +1,7 @@
 """Find modules used by a script, using introspection."""
 
 import dis
+import importlib._bootstrap_external
 import importlib.machinery
 import marshal
 import os
@@ -9,7 +10,7 @@ import types
 import struct
 import warnings
 with warnings.catch_warnings():
-    warnings.simplefilter('ignore', PendingDeprecationWarning)
+    warnings.simplefilter('ignore', DeprecationWarning)
     import imp
 
 # XXX Clean up once str8's cstor matches bytes.
@@ -222,7 +223,7 @@ class ModuleFinder:
         if not m.__path__:
             return
         modules = {}
-        # 'suffixes' used to be a list hardcoded to [".py", ".pyc", ".pyo"].
+        # 'suffixes' used to be a list hardcoded to [".py", ".pyc"].
         # But we must also collect Python extension modules - although
         # we cannot separate normal dlls from Python extensions.
         suffixes = []
@@ -287,11 +288,12 @@ class ModuleFinder:
         if type == imp.PY_SOURCE:
             co = compile(fp.read()+'\n', pathname, 'exec')
         elif type == imp.PY_COMPILED:
-            if fp.read(4) != imp.get_magic():
-                self.msgout(2, "raise ImportError: Bad magic number", pathname)
-                raise ImportError("Bad magic number in %s" % pathname)
-            fp.read(4)
-            co = marshal.load(fp)
+            try:
+                marshal_data = importlib._bootstrap_external._validate_bytecode_header(fp.read())
+            except ImportError as exc:
+                self.msgout(2, "raise ImportError: " + str(exc), pathname)
+                raise
+            co = marshal.loads(marshal_data)
         else:
             co = None
         m = self.add_module(fqname)
@@ -335,30 +337,6 @@ class ModuleFinder:
                         fullname = name + "." + sub
                         self._add_badmodule(fullname, caller)
 
-    def scan_opcodes(self, co,
-                     unpack = struct.unpack):
-        # Scan the code, and yield 'interesting' opcode combinations
-        # Version for Python 2.4 and older
-        code = co.co_code
-        names = co.co_names
-        consts = co.co_consts
-        while code:
-            c = code[0]
-            if c in STORE_OPS:
-                oparg, = unpack('<H', code[1:3])
-                yield "store", (names[oparg],)
-                code = code[3:]
-                continue
-            if c == LOAD_CONST and code[3] == IMPORT_NAME:
-                oparg_1, oparg_2 = unpack('<xHxH', code[:6])
-                yield "import", (consts[oparg_1], names[oparg_2])
-                code = code[6:]
-                continue
-            if c >= HAVE_ARGUMENT:
-                code = code[3:]
-            else:
-                code = code[1:]
-
     def scan_opcodes_25(self, co,
                      unpack = struct.unpack):
         # Scan the code, and yield 'interesting' opcode combinations
@@ -390,10 +368,7 @@ class ModuleFinder:
 
     def scan_code(self, co, m):
         code = co.co_code
-        if sys.version_info >= (2, 5):
-            scanner = self.scan_opcodes_25
-        else:
-            scanner = self.scan_opcodes
+        scanner = self.scan_opcodes_25
         for what, args in scanner(co):
             if what == "store":
                 name, = args
@@ -593,11 +568,12 @@ class ModuleFinder:
             if isinstance(consts[i], type(co)):
                 consts[i] = self.replace_paths_in_code(consts[i])
 
-        return types.CodeType(co.co_argcount, co.co_nlocals, co.co_stacksize,
-                         co.co_flags, co.co_code, tuple(consts), co.co_names,
-                         co.co_varnames, new_filename, co.co_name,
-                         co.co_firstlineno, co.co_lnotab,
-                         co.co_freevars, co.co_cellvars)
+        return types.CodeType(co.co_argcount, co.co_kwonlyargcount,
+                              co.co_nlocals, co.co_stacksize, co.co_flags,
+                              co.co_code, tuple(consts), co.co_names,
+                              co.co_varnames, new_filename, co.co_name,
+                              co.co_firstlineno, co.co_lnotab, co.co_freevars,
+                              co.co_cellvars)
 
 
 def test():

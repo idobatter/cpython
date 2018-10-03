@@ -20,15 +20,13 @@ _Py_IDENTIFIER(replace);
 
 /* zip_searchorder defines how we search for a module in the Zip
    archive: we first search for a package __init__, then for
-   non-package .pyc, .pyo and .py entries. The .pyc and .pyo entries
+   non-package .pyc, and .py entries. The .pyc entries
    are swapped by initzipimport() if we run in optimized mode. Also,
    '/' is replaced by SEP there. */
 static struct st_zip_searchorder zip_searchorder[] = {
     {"/__init__.pyc", IS_PACKAGE | IS_BYTECODE},
-    {"/__init__.pyo", IS_PACKAGE | IS_BYTECODE},
     {"/__init__.py", IS_PACKAGE | IS_SOURCE},
     {".pyc", IS_BYTECODE},
-    {".pyo", IS_BYTECODE},
     {".py", IS_SOURCE},
     {"", 0}
 };
@@ -157,8 +155,7 @@ zipimporter_init(ZipImporter *self, PyObject *args, PyObject *kwds)
             tmp = PyUnicode_FromFormat("%U%c", self->prefix, SEP);
             if (tmp == NULL)
                 goto error;
-            Py_DECREF(self->prefix);
-            self->prefix = tmp;
+            Py_SETREF(self->prefix, tmp);
         }
     }
     else
@@ -233,7 +230,7 @@ make_filename(PyObject *prefix, PyObject *name)
     Py_ssize_t len;
 
     len = PyUnicode_GET_LENGTH(prefix) + PyUnicode_GET_LENGTH(name) + 1;
-    p = buf = PyMem_Malloc(sizeof(Py_UCS4) * len);
+    p = buf = PyMem_New(Py_UCS4, len);
     if (buf == NULL) {
         PyErr_NoMemory();
         return NULL;
@@ -818,7 +815,7 @@ static PyTypeObject ZipImporter_Type = {
    4 bytes, encoded as little endian. This partially reimplements
    marshal.c:r_long() */
 static long
-get_long(unsigned char *buf) {
+get_long(const unsigned char *buf) {
     long x;
     x =  buf[0];
     x |= (long)buf[1] <<  8;
@@ -875,8 +872,12 @@ read_directory(PyObject *archive)
 
     fp = _Py_fopen_obj(archive, "rb");
     if (fp == NULL) {
-        if (!PyErr_Occurred())
+        if (PyErr_ExceptionMatches(PyExc_OSError)) {
+            PyObject *exc, *val, *tb;
+            PyErr_Fetch(&exc, &val, &tb);
             PyErr_Format(ZipImportError, "can't open Zip file: %R", archive);
+            _PyErr_ChainExceptions(exc, val, tb);
+        }
         return NULL;
     }
 
@@ -939,6 +940,9 @@ read_directory(PyObject *archive)
         header_size = name_size +
            PyMarshal_ReadShortFromFile(fp) +
            PyMarshal_ReadShortFromFile(fp);
+        if (PyErr_Occurred())
+            goto error;
+
         if (fread(dummy, 1, 8, fp) != 8) /* Skip unused fields, avoid fseek */
             goto file_error;
         file_offset = PyMarshal_ReadLongFromFile(fp) + arc_offset;
@@ -1073,12 +1077,8 @@ get_data(PyObject *archive, PyObject *toc_entry)
     }
 
     fp = _Py_fopen_obj(archive, "rb");
-    if (!fp) {
-        if (!PyErr_Occurred())
-            PyErr_Format(PyExc_IOError,
-               "zipimport: can not open file %U", archive);
+    if (!fp)
         return NULL;
-    }
 
     /* Check to make sure the local file header is correct */
     if (fseek(fp, file_offset, 0) == -1) {
@@ -1315,7 +1315,7 @@ parse_dostime(int dostime, int dosdate)
     return mktime(&stm);
 }
 
-/* Given a path to a .pyc or .pyo file in the archive, return the
+/* Given a path to a .pyc file in the archive, return the
    modification time of the matching .py file, or 0 if no source
    is available. */
 static time_t
@@ -1478,17 +1478,6 @@ PyInit_zipimport(void)
     /* Correct directory separator */
     zip_searchorder[0].suffix[0] = SEP;
     zip_searchorder[1].suffix[0] = SEP;
-    zip_searchorder[2].suffix[0] = SEP;
-    if (Py_OptimizeFlag) {
-        /* Reverse *.pyc and *.pyo */
-        struct st_zip_searchorder tmp;
-        tmp = zip_searchorder[0];
-        zip_searchorder[0] = zip_searchorder[1];
-        zip_searchorder[1] = tmp;
-        tmp = zip_searchorder[3];
-        zip_searchorder[3] = zip_searchorder[4];
-        zip_searchorder[4] = tmp;
-    }
 
     mod = PyModule_Create(&zipimportmodule);
     if (mod == NULL)

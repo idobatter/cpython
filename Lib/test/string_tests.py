@@ -1,11 +1,10 @@
 """
-Common tests shared by test_str, test_unicode, test_userstring and test_string.
+Common tests shared by test_unicode, test_userstring and test_string.
 """
 
 import unittest, string, sys, struct
 from test import support
 from collections import UserList
-import _testcapi
 
 class Sequence:
     def __init__(self, seq='wxyz'): self.seq = seq
@@ -80,11 +79,9 @@ class BaseTest:
     def checkraises(self, exc, obj, methodname, *args):
         obj = self.fixtype(obj)
         args = self.fixtype(args)
-        self.assertRaises(
-            exc,
-            getattr(obj, methodname),
-            *args
-        )
+        with self.assertRaises(exc) as cm:
+            getattr(obj, methodname)(*args)
+        self.assertNotEqual(str(cm.exception), '')
 
     # call obj.method(*args) without any checks
     def checkcall(self, obj, methodname, *args):
@@ -676,10 +673,10 @@ class BaseTest:
         self.checkraises(TypeError, 'hello', 'replace', 42, 'h')
         self.checkraises(TypeError, 'hello', 'replace', 'h', 42)
 
+    @unittest.skipIf(sys.maxsize > (1 << 32) or struct.calcsize('P') != 4,
+                     'only applies to 32-bit platforms')
     def test_replace_overflow(self):
         # Check for overflow checking on 32 bit machines
-        if sys.maxsize != 2147483647 or struct.calcsize("P") > 4:
-            return
         A2_16 = "A" * (2**16)
         self.checkraises(OverflowError, A2_16, "replace", "", A2_16)
         self.checkraises(OverflowError, A2_16, "replace", "A", A2_16)
@@ -688,7 +685,7 @@ class BaseTest:
 
 
 class CommonTest(BaseTest):
-    # This testcase contains test that can be used in all
+    # This testcase contains tests that can be used in all
     # stringlike classes. Currently this is str, unicode
     # UserString and the string module.
 
@@ -979,6 +976,9 @@ class MixinStrUnicodeUserStringTest:
         self.checkequal(True, 'helloworld', 'startswith', 'lowo', 3)
         self.checkequal(True, 'helloworld', 'startswith', 'lowo', 3, 7)
         self.checkequal(False, 'helloworld', 'startswith', 'lowo', 3, 6)
+        self.checkequal(True, '', 'startswith', '', 0, 1)
+        self.checkequal(True, '', 'startswith', '', 0, 0)
+        self.checkequal(False, '', 'startswith', '', 1, 0)
 
         # test negative indices
         self.checkequal(True, 'hello', 'startswith', 'he', 0, -1)
@@ -1025,6 +1025,9 @@ class MixinStrUnicodeUserStringTest:
         self.checkequal(False, 'helloworld', 'endswith', 'lowo', 3, 8)
         self.checkequal(False, 'ab', 'endswith', 'ab', 0, 1)
         self.checkequal(False, 'ab', 'endswith', 'ab', 0, 0)
+        self.checkequal(True, '', 'endswith', '', 0, 1)
+        self.checkequal(True, '', 'endswith', '', 0, 0)
+        self.checkequal(False, '', 'endswith', '', 1, 0)
 
         # test negative indices
         self.checkequal(True, 'hello', 'endswith', 'lo', -2)
@@ -1120,8 +1123,7 @@ class MixinStrUnicodeUserStringTest:
     def test_join(self):
         # join now works with any sequence type
         # moved here, because the argument order is
-        # different in string.join (see the test in
-        # test.test_string.StringTest.test_join)
+        # different in string.join
         self.checkequal('a b c d', ' ', 'join', ['a', 'b', 'c', 'd'])
         self.checkequal('abcd', '', 'join', ('a', 'b', 'c', 'd'))
         self.checkequal('bd', '', 'join', ('', 'b', '', 'd'))
@@ -1141,6 +1143,7 @@ class MixinStrUnicodeUserStringTest:
         self.checkequal('a b c', ' ', 'join', BadSeq2())
 
         self.checkraises(TypeError, ' ', 'join')
+        self.checkraises(TypeError, ' ', 'join', None)
         self.checkraises(TypeError, ' ', 'join', 7)
         self.checkraises(TypeError, ' ', 'join', [1, 2, bytes()])
         try:
@@ -1198,19 +1201,27 @@ class MixinStrUnicodeUserStringTest:
         # Outrageously large width or precision should raise ValueError.
         self.checkraises(ValueError, '%%%df' % (2**64), '__mod__', (3.2))
         self.checkraises(ValueError, '%%.%df' % (2**64), '__mod__', (3.2))
-
         self.checkraises(OverflowError, '%*s', '__mod__',
-                         (_testcapi.PY_SSIZE_T_MAX + 1, ''))
+                         (sys.maxsize + 1, ''))
         self.checkraises(OverflowError, '%.*f', '__mod__',
-                         (_testcapi.INT_MAX + 1, 1. / 7))
-        # Issue 15989
-        self.checkraises(OverflowError, '%*s', '__mod__',
-                         (1 << (_testcapi.PY_SSIZE_T_MAX.bit_length() + 1), ''))
-        self.checkraises(OverflowError, '%.*f', '__mod__',
-                         (_testcapi.UINT_MAX + 1, 1. / 7))
+                         (sys.maxsize + 1, 1. / 7))
 
         class X(object): pass
         self.checkraises(TypeError, 'abc', '__mod__', X())
+
+    @support.cpython_only
+    def test_formatting_c_limits(self):
+        from _testcapi import PY_SSIZE_T_MAX, INT_MAX, UINT_MAX
+        SIZE_MAX = (1 << (PY_SSIZE_T_MAX.bit_length() + 1)) - 1
+        self.checkraises(OverflowError, '%*s', '__mod__',
+                         (PY_SSIZE_T_MAX + 1, ''))
+        self.checkraises(OverflowError, '%.*f', '__mod__',
+                         (INT_MAX + 1, 1. / 7))
+        # Issue 15989
+        self.checkraises(OverflowError, '%*s', '__mod__',
+                         (SIZE_MAX + 1, ''))
+        self.checkraises(OverflowError, '%.*f', '__mod__',
+                         (UINT_MAX + 1, 1. / 7))
 
     def test_floatformatting(self):
         # float formatting

@@ -196,6 +196,7 @@ frame_setlineno(PyFrameObject *f, PyObject* p_new_lineno)
         case SETUP_EXCEPT:
         case SETUP_FINALLY:
         case SETUP_WITH:
+        case SETUP_ASYNC_WITH:
             blockstack[blockstack_top++] = addr;
             in_finally[blockstack_top-1] = 0;
             break;
@@ -203,7 +204,8 @@ frame_setlineno(PyFrameObject *f, PyObject* p_new_lineno)
         case POP_BLOCK:
             assert(blockstack_top > 0);
             setup_op = code[blockstack[blockstack_top-1]];
-            if (setup_op == SETUP_FINALLY || setup_op == SETUP_WITH) {
+            if (setup_op == SETUP_FINALLY || setup_op == SETUP_WITH
+                                    || setup_op == SETUP_ASYNC_WITH) {
                 in_finally[blockstack_top-1] = 1;
             }
             else {
@@ -218,7 +220,8 @@ frame_setlineno(PyFrameObject *f, PyObject* p_new_lineno)
              * be seeing such an END_FINALLY.) */
             if (blockstack_top > 0) {
                 setup_op = code[blockstack[blockstack_top-1]];
-                if (setup_op == SETUP_FINALLY || setup_op == SETUP_WITH) {
+                if (setup_op == SETUP_FINALLY || setup_op == SETUP_WITH
+                                    || setup_op == SETUP_ASYNC_WITH) {
                     blockstack_top--;
                 }
             }
@@ -281,6 +284,7 @@ frame_setlineno(PyFrameObject *f, PyObject* p_new_lineno)
         case SETUP_EXCEPT:
         case SETUP_FINALLY:
         case SETUP_WITH:
+        case SETUP_ASYNC_WITH:
             delta_iblock++;
             break;
 
@@ -726,7 +730,6 @@ PyFrame_New(PyThreadState *tstate, PyCodeObject *code, PyObject *globals,
         Py_INCREF(locals);
         f->f_locals = locals;
     }
-    f->f_tstate = tstate;
 
     f->f_lasti = -1;
     f->f_lineno = code->co_firstlineno;
@@ -787,7 +790,7 @@ map_to_dict(PyObject *map, Py_ssize_t nmap, PyObject *dict, PyObject **values,
         PyObject *key = PyTuple_GET_ITEM(map, j);
         PyObject *value = values[j];
         assert(PyUnicode_Check(key));
-        if (deref) {
+        if (deref && value != NULL) {
             assert(PyCell_Check(value));
             value = PyCell_GET(value);
         }
@@ -854,8 +857,7 @@ dict_to_map(PyObject *map, Py_ssize_t nmap, PyObject *dict, PyObject **values,
             }
         } else if (values[j] != value) {
             Py_XINCREF(value);
-            Py_XDECREF(values[j]);
-            values[j] = value;
+            Py_SETREF(values[j], value);
         }
         Py_XDECREF(value);
     }

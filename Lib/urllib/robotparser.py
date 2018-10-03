@@ -7,10 +7,12 @@
     2) PSF license for Python 2.2
 
     The robots.txt Exclusion Protocol is implemented as specified in
-    http://info.webcrawler.com/mak/projects/robots/norobots-rfc.html
+    http://www.robotstxt.org/norobots-rfc.txt
 """
 
-import urllib.parse, urllib.request
+import collections
+import urllib.parse
+import urllib.request
 
 __all__ = ["RobotFileParser"]
 
@@ -57,7 +59,7 @@ class RobotFileParser:
         except urllib.error.HTTPError as err:
             if err.code in (401, 403):
                 self.disallow_all = True
-            elif err.code >= 400:
+            elif err.code >= 400 and err.code < 500:
                 self.allow_all = True
         else:
             raw = f.read()
@@ -85,6 +87,7 @@ class RobotFileParser:
         state = 0
         entry = Entry()
 
+        self.modified()
         for line in lines:
             if not line:
                 if state == 1:
@@ -119,9 +122,28 @@ class RobotFileParser:
                     if state != 0:
                         entry.rulelines.append(RuleLine(line[1], True))
                         state = 2
+                elif line[0] == "crawl-delay":
+                    if state != 0:
+                        # before trying to convert to int we need to make
+                        # sure that robots.txt has valid syntax otherwise
+                        # it will crash
+                        if line[1].strip().isdigit():
+                            entry.delay = int(line[1])
+                        state = 2
+                elif line[0] == "request-rate":
+                    if state != 0:
+                        numbers = line[1].split('/')
+                        # check if all values are sane
+                        if (len(numbers) == 2 and numbers[0].strip().isdigit()
+                            and numbers[1].strip().isdigit()):
+                            req_rate = collections.namedtuple('req_rate',
+                                                              'requests seconds')
+                            entry.req_rate = req_rate
+                            entry.req_rate.requests = int(numbers[0])
+                            entry.req_rate.seconds = int(numbers[1])
+                        state = 2
         if state == 2:
             self._add_entry(entry)
-
 
     def can_fetch(self, useragent, url):
         """using the parsed robots.txt decide if useragent can fetch url"""
@@ -129,6 +151,12 @@ class RobotFileParser:
             return False
         if self.allow_all:
             return True
+        # Until the robots.txt file has been read or found not
+        # to exist, we must assume that no url is allowable.
+        # This prevents false positives when a user erronenously
+        # calls can_fetch() before calling read().
+        if not self.last_checked:
+            return False
         # search for given user agent matches
         # the first match counts
         parsed_url = urllib.parse.urlparse(urllib.parse.unquote(url))
@@ -145,6 +173,18 @@ class RobotFileParser:
             return self.default_entry.allowance(url)
         # agent not found ==> access granted
         return True
+
+    def crawl_delay(self, useragent):
+        for entry in self.entries:
+            if entry.applies_to(useragent):
+                return entry.delay
+        return None
+
+    def request_rate(self, useragent):
+        for entry in self.entries:
+            if entry.applies_to(useragent):
+                return entry.req_rate
+        return None
 
     def __str__(self):
         return ''.join([str(entry) + "\n" for entry in self.entries])
@@ -165,7 +205,7 @@ class RuleLine:
         return self.path == "*" or filename.startswith(self.path)
 
     def __str__(self):
-        return (self.allowance and "Allow" or "Disallow") + ": " + self.path
+        return ("Allow" if self.allowance else "Disallow") + ": " + self.path
 
 
 class Entry:
@@ -173,6 +213,8 @@ class Entry:
     def __init__(self):
         self.useragents = []
         self.rulelines = []
+        self.delay = None
+        self.req_rate = None
 
     def __str__(self):
         ret = []

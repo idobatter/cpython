@@ -202,6 +202,8 @@ normalizeUserObj(PyObject *obj)
         */
         PyObject *self = fn->m_self;
         PyObject *name = PyUnicode_FromString(fn->m_ml->ml_name);
+        PyObject *modname = fn->m_module;
+
         if (name != NULL) {
             PyObject *mo = _PyType_Lookup(Py_TYPE(self), name);
             Py_XINCREF(mo);
@@ -213,9 +215,14 @@ normalizeUserObj(PyObject *obj)
                     return res;
             }
         }
+        /* Otherwise, use __module__ */
         PyErr_Clear();
-        return PyUnicode_FromFormat("<built-in method %s>",
-                                    fn->m_ml->ml_name);
+        if (modname != NULL && PyUnicode_Check(modname))
+            return PyUnicode_FromFormat("<built-in method %S.%s>",
+                                        modname,  fn->m_ml->ml_name);
+        else
+            return PyUnicode_FromFormat("<built-in method %s>",
+                                        fn->m_ml->ml_name);
     }
 }
 
@@ -451,7 +458,6 @@ profiler_callback(PyObject *self, PyFrameObject *frame, int what,
         PyTrace_RETURN event will be generated, so we don't need to
         handle it. */
 
-#ifdef PyTrace_C_CALL   /* not defined in Python <= 2.3 */
     /* the Python function 'frame' is issuing a call to the built-in
        function 'arg' */
     case PyTrace_C_CALL:
@@ -473,7 +479,6 @@ profiler_callback(PyObject *self, PyFrameObject *frame, int what,
                               ((PyCFunctionObject *)arg)->m_ml);
         }
         break;
-#endif
 
     default:
         break;
@@ -663,13 +668,7 @@ setBuiltins(ProfilerObject *pObj, int nvalue)
     if (nvalue == 0)
         pObj->flags &= ~POF_BUILTINS;
     else if (nvalue > 0) {
-#ifndef PyTrace_C_CALL
-        PyErr_SetString(PyExc_ValueError,
-                        "builtins=True requires Python >= 2.4");
-        return -1;
-#else
         pObj->flags |=  POF_BUILTINS;
-#endif
     }
     return 0;
 }
@@ -767,11 +766,7 @@ profiler_init(ProfilerObject *pObj, PyObject *args, PyObject *kw)
     PyObject *timer = NULL;
     double timeunit = 0.0;
     int subcalls = 1;
-#ifdef PyTrace_C_CALL
     int builtins = 1;
-#else
-    int builtins = 0;
-#endif
     static char *kwlist[] = {"timer", "timeunit",
                                    "subcalls", "builtins", 0};
 

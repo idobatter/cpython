@@ -4,6 +4,8 @@
 .. module:: tracemalloc
    :synopsis: Trace memory allocations.
 
+.. versionadded:: 3.4
+
 The tracemalloc module is a debug tool to trace memory blocks allocated by
 Python. It provides the following information:
 
@@ -23,14 +25,12 @@ frame (1 frame). To store 25 frames at startup: set the
 :envvar:`PYTHONTRACEMALLOC` environment variable to ``25``, or use the
 :option:`-X` ``tracemalloc=25`` command line option.
 
-.. versionadded:: 3.4
-
 
 Examples
-========
+--------
 
 Display the top 10
-------------------
+^^^^^^^^^^^^^^^^^^
 
 Display the 10 files allocating the most memory::
 
@@ -70,7 +70,7 @@ See :meth:`Snapshot.statistics` for more options.
 
 
 Compute differences
--------------------
+^^^^^^^^^^^^^^^^^^^
 
 Take two snapshots and display the differences::
 
@@ -114,11 +114,10 @@ the :meth:`Snapshot.dump` method to analyze the snapshot offline. Then use the
 
 
 Get the traceback of a memory block
------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Code to display the traceback of the biggest memory block::
 
-    import linecache
     import tracemalloc
 
     # Store 25 frames
@@ -132,12 +131,8 @@ Code to display the traceback of the biggest memory block::
     # pick the biggest memory block
     stat = top_stats[0]
     print("%s memory blocks: %.1f KiB" % (stat.count, stat.size / 1024))
-    for frame in stat.traceback:
-        print('  File "%s", line %s' % (frame.filename, frame.lineno))
-        line = linecache.getline(frame.filename, frame.lineno)
-        line = line.strip()
-        if line:
-            print('    ' + line)
+    for line in stat.traceback.format():
+        print(line)
 
 Example of output of the Python test suite (traceback limited to 25 frames)::
 
@@ -184,11 +179,12 @@ loaded.
 
 
 Pretty top
-----------
+^^^^^^^^^^
 
 Code to display the 10 lines allocating the most memory with a pretty output,
 ignoring ``<frozen importlib._bootstrap>`` and ``<unknown>`` files::
 
+    import linecache
     import os
     import tracemalloc
 
@@ -205,8 +201,10 @@ ignoring ``<frozen importlib._bootstrap>`` and ``<unknown>`` files::
             # replace "/path/to/module/file.py" with "module/file.py"
             filename = os.sep.join(frame.filename.split(os.sep)[-2:])
             print("#%s: %s:%s: %.1f KiB"
-                  % (index, filename, frame.lineno,
-                     stat.size / 1024))
+                  % (index, filename, frame.lineno, stat.size / 1024))
+            line = linecache.getline(frame.filename, frame.lineno).strip()
+            if line:
+                print('    %s' % line)
 
         other = top_stats[limit:]
         if other:
@@ -220,32 +218,41 @@ ignoring ``<frozen importlib._bootstrap>`` and ``<unknown>`` files::
     # ... run your application ...
 
     snapshot = tracemalloc.take_snapshot()
-    display_top(snapshot, 10)
+    display_top(snapshot)
 
 Example of output of the Python test suite::
 
-    2013-11-08 14:16:58.149320: Top 10 lines
-    #1: collections/__init__.py:368: 291.9 KiB
-    #2: Lib/doctest.py:1291: 200.2 KiB
-    #3: unittest/case.py:571: 160.3 KiB
-    #4: Lib/abc.py:133: 99.8 KiB
-    #5: urllib/parse.py:476: 71.8 KiB
-    #6: <string>:5: 62.7 KiB
-    #7: Lib/base64.py:140: 59.8 KiB
-    #8: Lib/_weakrefset.py:37: 51.8 KiB
-    #9: collections/__init__.py:362: 50.6 KiB
-    #10: test/test_site.py:56: 48.0 KiB
-    7496 other: 4161.9 KiB
-    Total allocated size: 5258.8 KiB
+    Top 10 lines
+    #1: Lib/base64.py:414: 419.8 KiB
+        _b85chars2 = [(a + b) for a in _b85chars for b in _b85chars]
+    #2: Lib/base64.py:306: 419.8 KiB
+        _a85chars2 = [(a + b) for a in _a85chars for b in _a85chars]
+    #3: collections/__init__.py:368: 293.6 KiB
+        exec(class_definition, namespace)
+    #4: Lib/abc.py:133: 115.2 KiB
+        cls = super().__new__(mcls, name, bases, namespace)
+    #5: unittest/case.py:574: 103.1 KiB
+        testMethod()
+    #6: Lib/linecache.py:127: 95.4 KiB
+        lines = fp.readlines()
+    #7: urllib/parse.py:476: 71.8 KiB
+        for a in _hexdig for b in _hexdig}
+    #8: <string>:5: 62.0 KiB
+    #9: Lib/_weakrefset.py:37: 60.0 KiB
+        self.data = set()
+    #10: Lib/base64.py:142: 59.8 KiB
+        _b32tab2 = [a + b for a in _b32tab for b in _b32tab]
+    6220 other: 3602.8 KiB
+    Total allocated size: 5303.1 KiB
 
 See :meth:`Snapshot.statistics` for more options.
 
 
 API
-===
+---
 
 Functions
----------
+^^^^^^^^^
 
 .. function:: clear_traces()
 
@@ -343,20 +350,20 @@ Functions
    the *nframe* parameter of the :func:`start` function to store more frames.
 
    The :mod:`tracemalloc` module must be tracing memory allocations to take a
-   snapshot, see the the :func:`start` function.
+   snapshot, see the :func:`start` function.
 
    See also the :func:`get_object_traceback` function.
 
 
 Filter
-------
+^^^^^^
 
 .. class:: Filter(inclusive: bool, filename_pattern: str, lineno: int=None, all_frames: bool=False)
 
    Filter on traces of memory blocks.
 
    See the :func:`fnmatch.fnmatch` function for the syntax of
-   *filename_pattern*. The ``'.pyc'`` and ``'.pyo'`` file extensions are
+   *filename_pattern*. The ``'.pyc'`` file extension is
    replaced with ``'.py'``.
 
    Examples:
@@ -366,6 +373,10 @@ Filter
    * ``Filter(False, tracemalloc.__file__)`` excludes traces of the
      :mod:`tracemalloc` module
    * ``Filter(False, "<unknown>")`` excludes empty tracebacks
+
+
+   .. versionchanged:: 3.5
+      The ``'.pyo'`` file extension is no longer replaced with ``'.py'``.
 
    .. attribute:: inclusive
 
@@ -397,7 +408,7 @@ Filter
 
 
 Frame
------
+^^^^^
 
 .. class:: Frame
 
@@ -415,7 +426,7 @@ Frame
 
 
 Snapshot
---------
+^^^^^^^^
 
 .. class:: Snapshot
 
@@ -428,7 +439,7 @@ Snapshot
       Compute the differences with an old snapshot. Get statistics as a sorted
       list of :class:`StatisticDiff` instances grouped by *group_by*.
 
-      See the :meth:`statistics` method for *group_by* and *cumulative*
+      See the :meth:`Snapshot.statistics` method for *group_by* and *cumulative*
       parameters.
 
       The result is sorted from the biggest to the smallest by: absolute value
@@ -453,7 +464,7 @@ Snapshot
 
       All inclusive filters are applied at once, a trace is ignored if no
       inclusive filters match it. A trace is ignored if at least one exclusive
-      filter matchs it.
+      filter matches it.
 
 
    .. classmethod:: load(filename)
@@ -501,7 +512,7 @@ Snapshot
 
 
 Statistic
----------
+^^^^^^^^^
 
 .. class:: Statistic
 
@@ -526,7 +537,7 @@ Statistic
 
 
 StatisticDiff
--------------
+^^^^^^^^^^^^^
 
 .. class:: StatisticDiff
 
@@ -565,7 +576,7 @@ StatisticDiff
 
 
 Trace
------
+^^^^^
 
 .. class:: Trace
 
@@ -585,7 +596,7 @@ Trace
 
 
 Traceback
----------
+^^^^^^^^^
 
 .. class:: Traceback
 
@@ -602,4 +613,25 @@ Traceback
    The :attr:`Trace.traceback` attribute is an instance of :class:`Traceback`
    instance.
 
+   .. method:: format(limit=None)
 
+      Format the traceback as a list of lines with newlines.  Use the
+      :mod:`linecache` module to retrieve lines from the source code.  If
+      *limit* is set, only format the *limit* most recent frames.
+
+      Similar to the :func:`traceback.format_tb` function, except that
+      :meth:`format` does not include newlines.
+
+      Example::
+
+          print("Traceback (most recent call first):")
+          for line in traceback:
+              print(line)
+
+      Output::
+
+          Traceback (most recent call first):
+            File "test.py", line 9
+              obj = Object()
+            File "test.py", line 12
+              tb = tracemalloc.get_object_traceback(f())

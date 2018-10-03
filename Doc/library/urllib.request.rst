@@ -12,11 +12,16 @@ The :mod:`urllib.request` module defines functions and classes which help in
 opening URLs (mostly HTTP) in a complex world --- basic and digest
 authentication, redirections, cookies and more.
 
+.. seealso::
+
+    The `Requests package <http://requests.readthedocs.org/>`_
+    is recommended for a higher-level http client interface.
+
 
 The :mod:`urllib.request` module defines the following functions:
 
 
-.. function:: urlopen(url, data=None[, timeout], *, cafile=None, capath=None, cadefault=False)
+.. function:: urlopen(url, data=None[, timeout], *, cafile=None, capath=None, cadefault=False, context=None)
 
    Open the URL *url*, which can be either a string or a
    :class:`Request` object.
@@ -31,13 +36,8 @@ The :mod:`urllib.request` module defines the following functions:
    *data* should be a buffer in the standard
    :mimetype:`application/x-www-form-urlencoded` format.  The
    :func:`urllib.parse.urlencode` function takes a mapping or sequence of
-   2-tuples and returns a string in this format. It should be encoded to bytes
-   before being used as the *data* parameter. The charset parameter in
-   ``Content-Type`` header may be used to specify the encoding. If charset
-   parameter is not sent with the Content-Type header, the server following the
-   HTTP 1.1 recommendation may assume that the data is encoded in ISO-8859-1
-   encoding. It is advisable to use charset parameter with encoding used in
-   ``Content-Type`` header with the :class:`Request`.
+   2-tuples and returns an ASCII text string in this format. It should
+   be encoded to bytes before being used as the *data* parameter.
 
    urllib.request module uses HTTP/1.1 and includes ``Connection:close`` header
    in its HTTP requests.
@@ -47,29 +47,19 @@ The :mod:`urllib.request` module defines the following functions:
    the global default timeout setting will be used).  This actually
    only works for HTTP, HTTPS and FTP connections.
 
+   If *context* is specified, it must be a :class:`ssl.SSLContext` instance
+   describing the various SSL options. See :class:`~http.client.HTTPSConnection`
+   for more details.
+
    The optional *cafile* and *capath* parameters specify a set of trusted
    CA certificates for HTTPS requests.  *cafile* should point to a single
    file containing a bundle of CA certificates, whereas *capath* should
    point to a directory of hashed certificate files.  More information can
    be found in :meth:`ssl.SSLContext.load_verify_locations`.
 
-   The *cadefault* parameter specifies whether to fall back to loading a
-   default certificate store defined by the underlying OpenSSL library if the
-   *cafile* and *capath* parameters are omitted.  This will only work on
-   some non-Windows platforms.
+   The *cadefault* parameter is ignored.
 
-   .. warning::
-      If neither *cafile* nor *capath* is specified, and *cadefault* is ``False``,
-      an HTTPS request will not do any verification of the server's
-      certificate.
-
-   For http and https urls, this function returns a
-   :class:`http.client.HTTPResponse` object which has the following
-   :ref:`httpresponse-objects` methods.
-
-   For ftp, file, and data urls and requests explicity handled by legacy
-   :class:`URLopener` and :class:`FancyURLopener` classes, this function
-   returns a :class:`urllib.response.addinfourl` object which can work as
+   This function always returns an object which can work as
    :term:`context manager` and has methods such as
 
    * :meth:`~urllib.response.addinfourl.geturl` --- return the URL of the resource retrieved,
@@ -80,6 +70,18 @@ The :mod:`urllib.request` module defines the following functions:
      `Quick Reference to HTTP Headers <http://www.cs.tut.fi/~jkorpela/http.html>`_)
 
    * :meth:`~urllib.response.addinfourl.getcode` -- return the HTTP status code of the response.
+
+   For http and https urls, this function returns a
+   :class:`http.client.HTTPResponse` object slightly modified. In addition
+   to the three new methods above, the msg attribute contains the
+   same information as the :attr:`~http.client.HTTPResponse.reason`
+   attribute --- the reason phrase returned by server --- instead of
+   the response headers as it is specified in the documentation for
+   :class:`~http.client.HTTPResponse`.
+
+   For ftp, file, and data urls and requests explicitly handled by legacy
+   :class:`URLopener` and :class:`FancyURLopener` classes, this function
+   returns a :class:`urllib.response.addinfourl` object.
 
    Raises :exc:`~urllib.error.URLError` on errors.
 
@@ -110,6 +112,10 @@ The :mod:`urllib.request` module defines the following functions:
 
    .. versionchanged:: 3.3
       *cadefault* was added.
+
+   .. versionchanged:: 3.4.3
+      *context* was added.
+
 
 .. function:: install_opener(opener)
 
@@ -175,16 +181,9 @@ The following classes are provided:
    the only ones that use *data*; the HTTP request will be a POST instead of a
    GET when the *data* parameter is provided.  *data* should be a buffer in the
    standard :mimetype:`application/x-www-form-urlencoded` format.
-
    The :func:`urllib.parse.urlencode` function takes a mapping or sequence of
-   2-tuples and returns a string in this format. It should be encoded to bytes
-   before being used as the *data* parameter. The charset parameter in
-   ``Content-Type`` header may be used to specify the encoding. If charset
-   parameter is not sent with the Content-Type header, the server following the
-   HTTP 1.1 recommendation may assume that the data is encoded in ISO-8859-1
-   encoding. It is advisable to use charset parameter with encoding used in
-   ``Content-Type`` header with the :class:`Request`.
-
+   2-tuples and returns an ASCII string in this format. It should be
+   encoded to bytes before being used as the *data* parameter.
 
    *headers* should be a dictionary, and will be treated as if
    :meth:`add_header` was called with each key and value as arguments.
@@ -197,7 +196,7 @@ The following classes are provided:
    ``"Python-urllib/2.6"`` (on Python 2.6).
 
    An example of using ``Content-Type`` header with *data* argument would be
-   sending a dictionary like ``{"Content-Type":" application/x-www-form-urlencoded;charset=utf-8"}``
+   sending a dictionary like ``{"Content-Type": "application/x-www-form-urlencoded"}``.
 
    The final two arguments are only of interest for correct handling
    of third-party HTTP cookies:
@@ -218,7 +217,7 @@ The following classes are provided:
    fetching of the image, this should be true.
 
    *method* should be a string that indicates the HTTP request method that
-   will be used (e.g. ``'HEAD'``).  Its value is stored in the
+   will be used (e.g. ``'HEAD'``).  If provided, its value is stored in the
    :attr:`~Request.method` attribute and is used by :meth:`get_method()`.
    Subclasses may indicate a default method by setting the
    :attr:`~Request.method` attribute in the class itself.
@@ -283,13 +282,37 @@ The following classes are provided:
    fits.
 
 
+.. class:: HTTPPasswordMgrWithPriorAuth()
+
+   A variant of :class:`HTTPPasswordMgrWithDefaultRealm` that also has a
+   database of ``uri -> is_authenticated`` mappings.  Can be used by a
+   BasicAuth handler to determine when to send authentication credentials
+   immediately instead of waiting for a ``401`` response first.
+
+   .. versionadded:: 3.5
+
+
 .. class:: AbstractBasicAuthHandler(password_mgr=None)
 
    This is a mixin class that helps with HTTP authentication, both to the remote
    host and to a proxy. *password_mgr*, if given, should be something that is
    compatible with :class:`HTTPPasswordMgr`; refer to section
    :ref:`http-password-mgr` for information on the interface that must be
-   supported.
+   supported.  If *passwd_mgr* also provides ``is_authenticated`` and
+   ``update_authenticated`` methods (see
+   :ref:`http-password-mgr-with-prior-auth`), then the handler will use the
+   ``is_authenticated`` result for a given URI to determine whether or not to
+   send authentication credentials with the request.  If ``is_authenticated``
+   returns ``True`` for the URI, credentials are sent.  If ``is_authenticated``
+   is ``False``, credentials are not sent, and then if a ``401`` response is
+   received the request is re-sent with the authentication credentials.  If
+   authentication succeeds, ``update_authenticated`` is called to set
+   ``is_authenticated`` ``True`` for the URI, so that subsequent requests to
+   the URI or any of its super-URIs will automatically include the
+   authentication credentials.
+
+   .. versionadded:: 3.5
+      Added ``is_authenticated`` support.
 
 
 .. class:: HTTPBasicAuthHandler(password_mgr=None)
@@ -440,12 +463,19 @@ request.
 
 .. attribute:: Request.method
 
-   The HTTP request method to use.  This value is used by
-   :meth:`~Request.get_method` to override the computed HTTP request
-   method that would otherwise be returned.  This attribute is initialized with
-   the value of the *method* argument passed to the constructor.
+   The HTTP request method to use.  By default its value is :const:`None`,
+   which means that :meth:`~Request.get_method` will do its normal computation
+   of the method to be used.  Its value can be set (thus overriding the default
+   computation in :meth:`~Request.get_method`) either by providing a default
+   value by setting it at the class level in a :class:`Request` subclass, or by
+   passing a value in to the :class:`Request` constructor via the *method*
+   argument.
 
    .. versionadded:: 3.3
+
+   .. versionchanged:: 3.4
+      A default value can now be set in subclasses; previously it could only
+      be set via the constructor argument.
 
 
 .. method:: Request.get_method()
@@ -516,9 +546,10 @@ request.
    Return a list of tuples (header_name, header_value) of the Request headers.
 
 .. versionchanged:: 3.4
-  Request methods add_data, has_data, get_data, get_type, get_host,
-  get_selector, get_origin_req_host and is_unverifiable deprecated since 3.3
-  have been removed.
+   The request methods add_data, has_data, get_data, get_type, get_host,
+   get_selector, get_origin_req_host and is_unverifiable that were deprecated
+   since 3.3 have been removed.
+
 
 .. _opener-director-objects:
 
@@ -833,6 +864,42 @@ These methods are available on :class:`HTTPPasswordMgr` and
    searched if the given *realm* has no matching user/password.
 
 
+.. _http-password-mgr-with-prior-auth:
+
+HTTPPasswordMgrWithPriorAuth Objects
+------------------------------------
+
+This password manager extends :class:`HTTPPasswordMgrWithDefaultRealm` to support
+tracking URIs for which authentication credentials should always be sent.
+
+
+.. method:: HTTPPasswordMgrWithPriorAuth.add_password(realm, uri, user, \
+            passwd, is_authenticated=False)
+
+   *realm*, *uri*, *user*, *passwd* are as for
+   :meth:`HTTPPasswordMgr.add_password`.  *is_authenticated* sets the initial
+   value of the ``is_authenticated`` flag for the given URI or list of URIs.
+   If *is_authenticated* is specified as ``True``, *realm* is ignored.
+
+
+.. method:: HTTPPasswordMgr.find_user_password(realm, authuri)
+
+   Same as for :class:`HTTPPasswordMgrWithDefaultRealm` objects
+
+
+.. method:: HTTPPasswordMgrWithPriorAuth.update_authenticated(self, uri, \
+            is_authenticated=False)
+
+   Update the ``is_authenticated`` flag for the given *uri* or list
+   of URIs.
+
+
+.. method:: HTTPPasswordMgrWithPriorAuth.is_authenticated(self, authuri)
+
+   Returns the current state of the ``is_authenticated`` flag for
+   the given URI.
+
+
 .. _abstract-basic-auth-handler:
 
 AbstractBasicAuthHandler Objects
@@ -1041,8 +1108,9 @@ This example gets the python.org main page and displays the first 300 bytes of
 it. ::
 
    >>> import urllib.request
-   >>> f = urllib.request.urlopen('http://www.python.org/')
-   >>> print(f.read(300))
+   >>> with urllib.request.urlopen('http://www.python.org/') as f:
+   ...     print(f.read(300))
+   ...
    b'<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">\n\n\n<html
    xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">\n\n<head>\n
@@ -1055,11 +1123,11 @@ it receives from the http server. In general, a program will decode
 the returned bytes object to string once it determines or guesses
 the appropriate encoding.
 
-The following W3C document, http://www.w3.org/International/O-charset  , lists
+The following W3C document, http://www.w3.org/International/O-charset\ , lists
 the various ways in which a (X)HTML or a XML document could have specified its
 encoding information.
 
-As the python.org website uses *utf-8* encoding as specified in it's meta tag, we
+As the python.org website uses *utf-8* encoding as specified in its meta tag, we
 will use the same for decoding the bytes object. ::
 
    >>> with urllib.request.urlopen('http://www.python.org/') as f:
@@ -1084,8 +1152,9 @@ when the Python installation supports SSL. ::
    >>> import urllib.request
    >>> req = urllib.request.Request(url='https://localhost/cgi-bin/test.cgi',
    ...                       data=b'This data is passed to stdin of the CGI')
-   >>> f = urllib.request.urlopen(req)
-   >>> print(f.read().decode('utf-8'))
+   >>> with urllib.request.urlopen(req) as f:
+   ...     print(f.read().decode('utf-8'))
+   ...
    Got Data: "This data is passed to stdin of the CGI"
 
 The code for the sample CGI used in the above example is::
@@ -1093,14 +1162,15 @@ The code for the sample CGI used in the above example is::
    #!/usr/bin/env python
    import sys
    data = sys.stdin.read()
-   print('Content-type: text-plain\n\nGot Data: "%s"' % data)
+   print('Content-type: text/plain\n\nGot Data: "%s"' % data)
 
 Here is an example of doing a ``PUT`` request using :class:`Request`::
 
     import urllib.request
     DATA=b'some data'
     req = urllib.request.Request(url='http://localhost:8080', data=DATA,method='PUT')
-    f = urllib.request.urlopen(req)
+    with urllib.request.urlopen(req) as f:
+        pass
     print(f.status)
     print(f.reason)
 
@@ -1154,7 +1224,7 @@ every :class:`Request`.  To change this::
    opener.open('http://www.example.com/')
 
 Also, remember that a few standard headers (:mailheader:`Content-Length`,
-:mailheader:`Content-Type` without charset parameter and :mailheader:`Host`)
+:mailheader:`Content-Type` and :mailheader:`Host`)
 are added when the :class:`Request` is passed to :func:`urlopen` (or
 :meth:`OpenerDirector.open`).
 
@@ -1166,8 +1236,10 @@ containing parameters::
    >>> import urllib.request
    >>> import urllib.parse
    >>> params = urllib.parse.urlencode({'spam': 1, 'eggs': 2, 'bacon': 0})
-   >>> f = urllib.request.urlopen("http://www.musi-cal.com/cgi-bin/query?%s" % params)
-   >>> print(f.read().decode('utf-8'))
+   >>> url = "http://www.musi-cal.com/cgi-bin/query?%s" % params
+   >>> with urllib.request.urlopen(url) as f:
+   ...     print(f.read().decode('utf-8'))
+   ...
 
 The following example uses the ``POST`` method instead. Note that params output
 from urlencode is encoded to bytes before it is sent to urlopen as data::
@@ -1175,12 +1247,10 @@ from urlencode is encoded to bytes before it is sent to urlopen as data::
    >>> import urllib.request
    >>> import urllib.parse
    >>> data = urllib.parse.urlencode({'spam': 1, 'eggs': 2, 'bacon': 0})
-   >>> data = data.encode('utf-8')
-   >>> request = urllib.request.Request("http://requestb.in/xrbl82xr")
-   >>> # adding charset parameter to the Content-Type header.
-   >>> request.add_header("Content-Type","application/x-www-form-urlencoded;charset=utf-8")
-   >>> f = urllib.request.urlopen(request, data)
-   >>> print(f.read().decode('utf-8'))
+   >>> data = data.encode('ascii')
+   >>> with urllib.request.urlopen("http://requestb.in/xrbl82xr", data) as f:
+   ...     print(f.read().decode('utf-8'))
+   ...
 
 The following example uses an explicitly specified HTTP proxy, overriding
 environment settings::
@@ -1188,15 +1258,17 @@ environment settings::
    >>> import urllib.request
    >>> proxies = {'http': 'http://proxy.example.com:8080/'}
    >>> opener = urllib.request.FancyURLopener(proxies)
-   >>> f = opener.open("http://www.python.org")
-   >>> f.read().decode('utf-8')
+   >>> with opener.open("http://www.python.org") as f:
+   ...     f.read().decode('utf-8')
+   ...
 
 The following example uses no proxies at all, overriding environment settings::
 
    >>> import urllib.request
    >>> opener = urllib.request.FancyURLopener({})
-   >>> f = opener.open("http://www.python.org/")
-   >>> f.read().decode('utf-8')
+   >>> with opener.open("http://www.python.org/") as f:
+   ...     f.read().decode('utf-8')
+   ...
 
 
 Legacy interface
@@ -1302,7 +1374,7 @@ some point in the future.
     .. method:: retrieve(url, filename=None, reporthook=None, data=None)
 
        Retrieves the contents of *url* and places it in *filename*.  The return value
-       is a tuple consisting of a local filename and either a
+       is a tuple consisting of a local filename and either an
        :class:`email.message.Message` object containing the response headers (for remote
        URLs) or ``None`` (for local URLs).  The caller must then open and read the
        contents of *filename*.  If *filename* is not given and the URL refers to a

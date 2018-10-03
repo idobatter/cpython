@@ -142,7 +142,7 @@ Functions and classes provided:
    is hardwired to stdout.
 
    For example, the output of :func:`help` normally is sent to *sys.stdout*.
-   You can capture that output in a string by redirecting the output to a
+   You can capture that output in a string by redirecting the output to an
    :class:`io.StringIO` object::
 
         f = io.StringIO()
@@ -167,9 +167,19 @@ Functions and classes provided:
    applications. It also has no effect on the output of subprocesses.
    However, it is still a useful approach for many utility scripts.
 
-   This context manager is :ref:`reusable but not reentrant <reusable-cms>`.
+   This context manager is :ref:`reentrant <reentrant-cms>`.
 
    .. versionadded:: 3.4
+
+
+.. function:: redirect_stderr(new_target)
+
+   Similar to :func:`~contextlib.redirect_stdout` but redirecting
+   :data:`sys.stderr` to another file or file-like object.
+
+   This context manager is :ref:`reentrant <reentrant-cms>`.
+
+   .. versionadded:: 3.5
 
 
 .. class:: ContextDecorator()
@@ -371,7 +381,7 @@ some of the context managers being optional::
     with ExitStack() as stack:
         for resource in resources:
             stack.enter_context(resource)
-        if need_special resource:
+        if need_special_resource():
             special = acquire_special_resource()
             stack.callback(release_special_resource, special)
         # Perform operations that use the acquired resources
@@ -543,7 +553,7 @@ advance::
 
 Due to the way the decorator protocol works, a callback function
 declared this way cannot take any parameters. Instead, any resources to
-be released must be accessed as closure variables
+be released must be accessed as closure variables.
 
 
 Using a context manager as a function decorator
@@ -568,10 +578,10 @@ single definition::
             self.name = name
 
         def __enter__(self):
-            logging.info('Entering: {}'.format(name))
+            logging.info('Entering: {}'.format(self.name))
 
         def __exit__(self, exc_type, exc, exc_tb):
-            logging.info('Exiting: {}'.format(name))
+            logging.info('Exiting: {}'.format(self.name))
 
 Instances of this class can be used as both a context manager::
 

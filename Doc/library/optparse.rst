@@ -8,8 +8,8 @@
 .. sectionauthor:: Greg Ward <gward@python.net>
 
 .. deprecated:: 3.2
-  The :mod:`optparse` module is deprecated and will not be developed further;
-  development will continue with the :mod:`argparse` module.
+   The :mod:`optparse` module is deprecated and will not be developed further;
+   development will continue with the :mod:`argparse` module.
 
 **Source code:** :source:`Lib/optparse.py`
 
@@ -1324,7 +1324,7 @@ where the input parameters are
    the list of arguments to process (default: ``sys.argv[1:]``)
 
 ``values``
-   a :class:`optparse.Values` object to store option arguments in (default: a
+   an :class:`optparse.Values` object to store option arguments in (default: a
    new instance of :class:`Values`) -- if you give an existing object, the
    option defaults will not be initialized on it
 

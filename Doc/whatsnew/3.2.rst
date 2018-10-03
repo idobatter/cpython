@@ -50,7 +50,7 @@
 
 This article explains the new features in Python 3.2 as compared to 3.1.  It
 focuses on a few highlights and gives a few examples.  For full details, see the
-`Misc/NEWS <http://hg.python.org/cpython/file/3.2/Misc/NEWS>`_ file.
+`Misc/NEWS <https://hg.python.org/cpython/file/3.2/Misc/NEWS>`_ file.
 
 .. seealso::
 
@@ -522,7 +522,7 @@ Some smaller changes made to the core Python language are:
   (Proposed and implemented by Mark Dickinson; :issue:`9337`.)
 
 * :class:`memoryview` objects now have a :meth:`~memoryview.release()` method
-  and they also now support the context manager protocol.  This allows timely
+  and they also now support the context management protocol.  This allows timely
   release of any resources that were acquired when requesting a buffer from the
   original object.
 
@@ -788,7 +788,7 @@ functools
   :issue:`8814`.)
 
 * To help write classes with rich comparison methods, a new decorator
-  :func:`functools.total_ordering` will use a existing equality and inequality
+  :func:`functools.total_ordering` will use existing equality and inequality
   methods to fill in the remaining methods.
 
   For example, supplying *__eq__* and *__lt__* will enable
@@ -816,7 +816,7 @@ functools
   >>> sorted(iterable, key=cmp_to_key(locale.strcoll))
 
   For sorting examples and a brief sorting tutorial, see the `Sorting HowTo
-  <http://wiki.python.org/moin/HowTo/Sorting/>`_ tutorial.
+  <https://wiki.python.org/moin/HowTo/Sorting/>`_ tutorial.
 
   (Contributed by Raymond Hettinger.)
 
@@ -1020,7 +1020,7 @@ datetime and time
 :issue:`5094`, :issue:`6641`, :issue:`2706`, :issue:`1777412`, :issue:`8013`,
 and :issue:`10827`.)
 
-.. XXX http://bugs.python.org/issue?%40search_text=datetime&%40sort=-activity
+.. XXX https://bugs.python.org/issue?%40search_text=datetime&%40sort=-activity
 
 math
 ----
@@ -1315,7 +1315,7 @@ contexts that correspond to the decimal interchange formats specified in IEEE
 ftp
 ---
 
-The :class:`ftplib.FTP` class now supports the context manager protocol to
+The :class:`ftplib.FTP` class now supports the context management protocol to
 unconditionally consume :exc:`socket.error` exceptions and to close the FTP
 connection when done::
 
@@ -1399,7 +1399,7 @@ Aides and Brian Curtin in :issue:`9962`, :issue:`1675951`, :issue:`7471` and
 
 Also, the :class:`zipfile.ZipExtFile` class was reworked internally to represent
 files stored inside an archive.  The new implementation is significantly faster
-and can be wrapped in a :class:`io.BufferedReader` object for more speedups.  It
+and can be wrapped in an :class:`io.BufferedReader` object for more speedups.  It
 also solves an issue where interleaved calls to *read* and *readline* gave the
 wrong results.
 
@@ -1595,7 +1595,7 @@ The :mod:`socket` module has two new improvements.
   descriptor.  The latter can then be reused for other purposes.
   (Added by Antoine Pitrou; :issue:`8524`.)
 
-* :func:`socket.create_connection` now supports the context manager protocol
+* :func:`socket.create_connection` now supports the context management protocol
   to unconditionally consume :exc:`socket.error` exceptions and to close the
   socket when done.
   (Contributed by Giampaolo Rodolà; :issue:`9794`.)
@@ -2283,7 +2283,7 @@ Multi-threading
 
   Additional details about the implementation can be read from a `python-dev
   mailing-list message
-  <http://mail.python.org/pipermail/python-dev/2009-October/093321.html>`_
+  <https://mail.python.org/pipermail/python-dev/2009-October/093321.html>`_
   (however, "priority requests" as exposed in this message have not been kept
   for inclusion).
 
@@ -2469,7 +2469,7 @@ Code Repository
 
 In addition to the existing Subversion code repository at http://svn.python.org
 there is now a `Mercurial <http://mercurial.selenic.com/>`_ repository at
-http://hg.python.org/ .
+https://hg.python.org/\ .
 
 After the 3.2 release, there are plans to switch to Mercurial as the primary
 repository.  This distributed version control system should make it easier for
@@ -2478,7 +2478,7 @@ members of the community to create and share external changesets.  See
 
 To learn to use the new version control system, see the `tutorial by Joel
 Spolsky <http://hginit.com>`_ or the `Guide to Mercurial Workflows
-<http://mercurial.selenic.com/guide/>`_.
+<http://mercurial.selenic.com/guide>`_.
 
 
 Build and C API Changes
@@ -2560,7 +2560,7 @@ Also, there were a number of updates to the Mac OS X build, see
 build, there is a known problem with the default Tcl/Tk on Mac OS X 10.6.
 Accordingly, we recommend installing an updated alternative such as
 `ActiveState Tcl/Tk 8.5.9 <http://www.activestate.com/activetcl/downloads>`_\.
-See http://www.python.org/download/mac/tcltk/ for additional details.
+See https://www.python.org/download/mac/tcltk/ for additional details.
 
 Porting to Python 3.2
 =====================
@@ -2649,7 +2649,7 @@ require changes to your code:
                 outfile.write(line)
 
   (Contributed by Georg Brandl and Mattias Brändström;
-  `appspot issue 53094 <http://codereview.appspot.com/53094>`_.)
+  `appspot issue 53094 <https://codereview.appspot.com/53094>`_.)
 
 * :func:`struct.pack` now only allows bytes for the ``s`` string pack code.
   Formerly, it would accept text arguments and implicitly encode them to bytes

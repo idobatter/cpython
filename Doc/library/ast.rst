@@ -104,7 +104,7 @@ The abstract grammar is currently defined as follows:
 :mod:`ast` Helpers
 ------------------
 
-Apart from the node classes, :mod:`ast` module defines these utility functions
+Apart from the node classes, the :mod:`ast` module defines these utility functions
 and classes for traversing abstract syntax trees:
 
 .. function:: parse(source, filename='<unknown>', mode='exec')
@@ -115,13 +115,15 @@ and classes for traversing abstract syntax trees:
 
 .. function:: literal_eval(node_or_string)
 
-   Safely evaluate an expression node or a string containing a Python
-   expression.  The string or node provided may only consist of the following
-   Python literal structures: strings, bytes, numbers, tuples, lists, dicts,
-   sets, booleans, and ``None``.
+   Safely evaluate an expression node or a string containing a Python literal or
+   container display.  The string or node provided may only consist of the
+   following Python literal structures: strings, bytes, numbers, tuples, lists,
+   dicts, sets, booleans, and ``None``.
 
-   This can be used for safely evaluating strings containing Python expressions
-   from untrusted sources without the need to parse the values oneself.
+   This can be used for safely evaluating strings containing Python values from
+   untrusted sources without the need to parse the values oneself.  It is not
+   capable of evaluating arbitrarily complex expressions, for example involving
+   operators or indexing.
 
    .. versionchanged:: 3.2
       Now allows bytes and set literals.

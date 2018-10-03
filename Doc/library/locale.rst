@@ -204,7 +204,7 @@ The :mod:`locale` module defines the following exception and functions:
 
    .. data:: RADIXCHAR
 
-      Get the radix character (decimal dot, decimal comma, etc.)
+      Get the radix character (decimal dot, decimal comma, etc.).
 
    .. data:: THOUSEP
 
@@ -385,6 +385,14 @@ The :mod:`locale` module defines the following exception and functions:
 
    Formats a floating point number using the same format as the built-in function
    ``str(float)``, but takes the decimal point into account.
+
+
+.. function:: delocalize(string)
+
+    Converts a string into a normalized number string, following the
+    :const:`LC_NUMERIC` settings.
+
+    .. versionadded:: 3.5
 
 
 .. function:: atof(string)

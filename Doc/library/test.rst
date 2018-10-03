@@ -85,7 +85,7 @@ A basic boilerplate is often used::
 
 This code pattern allows the testing suite to be run by :mod:`test.regrtest`,
 on its own as a script that supports the :mod:`unittest` CLI, or via the
-`python -m unittest` CLI.
+``python -m unittest`` CLI.
 
 The goal for regression testing is to try to break code. This leads to a few
 guidelines to be followed:
@@ -141,9 +141,9 @@ guidelines to be followed:
          arg = (1, 2, 3)
 
   When using this pattern, remember that all classes that inherit from
-  `unittest.TestCase` are run as tests.  The `Mixin` class in the example above
+  :class:`unittest.TestCase` are run as tests.  The :class:`Mixin` class in the example above
   does not have any data and so can't be run by itself, thus it does not
-  inherit from `unittest.TestCase`.
+  inherit from :class:`unittest.TestCase`.
 
 
 .. seealso::
@@ -160,7 +160,7 @@ Running tests using the command-line interface
 The :mod:`test` package can be run as a script to drive Python's regression
 test suite, thanks to the :option:`-m` option: :program:`python -m test`. Under
 the hood, it uses :mod:`test.regrtest`; the call :program:`python -m
-test.regrtest` used in previous Python versions still works).  Running the
+test.regrtest` used in previous Python versions still works.  Running the
 script by itself automatically starts running all regression tests in the
 :mod:`test` package. It does this by finding all modules in the package whose
 name starts with ``test_``, importing them, and executing the function
@@ -199,6 +199,7 @@ The :mod:`test.support` module provides support for Python's regression
 test suite.
 
 .. note::
+
    :mod:`test.support` is not a public module.  It is documented here to help
    Python developers write tests.  The API of this module is subject to change
    without backwards compatibility concerns between releases.
@@ -460,7 +461,7 @@ The :mod:`test.support` module defines the following functions:
 .. function:: make_bad_fd()
 
    Create an invalid file descriptor by opening and closing a temporary file,
-   and returning its descripor.
+   and returning its descriptor.
 
 
 .. function:: import_module(name, deprecated=False)
@@ -551,6 +552,74 @@ The :mod:`test.support` module defines the following functions:
    :func:`find_unused_port` where possible.  Using a hard coded port is
    discouraged since it can makes multiple instances of the test impossible to
    run simultaneously, which is a problem for buildbots.
+
+
+.. function:: load_package_tests(pkg_dir, loader, standard_tests, pattern)
+
+   Generic implementation of the :mod:`unittest` ``load_tests`` protocol for
+   use in test packages.  *pkg_dir* is the root directory of the package;
+   *loader*, *standard_tests*, and *pattern* are the arguments expected by
+   ``load_tests``.  In simple cases, the test package's ``__init__.py``
+   can be the following::
+
+      import os
+      from test.support import load_package_tests
+
+      def load_tests(*args):
+          return load_package_tests(os.path.dirname(__file__), *args)
+
+.. function:: detect_api_mismatch(ref_api, other_api, *, ignore=()):
+
+   Returns the set of attributes, functions or methods of *ref_api* not
+   found on *other_api*, except for a defined list of items to be
+   ignored in this check specified in *ignore*.
+
+   By default this skips private attributes beginning with '_' but
+   includes all magic methods, i.e. those starting and ending in '__'.
+
+   .. versionadded:: 3.5
+
+
+.. function:: check__all__(test_case, module, name_of_module=None, extra=(), blacklist=())
+
+   Assert that the ``__all__`` variable of *module* contains all public names.
+
+   The module's public names (its API) are detected automatically
+   based on whether they match the public name convention and were defined in
+   *module*.
+
+   The *name_of_module* argument can specify (as a string or tuple thereof) what
+   module(s) an API could be defined in in order to be detected as a public
+   API. One case for this is when *module* imports part of its public API from
+   other modules, possibly a C backend (like ``csv`` and its ``_csv``).
+
+   The *extra* argument can be a set of names that wouldn't otherwise be automatically
+   detected as "public", like objects without a proper ``__module__``
+   attribute. If provided, it will be added to the automatically detected ones.
+
+   The *blacklist* argument can be a set of names that must not be treated as part of
+   the public API even though their names indicate otherwise.
+
+   Example use::
+
+      import bar
+      import foo
+      import unittest
+      from test import support
+
+      class MiscTestCase(unittest.TestCase):
+          def test__all__(self):
+              support.check__all__(self, foo)
+
+      class OtherTestCase(unittest.TestCase):
+          def test__all__(self):
+              extra = {'BAR_CONST', 'FOO_CONST'}
+              blacklist = {'baz'}  # Undocumented name.
+              # bar imports part of its API from _bar.
+              support.check__all__(self, bar, ('bar', '_bar'),
+                                   extra=extra, blacklist=blacklist)
+
+   .. versionadded:: 3.6
 
 
 The :mod:`test.support` module defines the following classes:

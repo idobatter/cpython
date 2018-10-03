@@ -29,7 +29,7 @@ def _try_compile(source, name):
     return c
 
 def dis(x=None, *, file=None):
-    """Disassemble classes, methods, functions, or code.
+    """Disassemble classes, methods, functions, generators, or code.
 
     With no argument, disassemble the last traceback.
 
@@ -41,6 +41,8 @@ def dis(x=None, *, file=None):
         x = x.__func__
     if hasattr(x, '__code__'):  # Function
         x = x.__code__
+    if hasattr(x, 'gi_code'):  # Generator
+        x = x.gi_code
     if hasattr(x, '__dict__'):  # Class or module
         items = sorted(x.__dict__.items())
         for name, x1 in items:
@@ -82,6 +84,8 @@ COMPILER_FLAG_NAMES = {
     16: "NESTED",
     32: "GENERATOR",
     64: "NOFREE",
+   128: "COROUTINE",
+   256: "ITERABLE_COROUTINE",
 }
 
 def pretty_flags(flags):
@@ -99,11 +103,13 @@ def pretty_flags(flags):
     return ", ".join(names)
 
 def _get_code_object(x):
-    """Helper to handle methods, functions, strings and raw code objects"""
+    """Helper to handle methods, functions, generators, strings and raw code objects"""
     if hasattr(x, '__func__'): # Method
         x = x.__func__
     if hasattr(x, '__code__'): # Function
         x = x.__code__
+    if hasattr(x, 'gi_code'):  # Generator
+        x = x.gi_code
     if isinstance(x, str):     # Source code
         x = _try_compile(x, "<disassembly>")
     if hasattr(x, 'co_code'):  # Code object
@@ -155,6 +161,15 @@ def show_code(co, *, file=None):
 
 _Instruction = collections.namedtuple("_Instruction",
      "opname opcode arg argval argrepr offset starts_line is_jump_target")
+
+_Instruction.opname.__doc__ = "Human readable name for operation"
+_Instruction.opcode.__doc__ = "Numeric code for operation"
+_Instruction.arg.__doc__ = "Numeric argument to operation (if any), otherwise None"
+_Instruction.argval.__doc__ = "Resolved arg value (if known), otherwise same as arg"
+_Instruction.argrepr.__doc__ = "Human readable description of operation argument"
+_Instruction.offset.__doc__ = "Start index of operation within bytecode sequence"
+_Instruction.starts_line.__doc__ = "Line started by this opcode (if any), otherwise None"
+_Instruction.is_jump_target.__doc__ = "True if other code jumps to here, otherwise False"
 
 class Instruction(_Instruction):
     """Details for a bytecode operation

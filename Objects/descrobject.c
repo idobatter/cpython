@@ -22,7 +22,7 @@ descr_name(PyDescrObject *descr)
 }
 
 static PyObject *
-descr_repr(PyDescrObject *descr, char *format)
+descr_repr(PyDescrObject *descr, const char *format)
 {
     PyObject *name = NULL;
     if (descr->d_name != NULL && PyUnicode_Check(descr->d_name))
@@ -353,11 +353,13 @@ wrapperdescr_call(PyWrapperDescrObject *descr, PyObject *args, PyObject *kwds)
 static PyObject *
 method_get_doc(PyMethodDescrObject *descr, void *closure)
 {
-    if (descr->d_method->ml_doc == NULL) {
-        Py_INCREF(Py_None);
-        return Py_None;
-    }
-    return PyUnicode_FromString(descr->d_method->ml_doc);
+    return _PyType_GetDocFromInternalDoc(descr->d_method->ml_name, descr->d_method->ml_doc);
+}
+
+static PyObject *
+method_get_text_signature(PyMethodDescrObject *descr, void *closure)
+{
+    return _PyType_GetTextSignatureFromInternalDoc(descr->d_method->ml_name, descr->d_method->ml_doc);
 }
 
 static PyObject *
@@ -425,6 +427,7 @@ static PyMemberDef descr_members[] = {
 static PyGetSetDef method_getset[] = {
     {"__doc__", (getter)method_get_doc},
     {"__qualname__", (getter)descr_get_qualname},
+    {"__text_signature__", (getter)method_get_text_signature},
     {0}
 };
 
@@ -463,16 +466,19 @@ static PyGetSetDef getset_getset[] = {
 static PyObject *
 wrapperdescr_get_doc(PyWrapperDescrObject *descr, void *closure)
 {
-    if (descr->d_base->doc == NULL) {
-        Py_INCREF(Py_None);
-        return Py_None;
-    }
-    return PyUnicode_FromString(descr->d_base->doc);
+    return _PyType_GetDocFromInternalDoc(descr->d_base->name, descr->d_base->doc);
+}
+
+static PyObject *
+wrapperdescr_get_text_signature(PyWrapperDescrObject *descr, void *closure)
+{
+    return _PyType_GetTextSignatureFromInternalDoc(descr->d_base->name, descr->d_base->doc);
 }
 
 static PyGetSetDef wrapperdescr_getset[] = {
     {"__doc__", (getter)wrapperdescr_get_doc},
     {"__qualname__", (getter)descr_get_qualname},
+    {"__text_signature__", (getter)wrapperdescr_get_text_signature},
     {0}
 };
 
@@ -1143,17 +1149,15 @@ wrapper_name(wrapperobject *wp)
 }
 
 static PyObject *
-wrapper_doc(wrapperobject *wp)
+wrapper_doc(wrapperobject *wp, void *closure)
 {
-    const char *s = wp->descr->d_base->doc;
+    return _PyType_GetDocFromInternalDoc(wp->descr->d_base->name, wp->descr->d_base->doc);
+}
 
-    if (s == NULL) {
-        Py_INCREF(Py_None);
-        return Py_None;
-    }
-    else {
-        return PyUnicode_FromString(s);
-    }
+static PyObject *
+wrapper_text_signature(wrapperobject *wp, void *closure)
+{
+    return _PyType_GetTextSignatureFromInternalDoc(wp->descr->d_base->name, wp->descr->d_base->doc);
 }
 
 static PyObject *
@@ -1167,6 +1171,7 @@ static PyGetSetDef wrapper_getsets[] = {
     {"__name__", (getter)wrapper_name},
     {"__qualname__", (getter)wrapper_qualname},
     {"__doc__", (getter)wrapper_doc},
+    {"__text_signature__", (getter)wrapper_text_signature},
     {0}
 };
 
@@ -1263,11 +1268,11 @@ PyWrapper_New(PyObject *d, PyObject *self)
 /* A built-in 'property' type */
 
 /*
-    class property(object):
+class property(object):
 
     def __init__(self, fget=None, fset=None, fdel=None, doc=None):
         if doc is None and fget is not None and hasattr(fget, "__doc__"):
-        doc = fget.__doc__
+            doc = fget.__doc__
         self.__get = fget
         self.__set = fset
         self.__del = fdel
@@ -1275,19 +1280,19 @@ PyWrapper_New(PyObject *d, PyObject *self)
 
     def __get__(self, inst, type=None):
         if inst is None:
-        return self
+            return self
         if self.__get is None:
-        raise AttributeError, "unreadable attribute"
+            raise AttributeError, "unreadable attribute"
         return self.__get(inst)
 
     def __set__(self, inst, value):
         if self.__set is None:
-        raise AttributeError, "can't set attribute"
+            raise AttributeError, "can't set attribute"
         return self.__set(inst, value)
 
     def __delete__(self, inst):
         if self.__del is None:
-        raise AttributeError, "can't delete attribute"
+            raise AttributeError, "can't delete attribute"
         return self.__del(inst)
 
 */
@@ -1308,7 +1313,7 @@ static PyMemberDef property_members[] = {
     {"fget", T_OBJECT, offsetof(propertyobject, prop_get), READONLY},
     {"fset", T_OBJECT, offsetof(propertyobject, prop_set), READONLY},
     {"fdel", T_OBJECT, offsetof(propertyobject, prop_del), READONLY},
-    {"__doc__",  T_OBJECT, offsetof(propertyobject, prop_doc), READONLY},
+    {"__doc__",  T_OBJECT, offsetof(propertyobject, prop_doc), 0},
     {0}
 };
 
@@ -1367,6 +1372,9 @@ property_dealloc(PyObject *self)
 static PyObject *
 property_descr_get(PyObject *self, PyObject *obj, PyObject *type)
 {
+    static PyObject * volatile cached_args = NULL;
+    PyObject *args;
+    PyObject *ret;
     propertyobject *gs = (propertyobject *)self;
 
     if (obj == NULL || obj == Py_None) {
@@ -1377,7 +1385,29 @@ property_descr_get(PyObject *self, PyObject *obj, PyObject *type)
         PyErr_SetString(PyExc_AttributeError, "unreadable attribute");
         return NULL;
     }
-    return PyObject_CallFunctionObjArgs(gs->prop_get, obj, NULL);
+    args = cached_args;
+    if (!args || Py_REFCNT(args) != 1) {
+        Py_CLEAR(cached_args);
+        if (!(cached_args = args = PyTuple_New(1)))
+            return NULL;
+    }
+    Py_INCREF(args);
+    assert (Py_REFCNT(args) == 2);
+    Py_INCREF(obj);
+    PyTuple_SET_ITEM(args, 0, obj);
+    ret = PyObject_Call(gs->prop_get, args, NULL);
+    if (args == cached_args) {
+        if (Py_REFCNT(args) == 2) {
+            obj = PyTuple_GET_ITEM(args, 0);
+            PyTuple_SET_ITEM(args, 0, NULL);
+            Py_XDECREF(obj);
+        }
+        else {
+            Py_CLEAR(cached_args);
+        }
+    }
+    Py_DECREF(args);
+    return ret;
 }
 
 static int
@@ -1479,8 +1509,7 @@ property_init(PyObject *self, PyObject *args, PyObject *kwds)
         PyObject *get_doc = _PyObject_GetAttrId(get, &PyId___doc__);
         if (get_doc) {
             if (Py_TYPE(self) == &PyProperty_Type) {
-                Py_XDECREF(prop->prop_doc);
-                prop->prop_doc = get_doc;
+                Py_SETREF(prop->prop_doc, get_doc);
             }
             else {
                 /* If this is a property subclass, put __doc__
@@ -1579,6 +1608,14 @@ property_traverse(PyObject *self, visitproc visit, void *arg)
     return 0;
 }
 
+static int
+property_clear(PyObject *self)
+{
+    propertyobject *pp = (propertyobject *)self;
+    Py_CLEAR(pp->prop_doc);
+    return 0;
+}
+
 PyTypeObject PyProperty_Type = {
     PyVarObject_HEAD_INIT(&PyType_Type, 0)
     "property",                                 /* tp_name */
@@ -1604,7 +1641,7 @@ PyTypeObject PyProperty_Type = {
         Py_TPFLAGS_BASETYPE,                    /* tp_flags */
     property_doc,                               /* tp_doc */
     property_traverse,                          /* tp_traverse */
-    0,                                          /* tp_clear */
+    (inquiry)property_clear,                    /* tp_clear */
     0,                                          /* tp_richcompare */
     0,                                          /* tp_weaklistoffset */
     0,                                          /* tp_iter */

@@ -4,12 +4,14 @@
 .. module:: faulthandler
    :synopsis: Dump the Python traceback.
 
+.. versionadded:: 3.3
+
 This module contains functions to dump Python tracebacks explicitly, on a fault,
 after a timeout, or on a user signal. Call :func:`faulthandler.enable` to
 install fault handlers for the :const:`SIGSEGV`, :const:`SIGFPE`,
 :const:`SIGABRT`, :const:`SIGBUS`, and :const:`SIGILL` signals. You can also
 enable them at startup by setting the :envvar:`PYTHONFAULTHANDLER` environment
-variable or by using :option:`-X` ``faulthandler`` command line option.
+variable or by using the :option:`-X` ``faulthandler`` command line option.
 
 The fault handler is compatible with system fault handlers like Apport or the
 Windows fault handler. The module uses an alternative stack for signal handlers
@@ -36,16 +38,17 @@ alternatively be passed to :func:`faulthandler.enable`.
 The module is implemented in C, so tracebacks can be dumped on a crash or when
 Python is deadlocked.
 
-.. versionadded:: 3.3
 
-
-Dump the traceback
-------------------
+Dumping the traceback
+---------------------
 
 .. function:: dump_traceback(file=sys.stderr, all_threads=True)
 
    Dump the tracebacks of all threads into *file*. If *all_threads* is
    ``False``, dump only the current thread.
+
+   .. versionchanged:: 3.5
+      Added support for passing file descriptor to this function.
 
 
 Fault handler state
@@ -59,6 +62,12 @@ Fault handler state
    produce tracebacks for every running thread. Otherwise, dump only the current
    thread.
 
+   The *file* must be kept open until the fault handler is disabled: see
+   :ref:`issue with file descriptors <faulthandler-fd>`.
+
+   .. versionchanged:: 3.5
+      Added support for passing file descriptor to this function.
+
 .. function:: disable()
 
    Disable the fault handler: uninstall the signal handlers installed by
@@ -69,8 +78,8 @@ Fault handler state
    Check if the fault handler is enabled.
 
 
-Dump the tracebacks after a timeout
------------------------------------
+Dumping the tracebacks after a timeout
+--------------------------------------
 
 .. function:: dump_traceback_later(timeout, repeat=False, file=sys.stderr, exit=False)
 
@@ -82,16 +91,23 @@ Dump the tracebacks after a timeout
    call replaces previous parameters and resets the timeout. The timer has a
    sub-second resolution.
 
+   The *file* must be kept open until the traceback is dumped or
+   :func:`cancel_dump_traceback_later` is called: see :ref:`issue with file
+   descriptors <faulthandler-fd>`.
+
    This function is implemented using a watchdog thread and therefore is not
    available if Python is compiled with threads disabled.
+
+   .. versionchanged:: 3.5
+      Added support for passing file descriptor to this function.
 
 .. function:: cancel_dump_traceback_later()
 
    Cancel the last call to :func:`dump_traceback_later`.
 
 
-Dump the traceback on a user signal
------------------------------------
+Dumping the traceback on a user signal
+--------------------------------------
 
 .. function:: register(signum, file=sys.stderr, all_threads=True, chain=False)
 
@@ -99,7 +115,13 @@ Dump the traceback on a user signal
    the traceback of all threads, or of the current thread if *all_threads* is
    ``False``, into *file*. Call the previous handler if chain is ``True``.
 
+   The *file* must be kept open until the signal is unregistered by
+   :func:`unregister`: see :ref:`issue with file descriptors <faulthandler-fd>`.
+
    Not available on Windows.
+
+   .. versionchanged:: 3.5
+      Added support for passing file descriptor to this function.
 
 .. function:: unregister(signum)
 
@@ -110,8 +132,10 @@ Dump the traceback on a user signal
    Not available on Windows.
 
 
-File descriptor issue
----------------------
+.. _faulthandler-fd:
+
+Issue with file descriptors
+---------------------------
 
 :func:`enable`, :func:`dump_traceback_later` and :func:`register` keep the
 file descriptor of their *file* argument. If the file is closed and its file
@@ -123,9 +147,15 @@ these functions again each time that the file is replaced.
 Example
 -------
 
-Example of a segmentation fault on Linux: ::
+.. highlight:: sh
 
-    $ python -q -X faulthandler
+Example of a segmentation fault on Linux with and without enabling the fault
+handler::
+
+    $ python3 -c "import ctypes; ctypes.string_at(0)"
+    Segmentation fault
+
+    $ python3 -q -X faulthandler
     >>> import ctypes
     >>> ctypes.string_at(0)
     Fatal Python error: Segmentation fault

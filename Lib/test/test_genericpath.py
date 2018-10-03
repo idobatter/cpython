@@ -329,7 +329,6 @@ class CommonTest(GenericTest):
             self.assertEqual(expandvars("$[foo]bar"), "$[foo]bar")
             self.assertEqual(expandvars("$bar bar"), "$bar bar")
             self.assertEqual(expandvars("$?bar"), "$?bar")
-            self.assertEqual(expandvars("${foo}bar"), "barbar")
             self.assertEqual(expandvars("$foo}bar"), "bar}bar")
             self.assertEqual(expandvars("${foo"), "${foo")
             self.assertEqual(expandvars("${{foo}}"), "baz1}")
@@ -342,12 +341,39 @@ class CommonTest(GenericTest):
             self.assertEqual(expandvars(b"$[foo]bar"), b"$[foo]bar")
             self.assertEqual(expandvars(b"$bar bar"), b"$bar bar")
             self.assertEqual(expandvars(b"$?bar"), b"$?bar")
-            self.assertEqual(expandvars(b"${foo}bar"), b"barbar")
             self.assertEqual(expandvars(b"$foo}bar"), b"bar}bar")
             self.assertEqual(expandvars(b"${foo"), b"${foo")
             self.assertEqual(expandvars(b"${{foo}}"), b"baz1}")
             self.assertEqual(expandvars(b"$foo$foo"), b"barbar")
             self.assertEqual(expandvars(b"$bar$bar"), b"$bar$bar")
+
+    @unittest.skipUnless(support.FS_NONASCII, 'need support.FS_NONASCII')
+    def test_expandvars_nonascii(self):
+        if self.pathmodule.__name__ == 'macpath':
+            self.skipTest('macpath.expandvars is a stub')
+        expandvars = self.pathmodule.expandvars
+        def check(value, expected):
+            self.assertEqual(expandvars(value), expected)
+        with support.EnvironmentVarGuard() as env:
+            env.clear()
+            nonascii = support.FS_NONASCII
+            env['spam'] = nonascii
+            env[nonascii] = 'ham' + nonascii
+            check(nonascii, nonascii)
+            check('$spam bar', '%s bar' % nonascii)
+            check('${spam}bar', '%sbar' % nonascii)
+            check('${%s}bar' % nonascii, 'ham%sbar' % nonascii)
+            check('$bar%s bar' % nonascii, '$bar%s bar' % nonascii)
+            check('$spam}bar', '%s}bar' % nonascii)
+
+            check(os.fsencode(nonascii), os.fsencode(nonascii))
+            check(b'$spam bar', os.fsencode('%s bar' % nonascii))
+            check(b'${spam}bar', os.fsencode('%sbar' % nonascii))
+            check(os.fsencode('${%s}bar' % nonascii),
+                  os.fsencode('ham%sbar' % nonascii))
+            check(os.fsencode('$bar%s bar' % nonascii),
+                  os.fsencode('$bar%s bar' % nonascii))
+            check(b'$spam}bar', os.fsencode('%s}bar' % nonascii))
 
     def test_abspath(self):
         self.assertIn("foo", self.pathmodule.abspath("foo"))
@@ -407,6 +433,44 @@ class CommonTest(GenericTest):
             warnings.simplefilter("ignore", DeprecationWarning)
             with support.temp_cwd(name):
                 self.test_abspath()
+
+    def test_join_errors(self):
+        # Check join() raises friendly TypeErrors.
+        with support.check_warnings(('', BytesWarning), quiet=True):
+            errmsg = "Can't mix strings and bytes in path components"
+            with self.assertRaisesRegex(TypeError, errmsg):
+                self.pathmodule.join(b'bytes', 'str')
+            with self.assertRaisesRegex(TypeError, errmsg):
+                self.pathmodule.join('str', b'bytes')
+            # regression, see #15377
+            errmsg = r'join\(\) argument must be str or bytes, not %r'
+            with self.assertRaisesRegex(TypeError, errmsg % 'int'):
+                self.pathmodule.join(42, 'str')
+            with self.assertRaisesRegex(TypeError, errmsg % 'int'):
+                self.pathmodule.join('str', 42)
+            with self.assertRaisesRegex(TypeError, errmsg % 'int'):
+                self.pathmodule.join(42)
+            with self.assertRaisesRegex(TypeError, errmsg % 'list'):
+                self.pathmodule.join([])
+            with self.assertRaisesRegex(TypeError, errmsg % 'bytearray'):
+                self.pathmodule.join(bytearray(b'foo'), bytearray(b'bar'))
+
+    def test_relpath_errors(self):
+        # Check relpath() raises friendly TypeErrors.
+        with support.check_warnings(('', (BytesWarning, DeprecationWarning)),
+                                    quiet=True):
+            errmsg = "Can't mix strings and bytes in path components"
+            with self.assertRaisesRegex(TypeError, errmsg):
+                self.pathmodule.relpath(b'bytes', 'str')
+            with self.assertRaisesRegex(TypeError, errmsg):
+                self.pathmodule.relpath('str', b'bytes')
+            errmsg = r'relpath\(\) argument must be str or bytes, not %r'
+            with self.assertRaisesRegex(TypeError, errmsg % 'int'):
+                self.pathmodule.relpath(42, 'str')
+            with self.assertRaisesRegex(TypeError, errmsg % 'int'):
+                self.pathmodule.relpath('str', 42)
+            with self.assertRaisesRegex(TypeError, errmsg % 'bytearray'):
+                self.pathmodule.relpath(bytearray(b'foo'), bytearray(b'bar'))
 
 
 if __name__=="__main__":

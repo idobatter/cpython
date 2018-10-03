@@ -22,15 +22,20 @@ The module defines the following functions:
 
 .. function:: print_tb(traceback, limit=None, file=None)
 
-   Print up to *limit* stack trace entries from *traceback*.  If *limit* is omitted
-   or ``None``, all entries are printed. If *file* is omitted or ``None``, the
-   output goes to ``sys.stderr``; otherwise it should be an open file or file-like
-   object to receive the output.
+   Print up to *limit* stack trace entries from *traceback* (starting from
+   the caller's frame) if *limit* is positive.  Otherwise, print the last
+   ``abs(limit)`` entries.  If *limit* is omitted or ``None``, all entries
+   are printed.  If *file* is omitted or ``None``, the output goes to
+   ``sys.stderr``; otherwise it should be an open file or file-like object
+   to receive the output.
+
+   .. versionchanged:: 3.5
+       Added negative *limit* support.
 
 
 .. function:: print_exception(type, value, traceback, limit=None, file=None, chain=True)
 
-   Print exception information and up to *limit* stack trace entries from
+   Print exception information and stack trace entries from
    *traceback* to *file*. This differs from :func:`print_tb` in the following
    ways:
 
@@ -41,6 +46,7 @@ The module defines the following functions:
      prints the line where the syntax error occurred with a caret indicating the
      approximate position of the error.
 
+   The optional *limit* argument has the same meaning as for :func:`print_tb`.
    If *chain* is true (the default), then chained exceptions (the
    :attr:`__cause__` or :attr:`__context__` attributes of the exception) will be
    printed as well, like the interpreter itself does when printing an unhandled
@@ -49,33 +55,41 @@ The module defines the following functions:
 
 .. function:: print_exc(limit=None, file=None, chain=True)
 
-   This is a shorthand for ``print_exception(*sys.exc_info())``.
+   This is a shorthand for ``print_exception(*sys.exc_info(), limit, file,
+   chain)``.
 
 
 .. function:: print_last(limit=None, file=None, chain=True)
 
    This is a shorthand for ``print_exception(sys.last_type, sys.last_value,
-   sys.last_traceback, limit, file)``.  In general it will work only after
-   an exception has reached an interactive prompt (see :data:`sys.last_type`).
+   sys.last_traceback, limit, file, chain)``.  In general it will work only
+   after an exception has reached an interactive prompt (see
+   :data:`sys.last_type`).
 
 
 .. function:: print_stack(f=None, limit=None, file=None)
 
-   This function prints a stack trace from its invocation point.  The optional *f*
-   argument can be used to specify an alternate stack frame to start.  The optional
-   *limit* and *file* arguments have the same meaning as for
-   :func:`print_exception`.
+   Print up to *limit* stack trace entries (starting from the invocation
+   point) if *limit* is positive.  Otherwise, print the last ``abs(limit)``
+   entries.  If *limit* is omitted or ``None``, all entries are printed.
+   The optional *f* argument can be used to specify an alternate stack frame
+   to start.  The optional *file* argument has the same meaning as for
+   :func:`print_tb`.
+
+   .. versionchanged:: 3.5
+          Added negative *limit* support.
 
 
 .. function:: extract_tb(traceback, limit=None)
 
-   Return a list of up to *limit* "pre-processed" stack trace entries extracted
-   from the traceback object *traceback*.  It is useful for alternate formatting of
-   stack traces.  If *limit* is omitted or ``None``, all entries are extracted.  A
-   "pre-processed" stack trace entry is a quadruple (*filename*, *line number*,
-   *function name*, *text*) representing the information that is usually printed
-   for a stack trace.  The *text* is a string with leading and trailing whitespace
-   stripped; if the source is not available it is ``None``.
+   Return a list of "pre-processed" stack trace entries extracted from the
+   traceback object *traceback*.  It is useful for alternate formatting of
+   stack traces.  The optional *limit* argument has the same meaning as for
+   :func:`print_tb`.  A "pre-processed" stack trace entry is a 4-tuple
+   (*filename*, *line number*, *function name*, *text*) representing the
+   information that is usually printed for a stack trace.  The *text* is a
+   string with leading and trailing whitespace stripped; if the source is
+   not available it is ``None``.
 
 
 .. function:: extract_stack(f=None, limit=None)
@@ -136,6 +150,162 @@ The module defines the following functions:
 
    .. versionadded:: 3.4
 
+.. function:: walk_stack(f)
+
+   Walk a stack following ``f.f_back`` from the given frame, yielding the frame
+   and line number for each frame. If *f* is ``None``, the current stack is
+   used. This helper is used with :meth:`StackSummary.extract`.
+
+   .. versionadded:: 3.5
+
+.. function:: walk_tb(tb)
+
+   Walk a traceback following ``tb_next`` yielding the frame and line number
+   for each frame. This helper is used with :meth:`StackSummary.extract`.
+
+   .. versionadded:: 3.5
+
+The module also defines the following classes:
+
+:class:`TracebackException` Objects
+-----------------------------------
+
+.. versionadded:: 3.5
+
+:class:`TracebackException` objects are created from actual exceptions to
+capture data for later printing in a lightweight fashion.
+
+.. class:: TracebackException(exc_type, exc_value, exc_traceback, *, limit=None, lookup_lines=True, capture_locals=False)
+
+   Capture an exception for later rendering. *limit*, *lookup_lines* and
+   *capture_locals* are as for the :class:`StackSummary` class.
+
+   Note that when locals are captured, they are also shown in the traceback.
+
+   .. attribute:: __cause__
+
+      A :class:`TracebackException` of the original ``__cause__``.
+
+   .. attribute:: __context__
+
+      A :class:`TracebackException` of the original ``__context__``.
+
+   .. attribute:: __suppress_context__
+
+      The ``__suppress_context__`` value from the original exception.
+
+   .. attribute:: stack
+
+      A :class:`StackSummary` representing the traceback.
+
+   .. attribute:: exc_type
+
+      The class of the original traceback.
+
+   .. attribute:: filename
+
+      For syntax errors - the file name where the error occurred.
+
+   .. attribute:: lineno
+
+      For syntax errors - the line number where the error occurred.
+
+   .. attribute:: text
+
+      For syntax errors - the text where the error occurred.
+
+   .. attribute:: offset
+
+      For syntax errors - the offset into the text where the error occurred.
+
+   .. attribute:: msg
+
+      For syntax errors - the compiler error message.
+
+   .. classmethod:: from_exception(exc, *, limit=None, lookup_lines=True, capture_locals=False)
+
+      Capture an exception for later rendering. *limit*, *lookup_lines* and
+      *capture_locals* are as for the :class:`StackSummary` class.
+
+      Note that when locals are captured, they are also shown in the traceback.
+
+   .. method:: format(*, chain=True)
+
+      Format the exception.
+
+      If *chain* is not ``True``, ``__cause__`` and ``__context__`` will not
+      be formatted.
+
+      The return value is a generator of strings, each ending in a newline and
+      some containing internal newlines. :func:`~traceback.print_exception`
+      is a wrapper around this method which just prints the lines to a file.
+
+      The message indicating which exception occurred is always the last
+      string in the output.
+
+   .. method::  format_exception_only()
+
+      Format the exception part of the traceback.
+
+      The return value is a generator of strings, each ending in a newline.
+
+      Normally, the generator emits a single string; however, for
+      :exc:`SyntaxError` exceptions, it emits several lines that (when
+      printed) display detailed information about where the syntax
+      error occurred.
+
+      The message indicating which exception occurred is always the last
+      string in the output.
+
+
+:class:`StackSummary` Objects
+-----------------------------
+
+.. versionadded:: 3.5
+
+:class:`StackSummary` objects represent a call stack ready for formatting.
+
+.. class:: StackSummary
+
+   .. classmethod:: extract(frame_gen, *, limit=None, lookup_lines=True, capture_locals=False)
+
+      Construct a :class:`StackSummary` object from a frame generator (such as
+      is returned by :func:`~traceback.walk_stack` or
+      :func:`~traceback.walk_tb`).
+
+      If *limit* is supplied, only this many frames are taken from *frame_gen*.
+      If *lookup_lines* is ``False``, the returned :class:`FrameSummary`
+      objects will not have read their lines in yet, making the cost of
+      creating the :class:`StackSummary` cheaper (which may be valuable if it
+      may not actually get formatted). If *capture_locals* is ``True`` the
+      local variables in each :class:`FrameSummary` are captured as object
+      representations.
+
+   .. classmethod:: from_list(a_list)
+
+      Construct a :class:`StackSummary` object from a supplied old-style list
+      of tuples. Each tuple should be a 4-tuple with filename, lineno, name,
+      line as the elements.
+
+
+:class:`FrameSummary` Objects
+-----------------------------
+
+.. versionadded:: 3.5
+
+:class:`FrameSummary` objects represent a single frame in a traceback.
+
+.. class:: FrameSummary(filename, lineno, name, lookup_line=True, locals=None, line=None)
+
+   Represent a single frame in the traceback or stack that is being formatted
+   or printed. It may optionally have a stringified version of the frames
+   locals included in it. If *lookup_line* is ``False``, the source code is not
+   looked up until the :class:`FrameSummary` has the :attr:`~FrameSummary.line`
+   attribute accessed (which also happens when casting it to a tuple).
+   :attr:`~FrameSummary.line` may be directly provided, and will prevent line
+   lookups happening at all. *locals* is an optional local variable
+   dictionary, and if supplied the variable representations are stored in the
+   summary for later display.
 
 .. _traceback-example:
 

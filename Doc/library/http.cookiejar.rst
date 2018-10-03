@@ -115,7 +115,7 @@ The following classes are provided:
       :mod:`http.cookiejar` and :mod:`http.cookies` modules do not depend on each
       other.
 
-   http://wp.netscape.com/newsref/std/cookie_spec.html
+   http://curl.haxx.se/rfc/cookie_spec.html
       The specification of the original Netscape cookie protocol.  Though this is
       still the dominant protocol, the 'Netscape cookie protocol' implemented by all
       the major browsers (and :mod:`http.cookiejar`) only bears a passing resemblance to
@@ -176,7 +176,7 @@ contained :class:`Cookie` objects.
 
    The *response* object (usually the result of a call to
    :meth:`urllib.request.urlopen`, or similar) should support an :meth:`info`
-   method, which returns a :class:`email.message.Message` instance.
+   method, which returns an :class:`email.message.Message` instance.
 
    The *request* object (usually a :class:`urllib.request.Request` instance)
    must support the methods :meth:`get_full_url`, :meth:`get_host`,
@@ -309,7 +309,7 @@ FileCookieJar subclasses and co-operation with web browsers
 -----------------------------------------------------------
 
 The following :class:`CookieJar` subclasses are provided for reading and
-writing .
+writing.
 
 .. class:: MozillaCookieJar(filename, delayload=None, policy=None)
 
@@ -540,7 +540,7 @@ Netscape protocol strictness switches:
 
 .. attribute:: DefaultCookiePolicy.strict_ns_unverifiable
 
-   apply RFC 2965 rules on unverifiable transactions even to Netscape cookies
+   Apply RFC 2965 rules on unverifiable transactions even to Netscape cookies.
 
 
 .. attribute:: DefaultCookiePolicy.strict_ns_domain

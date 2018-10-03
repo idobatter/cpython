@@ -69,22 +69,61 @@ Glossary
       :ref:`the difference between arguments and parameters
       <faq-argument-vs-parameter>`, and :pep:`362`.
 
+   asynchronous context manager
+      An object which controls the environment seen in an
+      :keyword:`async with` statement by defining :meth:`__aenter__` and
+      :meth:`__aexit__` methods.  Introduced by :pep:`492`.
+
+   asynchronous iterable
+      An object, that can be used in an :keyword:`async for` statement.
+      Must return an :term:`awaitable` from its :meth:`__aiter__` method,
+      which should in turn be resolved in an :term:`asynchronous iterator`
+      object.  Introduced by :pep:`492`.
+
+   asynchronous iterator
+      An object that implements :meth:`__aiter__` and :meth:`__anext__`
+      methods, that must return :term:`awaitable` objects.
+      :keyword:`async for` resolves awaitable returned from asynchronous
+      iterator's :meth:`__anext__` method until it raises
+      :exc:`StopAsyncIteration` exception.  Introduced by :pep:`492`.
+
    attribute
       A value associated with an object which is referenced by name using
       dotted expressions.  For example, if an object *o* has an attribute
       *a* it would be referenced as *o.a*.
 
+   awaitable
+      An object that can be used in an :keyword:`await` expression.  Can be
+      a :term:`coroutine` or an object with an :meth:`__await__` method.
+      See also :pep:`492`.
+
    BDFL
       Benevolent Dictator For Life, a.k.a. `Guido van Rossum
-      <http://www.python.org/~guido/>`_, Python's creator.
+      <https://www.python.org/~guido/>`_, Python's creator.
+
+   binary file
+      A :term:`file object` able to read and write
+      :term:`bytes-like objects <bytes-like object>`.
+
+      .. seealso::
+         A :term:`text file` reads and writes :class:`str` objects.
 
    bytes-like object
-      An object that supports the :ref:`bufferobjects`, like :class:`bytes`,
-      :class:`bytearray` or :class:`memoryview`.  Bytes-like objects can
-      be used for various operations that expect binary data, such as
-      compression, saving to a binary file or sending over a socket.
-      Some operations need the binary data to be mutable, in which case
-      not all bytes-like objects can apply.
+      An object that supports the :ref:`bufferobjects` and can
+      export a C-:term:`contiguous` buffer. This includes all :class:`bytes`,
+      :class:`bytearray`, and :class:`array.array` objects, as well as many
+      common :class:`memoryview` objects.  Bytes-like objects can
+      be used for various operations that work with binary data; these include
+      compression, saving to a binary file, and sending over a socket.
+
+      Some operations need the binary data to be mutable.  The documentation
+      often refers to these as "read-write bytes-like objects".  Example
+      mutable buffer objects include :class:`bytearray` and a
+      :class:`memoryview` of a :class:`bytearray`.
+      Other operations require the binary data to be stored in
+      immutable objects ("read-only bytes-like objects"); examples
+      of these include :class:`bytes` and a :class:`memoryview`
+      of a :class:`bytes` object.
 
    bytecode
       Python source code is compiled into bytecode, the internal representation
@@ -132,9 +171,35 @@ Glossary
       statement by defining :meth:`__enter__` and :meth:`__exit__` methods.
       See :pep:`343`.
 
+   contiguous
+      .. index:: C-contiguous, Fortran contiguous
+
+      A buffer is considered contiguous exactly if it is either
+      *C-contiguous* or *Fortran contiguous*.  Zero-dimensional buffers are
+      C and Fortran contiguous.  In one-dimensional arrays, the items
+      must be layed out in memory next to each other, in order of
+      increasing indexes starting from zero.  In multidimensional
+      C-contiguous arrays, the last index varies the fastest when
+      visiting items in order of memory address.  However, in
+      Fortran contiguous arrays, the first index varies the fastest.
+
+   coroutine
+      Coroutines is a more generalized form of subroutines. Subroutines are
+      entered at one point and exited at another point.  Coroutines can be
+      entered, exited, and resumed at many different points.  They can be
+      implemented with the :keyword:`async def` statement.  See also
+      :pep:`492`.
+
+   coroutine function
+      A function which returns a :term:`coroutine` object.  A coroutine
+      function may be defined with the :keyword:`async def` statement,
+      and may contain :keyword:`await`, :keyword:`async for`, and
+      :keyword:`async with` keywords.  These were introduced
+      by :pep:`492`.
+
    CPython
       The canonical implementation of the Python programming language, as
-      distributed on `python.org <http://python.org>`_.  The term "CPython"
+      distributed on `python.org <https://www.python.org>`_.  The term "CPython"
       is used when necessary to distinguish this implementation from others
       such as Jython or IronPython.
 
@@ -175,6 +240,14 @@ Glossary
       An associative array, where arbitrary keys are mapped to values.  The
       keys can be any object with :meth:`__hash__` and :meth:`__eq__` methods.
       Called a hash in Perl.
+
+   dictionary view
+      The objects returned from :meth:`dict.keys`, :meth:`dict.values`, and
+      :meth:`dict.items` are called dictionary views. They provide a dynamic
+      view on the dictionary’s entries, which means that when the dictionary
+      changes, the view reflects these changes. To force the
+      dictionary view to become a full list use ``list(dictview)``.  See
+      :ref:`dict-views`.
 
    docstring
       A string literal which appears as the first expression in a class,
@@ -225,19 +298,24 @@ Glossary
       etc.).  File objects are also called :dfn:`file-like objects` or
       :dfn:`streams`.
 
-      There are actually three categories of file objects: raw binary files,
-      buffered binary files and text files.  Their interfaces are defined in the
-      :mod:`io` module.  The canonical way to create a file object is by using
-      the :func:`open` function.
+      There are actually three categories of file objects: raw
+      :term:`binary files <binary file>`, buffered
+      :term:`binary files <binary file>` and :term:`text files <text file>`.
+      Their interfaces are defined in the :mod:`io` module.  The canonical
+      way to create a file object is by using the :func:`open` function.
 
    file-like object
       A synonym for :term:`file object`.
 
    finder
-      An object that tries to find the :term:`loader` for a module. It must
-      implement either a method named :meth:`find_loader` or a method named
-      :meth:`find_module`. See :pep:`302` and :pep:`420` for details and
-      :class:`importlib.abc.Finder` for an :term:`abstract base class`.
+      An object that tries to find the :term:`loader` for a module that is
+      being imported.
+
+      Since Python 3.3, there are two types of finder: :term:`meta path finders
+      <meta path finder>` for use with :data:`sys.meta_path`, and :term:`path
+      entry finders <path entry finder>` for use with :data:`sys.path_hooks`.
+
+      See :pep:`302`, :pep:`420` and :pep:`451` for much more detail.
 
    floor division
       Mathematical division that rounds down to nearest integer.  The floor
@@ -282,14 +360,23 @@ Glossary
       .. index:: single: generator
 
    generator
-      A function which returns an iterator.  It looks like a normal function
-      except that it contains :keyword:`yield` statements for producing a series
-      a values usable in a for-loop or that can be retrieved one at a time with
-      the :func:`next` function. Each :keyword:`yield` temporarily suspends
-      processing, remembering the location execution state (including local
-      variables and pending try-statements).  When the generator resumes, it
-      picks-up where it left-off (in contrast to functions which start fresh on
-      every invocation).
+      A function which returns a :term:`generator iterator`.  It looks like a
+      normal function except that it contains :keyword:`yield` expressions
+      for producing a series of values usable in a for-loop or that can be
+      retrieved one at a time with the :func:`next` function.
+
+      Usually refers to a generator function, but may refer to a
+      *generator iterator* in some contexts.  In cases where the intended
+      meaning isn't clear, using the full terms avoids ambiguity.
+
+   generator iterator
+      An object created by a :term:`generator` function.
+
+      Each :keyword:`yield` temporarily suspends processing, remembering the
+      location execution state (including local variables and pending
+      try-statements).  When the *generator iterator* resumes, it picks-up where
+      it left-off (in contrast to functions which start fresh on every
+      invocation).
 
       .. index:: single: generator expression
 
@@ -347,8 +434,8 @@ Glossary
       All of Python's immutable built-in objects are hashable, while no mutable
       containers (such as lists or dictionaries) are.  Objects which are
       instances of user-defined classes are hashable by default; they all
-      compare unequal (except with themselves), and their hash value is their
-      :func:`id`.
+      compare unequal (except with themselves), and their hash value is derived
+      from their :func:`id`.
 
    IDLE
       An Integrated Development Environment for Python.  IDLE is a basic editor
@@ -394,6 +481,19 @@ Glossary
       than compiled ones, though their programs generally also run more
       slowly.  See also :term:`interactive`.
 
+   interpreter shutdown
+      When asked to shut down, the Python interpreter enters a special phase
+      where it gradually releases all allocated resources, such as modules
+      and various critical internal structures.  It also makes several calls
+      to the :term:`garbage collector <garbage collection>`. This can trigger
+      the execution of code in user-defined destructors or weakref callbacks.
+      Code executed during the shutdown phase can encounter various
+      exceptions as the resources it relies on may not function anymore
+      (common examples are library modules or the warnings machinery).
+
+      The main reason for interpreter shutdown is that the ``__main__`` module
+      or the script being run has finished executing.
+
    iterable
       An object capable of returning its members one at a time. Examples of
       iterables include all sequence types (such as :class:`list`, :class:`str`,
@@ -436,12 +536,13 @@ Glossary
 
       A number of tools in Python accept key functions to control how elements
       are ordered or grouped.  They include :func:`min`, :func:`max`,
-      :func:`sorted`, :meth:`list.sort`, :func:`heapq.nsmallest`,
-      :func:`heapq.nlargest`, and :func:`itertools.groupby`.
+      :func:`sorted`, :meth:`list.sort`, :func:`heapq.merge`,
+      :func:`heapq.nsmallest`, :func:`heapq.nlargest`, and
+      :func:`itertools.groupby`.
 
       There are several ways to create a key function.  For example. the
       :meth:`str.lower` method can serve as a key function for case insensitive
-      sorts.  Alternatively, an ad-hoc key function can be built from a
+      sorts.  Alternatively, a key function can be built from a
       :keyword:`lambda` expression such as ``lambda r: (r[0], r[2])``.  Also,
       the :mod:`operator` module provides three key function constructors:
       :func:`~operator.attrgetter`, :func:`~operator.itemgetter`, and
@@ -496,9 +597,12 @@ Glossary
       :class:`collections.OrderedDict` and :class:`collections.Counter`.
 
    meta path finder
-      A finder returned by a search of :data:`sys.meta_path`.  Meta path
+      A :term:`finder` returned by a search of :data:`sys.meta_path`.  Meta path
       finders are related to, but different from :term:`path entry finders
       <path entry finder>`.
+
+      See :class:`importlib.abc.MetaPathFinder` for the methods that meta path
+      finders implement.
 
    metaclass
       The class of a class.  Class definitions create a class name, a class
@@ -522,7 +626,7 @@ Glossary
    method resolution order
       Method Resolution Order is the order in which base classes are searched
       for a member during lookup. See `The Python 2.3 Method Resolution Order
-      <http://www.python.org/download/releases/2.3/mro/>`_.
+      <https://www.python.org/download/releases/2.3/mro/>`_.
 
    module
       An object that serves as an organizational unit of Python code.  Modules
@@ -530,6 +634,10 @@ Glossary
       into Python by the process of :term:`importing`.
 
       See also :term:`package`.
+
+   module spec
+      A namespace containing the import-related information used to load a
+      module. An instance of :class:`importlib.machinery.ModuleSpec`.
 
    MRO
       See :term:`method resolution order`.
@@ -656,6 +764,9 @@ Glossary
       (i.e. a :term:`path entry hook`) which knows how to locate modules given
       a :term:`path entry`.
 
+      See :class:`importlib.abc.PathEntryFinder` for the methods that path entry
+      finders implement.
+
    path entry hook
       A callable on the :data:`sys.path_hook` list which returns a :term:`path
       entry finder` if it knows how to find modules on a specific :term:`path
@@ -771,6 +882,14 @@ Glossary
       mapping rather than a sequence because the lookups use arbitrary
       :term:`immutable` keys rather than integers.
 
+      The :class:`collections.abc.Sequence` abstract base class
+      defines a much richer interface that goes beyond just
+      :meth:`__getitem__` and :meth:`__len__`, adding :meth:`count`,
+      :meth:`index`, :meth:`__contains__`, and
+      :meth:`__reversed__`. Types that implement this expanded
+      interface can be registered explicitly using
+      :func:`~abc.register`.
+
    single dispatch
       A form of :term:`generic function` dispatch where the implementation is
       chosen based on the type of a single argument.
@@ -800,6 +919,17 @@ Glossary
       :meth:`~collections.somenamedtuple._asdict`. Examples of struct sequences
       include :data:`sys.float_info` and the return value of :func:`os.stat`.
 
+   text encoding
+      A codec which encodes Unicode strings to bytes.
+
+   text file
+      A :term:`file object` able to read and write :class:`str` objects.
+      Often, a text file actually accesses a byte-oriented datastream
+      and handles the :term:`text encoding` automatically.
+
+      .. seealso::
+         A :term:`binary file` reads and write :class:`bytes` objects.
+
    triple-quoted string
       A string which is bound by three instances of either a quotation mark
       (") or an apostrophe (').  While they don't provide any functionality
@@ -820,14 +950,15 @@ Glossary
       recognized as ending a line: the Unix end-of-line convention ``'\n'``,
       the Windows convention ``'\r\n'``, and the old Macintosh convention
       ``'\r'``.  See :pep:`278` and :pep:`3116`, as well as
-      :func:`str.splitlines` for an additional use.
+      :func:`bytes.splitlines` for an additional use.
 
-   view
-      The objects returned from :meth:`dict.keys`, :meth:`dict.values`, and
-      :meth:`dict.items` are called dictionary views.  They are lazy sequences
-      that will see changes in the underlying dictionary.  To force the
-      dictionary view to become a full list use ``list(dictview)``.  See
-      :ref:`dict-views`.
+   virtual environment
+      A cooperatively isolated runtime environment that allows Python users
+      and applications to install and upgrade Python distribution packages
+      without interfering with the behaviour of other Python applications
+      running on the same system.
+
+      See also :ref:`scripts-pyvenv`.
 
    virtual machine
       A computer defined entirely in software.  Python's virtual machine

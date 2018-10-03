@@ -36,32 +36,25 @@ const char *_PyImport_DynLoadFiletab[] = {
 #ifdef __CYGWIN__
     ".dll",
 #else  /* !__CYGWIN__ */
-#ifdef __VMS
-    ".exe",
-    ".EXE",
-#else  /* !__VMS */
     "." SOABI ".so",
     ".abi" PYTHON_ABI_STRING ".so",
     ".so",
-#endif  /* __VMS */
 #endif  /* __CYGWIN__ */
     NULL,
 };
 
 static struct {
     dev_t dev;
-#ifdef __VMS
-    ino_t ino[3];
-#else
     ino_t ino;
-#endif
     void *handle;
 } handles[128];
 static int nhandles = 0;
 
 
-dl_funcptr _PyImport_GetDynLoadFunc(const char *shortname,
-                                    const char *pathname, FILE *fp)
+dl_funcptr
+_PyImport_FindSharedFuncptr(const char *prefix,
+                            const char *shortname,
+                            const char *pathname, FILE *fp)
 {
     dl_funcptr p;
     void *handle;
@@ -76,47 +69,28 @@ dl_funcptr _PyImport_GetDynLoadFunc(const char *shortname,
     }
 
     PyOS_snprintf(funcname, sizeof(funcname),
-                  LEAD_UNDERSCORE "PyInit_%.200s", shortname);
+                  LEAD_UNDERSCORE "%.20s_%.200s", prefix, shortname);
 
     if (fp != NULL) {
         int i;
-        struct stat statb;
-        if (fstat(fileno(fp), &statb) == -1) {
-            PyErr_SetFromErrno(PyExc_IOError);
+        struct _Py_stat_struct status;
+        if (_Py_fstat(fileno(fp), &status) == -1)
             return NULL;
-        }
         for (i = 0; i < nhandles; i++) {
-            if (statb.st_dev == handles[i].dev &&
-                statb.st_ino == handles[i].ino) {
+            if (status.st_dev == handles[i].dev &&
+                status.st_ino == handles[i].ino) {
                 p = (dl_funcptr) dlsym(handles[i].handle,
                                        funcname);
                 return p;
             }
         }
         if (nhandles < 128) {
-            handles[nhandles].dev = statb.st_dev;
-#ifdef __VMS
-            handles[nhandles].ino[0] = statb.st_ino[0];
-            handles[nhandles].ino[1] = statb.st_ino[1];
-            handles[nhandles].ino[2] = statb.st_ino[2];
-#else
-            handles[nhandles].ino = statb.st_ino;
-#endif
+            handles[nhandles].dev = status.st_dev;
+            handles[nhandles].ino = status.st_ino;
         }
     }
 
     dlopenflags = PyThreadState_GET()->interp->dlopenflags;
-
-#ifdef __VMS
-    /* VMS currently don't allow a pathname, use a logical name instead */
-    /* Concatenate 'python_module_' and shortname */
-    /* so "import vms.bar" will use the logical python_module_bar */
-    /* As C module use only one name space this is probably not a */
-    /* important limitation */
-    PyOS_snprintf(pathbuf, sizeof(pathbuf), "python_module_%-.200s",
-                  shortname);
-    pathname = pathbuf;
-#endif
 
     handle = dlopen(pathname, dlopenflags);
 

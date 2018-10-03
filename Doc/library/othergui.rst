@@ -10,7 +10,7 @@ available for Python:
 
    `PyGObject <https://live.gnome.org/PyGObject>`_
       provides introspection bindings for C libraries using
-      `GObject <http://developer.gnome.org/gobject/stable/>`_.  One of
+      `GObject <https://developer.gnome.org/gobject/stable/>`_.  One of
       these libraries is the `GTK+ 3 <http://www.gtk.org/>`_ widget set.
       GTK+ comes with many more widgets than Tkinter provides.  An online
       `Python GTK+ 3 Tutorial <http://python-gtk-3-tutorial.readthedocs.org/en/latest/>`_
@@ -22,7 +22,7 @@ available for Python:
       `GNOME <http://www.gnome.org>`_.  An online `tutorial
       <http://www.pygtk.org/pygtk2tutorial/index.html>`_ is available.
 
-   `PyQt <http://www.riverbankcomputing.co.uk/software/pyqt/>`_
+   `PyQt <http://www.riverbankcomputing.co.uk/software/pyqt/intro>`_
       PyQt is a :program:`sip`\ -wrapped binding to the Qt toolkit.  Qt is an
       extensive C++ GUI application development framework that is
       available for Unix, Windows and Mac OS X. :program:`sip` is a tool
@@ -34,7 +34,7 @@ available for Python:
       with Python and Qt <http://www.qtrac.eu/pyqtbook.html>`_, by Mark
       Summerfield.
 
-   `PySide <http://www.pyside.org/>`_
+   `PySide <http://qt-project.org/wiki/PySide>`_
       is a newer binding to the Qt toolkit, provided by Nokia.
       Compared to PyQt, its licensing scheme is friendlier to non-open source
       applications.
@@ -50,13 +50,13 @@ available for Python:
       low-level device context drawing, drag and drop, system clipboard access,
       an XML-based resource format and more, including an ever growing library
       of user-contributed modules.  wxPython has a book, `wxPython in Action
-      <http://www.amazon.com/exec/obidos/ASIN/1932394621>`_, by Noel Rappin and
+      <http://www.manning.com/rappin/>`_, by Noel Rappin and
       Robin Dunn.
 
 PyGTK, PyQt, and wxPython, all have a modern look and feel and more
 widgets than Tkinter. In addition, there are many other GUI toolkits for
 Python, both cross-platform, and platform-specific. See the `GUI Programming
-<http://wiki.python.org/moin/GuiProgramming>`_ page in the Python Wiki for a
+<https://wiki.python.org/moin/GuiProgramming>`_ page in the Python Wiki for a
 much more complete list, and also for links to documents where the
 different GUI toolkits are compared.
 

@@ -1,6 +1,7 @@
 import datetime
 import textwrap
 import unittest
+import types
 from email import errors
 from email import policy
 from email.message import Message
@@ -235,6 +236,8 @@ class TestContentTypeHeader(TestHeaderBase):
         self.assertEqual(h.maintype, maintype)
         self.assertEqual(h.subtype, subtype)
         self.assertEqual(h.params, parmdict)
+        with self.assertRaises(TypeError):
+            h.params['abc'] = 'xyz'   # params is read-only.
         self.assertDefectsEqual(h.defects, defects)
         self.assertEqual(h, decoded)
         self.assertEqual(h.fold(policy=policy.default), folded)
@@ -1150,6 +1153,16 @@ class TestAddressHeader(TestHeaderBase):
             [],
             '"The Éric, Himself" <foo@example.com>',
             'The Éric, Himself',
+            'foo@example.com',
+            'foo',
+            'example.com',
+            None),
+
+        'rfc2047_atom_in_quoted_string_is_decoded':
+            ('"=?utf-8?q?=C3=89ric?=" <foo@example.com>',
+            [errors.InvalidHeaderDefect],
+            'Éric <foo@example.com>',
+            'Éric',
             'foo@example.com',
             'foo',
             'example.com',

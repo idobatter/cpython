@@ -3,7 +3,6 @@
 
 .. module:: hmac
    :synopsis: Keyed-Hashing for Message Authentication (HMAC) implementation
-              for Python.
 .. moduleauthor:: Gerhard Häring <ghaering@users.sourceforge.net>
 .. sectionauthor:: Gerhard Häring <ghaering@users.sourceforge.net>
 
@@ -23,10 +22,9 @@ This module implements the HMAC algorithm as described by :rfc:`2104`.
    defaults to the :data:`hashlib.md5` constructor.
 
    .. versionchanged:: 3.4
-      Parameter *key* can be a bytes or bytearray object. Parameter *msg* can
-      be of any type supported by :mod:`hashlib`.
-
-      Paramter *digestmod* can be the name of a hash algorithm.
+      Parameter *key* can be a bytes or bytearray object.
+      Parameter *msg* can be of any type supported by :mod:`hashlib`.
+      Parameter *digestmod* can be the name of a hash algorithm.
 
    .. deprecated:: 3.4
       MD5 as implicit default digest for *digestmod* is deprecated.

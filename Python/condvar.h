@@ -1,4 +1,4 @@
-/* 
+/*
  * Portable condition variable support for windows and pthreads.
  * Everything is inline, this header can be included where needed.
  *
@@ -60,7 +60,7 @@
 #include <pthread.h>
 
 #define PyCOND_ADD_MICROSECONDS(tv, interval) \
-do { \
+do { /* TODO: add overflow and truncation checks */ \
     tv.tv_usec += (long) interval; \
     tv.tv_sec += tv.tv_usec / 1000000; \
     tv.tv_usec %= 1000000; \
@@ -89,7 +89,7 @@ do { \
 
 /* return 0 for success, 1 on timeout, -1 on error */
 Py_LOCAL_INLINE(int)
-PyCOND_TIMEDWAIT(PyCOND_T *cond, PyMUTEX_T *mut, long us)
+PyCOND_TIMEDWAIT(PyCOND_T *cond, PyMUTEX_T *mut, PY_LONG_LONG us)
 {
     int r;
     struct timespec ts;
@@ -105,7 +105,7 @@ PyCOND_TIMEDWAIT(PyCOND_T *cond, PyMUTEX_T *mut, long us)
         return 1;
     else if (r)
         return -1;
-    else 
+    else
         return 0;
 }
 
@@ -255,7 +255,7 @@ _PyCOND_WAIT_MS(PyCOND_T *cv, PyMUTEX_T *cs, DWORD ms)
          * a new thread comes along, it will pass right throuhgh, having
          * adjusted it to (waiting == 0 && sem.count == 0).
          */
-         
+
     if (wait == WAIT_FAILED)
         return -1;
     /* return 0 on success, 1 on timeout */
@@ -270,9 +270,9 @@ PyCOND_WAIT(PyCOND_T *cv, PyMUTEX_T *cs)
 }
 
 Py_LOCAL_INLINE(int)
-PyCOND_TIMEDWAIT(PyCOND_T *cv, PyMUTEX_T *cs, long us)
+PyCOND_TIMEDWAIT(PyCOND_T *cv, PyMUTEX_T *cs, PY_LONG_LONG us)
 {
-    return _PyCOND_WAIT_MS(cv, cs, us/1000);
+    return _PyCOND_WAIT_MS(cv, cs, (DWORD)(us/1000));
 }
 
 Py_LOCAL_INLINE(int)
@@ -363,9 +363,9 @@ PyCOND_WAIT(PyCOND_T *cv, PyMUTEX_T *cs)
  * 2 to indicate that we don't know.
  */
 Py_LOCAL_INLINE(int)
-PyCOND_TIMEDWAIT(PyCOND_T *cv, PyMUTEX_T *cs, long us)
+PyCOND_TIMEDWAIT(PyCOND_T *cv, PyMUTEX_T *cs, PY_LONG_LONG us)
 {
-    return SleepConditionVariableSRW(cv, cs, us/1000, 0) ? 2 : -1;
+    return SleepConditionVariableSRW(cv, cs, (DWORD)(us/1000), 0) ? 2 : -1;
 }
 
 Py_LOCAL_INLINE(int)

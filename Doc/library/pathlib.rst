@@ -106,8 +106,8 @@ we also call *flavours*:
       >>> PurePath('setup.py')      # Running on a Unix machine
       PurePosixPath('setup.py')
 
-   Each element of *pathsegments* can be either a string or bytes object
-   representing a path segment; it can also be another path object::
+   Each element of *pathsegments* can be either a string representing a
+   path segment, or another path object::
 
       >>> PurePath('foo', 'some/path', 'bar')
       PurePosixPath('foo/some/path/bar')
@@ -195,7 +195,7 @@ Paths of a different flavour compare unequal and cannot be ordered::
    >>> PureWindowsPath('foo') < PurePosixPath('foo')
    Traceback (most recent call last):
      File "<stdin>", line 1, in <module>
-   TypeError: unorderable types: PureWindowsPath() < PurePosixPath()
+   TypeError: '<' not supported between instances of 'PureWindowsPath' and 'PurePosixPath'
 
 
 Operators
@@ -522,6 +522,36 @@ Pure paths provide the following methods and properties:
       ValueError: '/etc/passwd' does not start with '/usr'
 
 
+.. method:: PurePath.with_name(name)
+
+   Return a new path with the :attr:`name` changed.  If the original path
+   doesn't have a name, ValueError is raised::
+
+      >>> p = PureWindowsPath('c:/Downloads/pathlib.tar.gz')
+      >>> p.with_name('setup.py')
+      PureWindowsPath('c:/Downloads/setup.py')
+      >>> p = PureWindowsPath('c:/')
+      >>> p.with_name('setup.py')
+      Traceback (most recent call last):
+        File "<stdin>", line 1, in <module>
+        File "/home/antoine/cpython/default/Lib/pathlib.py", line 751, in with_name
+          raise ValueError("%r has an empty name" % (self,))
+      ValueError: PureWindowsPath('c:/') has an empty name
+
+
+.. method:: PurePath.with_suffix(suffix)
+
+   Return a new path with the :attr:`suffix` changed.  If the original path
+   doesn't have a suffix, the new *suffix* is appended instead::
+
+      >>> p = PureWindowsPath('c:/Downloads/pathlib.tar.gz')
+      >>> p.with_suffix('.bz2')
+      PureWindowsPath('c:/Downloads/pathlib.tar.bz2')
+      >>> p = PureWindowsPath('README')
+      >>> p.with_suffix('.txt')
+      PureWindowsPath('README.txt')
+
+
 .. _concrete-paths:
 
 
@@ -598,6 +628,17 @@ call fails (for example because the path doesn't exist):
       PosixPath('/home/antoine/pathlib')
 
 
+.. classmethod:: Path.home()
+
+   Return a new path object representing the user's home directory (as
+   returned by :func:`os.path.expanduser` with ``~`` construct)::
+
+      >>> Path.home()
+      PosixPath('/home/antoine')
+
+   .. versionadded:: 3.5
+
+
 .. method:: Path.stat()
 
    Return information about this path (similarly to :func:`os.stat`).
@@ -638,6 +679,18 @@ call fails (for example because the path doesn't exist):
    .. note::
       If the path points to a symlink, :meth:`exists` returns whether the
       symlink *points to* an existing file or directory.
+
+
+.. method:: Path.expanduser()
+
+   Return a new path with expanded ``~`` and ``~user`` constructs,
+   as returned by :meth:`os.path.expanduser`::
+
+      >>> p = PosixPath('~/films/Monty Python')
+      >>> p.expanduser()
+      PosixPath('/home/eric/films/Monty Python')
+
+   .. versionadded:: 3.5
 
 
 .. method:: Path.glob(pattern)
@@ -761,15 +814,29 @@ call fails (for example because the path doesn't exist):
    the symbolic link's information rather than its target's.
 
 
-.. method:: Path.mkdir(mode=0o777, parents=False)
+.. method:: Path.mkdir(mode=0o777, parents=False, exist_ok=False)
 
    Create a new directory at this given path.  If *mode* is given, it is
    combined with the process' ``umask`` value to determine the file mode
-   and access flags.  If the path already exists, :exc:`OSError` is raised.
+   and access flags.  If the path already exists, :exc:`FileExistsError`
+   is raised.
 
    If *parents* is true, any missing parents of this path are created
-   as needed.  If *parents* is false (the default), a missing parent raises
-   :exc:`OSError`.
+   as needed; they are created with the default permissions without taking
+   *mode* into account (mimicking the POSIX ``mkdir -p`` command).
+
+   If *parents* is false (the default), a missing parent raises
+   :exc:`FileNotFoundError`.
+
+   If *exist_ok* is false (the default), an :exc:`FileExistsError` is
+   raised if the target directory already exists.
+
+   If *exist_ok* is true, :exc:`FileExistsError` exceptions will be
+   ignored (same behavior as the POSIX ``mkdir -p`` command), but only if the
+   last path component is not an existing non-directory file.
+
+   .. versionchanged:: 3.5
+      The *exist_ok* parameter was added.
 
 
 .. method:: Path.open(mode='r', buffering=-1, encoding=None, errors=None, newline=None)
@@ -788,6 +855,34 @@ call fails (for example because the path doesn't exist):
 
    Return the name of the user owning the file.  :exc:`KeyError` is raised
    if the file's uid isn't found in the system database.
+
+
+.. method:: Path.read_bytes()
+
+   Return the binary contents of the pointed-to file as a bytes object::
+
+      >>> p = Path('my_binary_file')
+      >>> p.write_bytes(b'Binary file contents')
+      20
+      >>> p.read_bytes()
+      b'Binary file contents'
+
+   .. versionadded:: 3.5
+
+
+.. method:: Path.read_text(encoding=None, errors=None)
+
+   Return the decoded contents of the pointed-to file as a string::
+
+      >>> p = Path('my_text_file')
+      >>> p.write_text('Text file contents')
+      18
+      >>> p.read_text()
+      'Text file contents'
+
+   The optional parameters have the same meaning as in :func:`open`.
+
+   .. versionadded:: 3.5
 
 
 .. method:: Path.rename(target)
@@ -850,6 +945,25 @@ call fails (for example because the path doesn't exist):
    Remove this directory.  The directory must be empty.
 
 
+.. method:: Path.samefile(other_path)
+
+   Return whether this path points to the same file as *other_path*, which
+   can be either a Path object, or a string.  The semantics are similar
+   to :func:`os.path.samefile` and :func:`os.path.samestat`.
+
+   An :exc:`OSError` can be raised if either file cannot be accessed for some
+   reason.
+
+      >>> p = Path('spam')
+      >>> q = Path('eggs')
+      >>> p.samefile(q)
+      False
+      >>> p.samefile('spam')
+      True
+
+   .. versionadded:: 3.5
+
+
 .. method:: Path.symlink_to(target, target_is_directory=False)
 
    Make this path a symbolic link to *target*.  Under Windows,
@@ -876,10 +990,40 @@ call fails (for example because the path doesn't exist):
    with the process' ``umask`` value to determine the file mode and access
    flags.  If the file already exists, the function succeeds if *exist_ok*
    is true (and its modification time is updated to the current time),
-   otherwise :exc:`OSError` is raised.
+   otherwise :exc:`FileExistsError` is raised.
 
 
 .. method:: Path.unlink()
 
    Remove this file or symbolic link.  If the path points to a directory,
    use :func:`Path.rmdir` instead.
+
+
+.. method:: Path.write_bytes(data)
+
+   Open the file pointed to in bytes mode, write *data* to it, and close the
+   file::
+
+      >>> p = Path('my_binary_file')
+      >>> p.write_bytes(b'Binary file contents')
+      20
+      >>> p.read_bytes()
+      b'Binary file contents'
+
+   An existing file of the same name is overwritten.
+
+   .. versionadded:: 3.5
+
+
+.. method:: Path.write_text(data, encoding=None, errors=None)
+
+   Open the file pointed to in text mode, write *data* to it, and close the
+   file::
+
+      >>> p = Path('my_text_file')
+      >>> p.write_text('Text file contents')
+      18
+      >>> p.read_text()
+      'Text file contents'
+
+   .. versionadded:: 3.5

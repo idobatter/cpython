@@ -134,13 +134,14 @@ addnfa(nfagrammar *gr, char *name)
 
 #ifdef Py_DEBUG
 
-static char REQNFMT[] = "metacompile: less than %d children\n";
+static const char REQNFMT[] = "metacompile: less than %d children\n";
 
-#define REQN(i, count) \
+#define REQN(i, count) do { \
     if (i < count) { \
         fprintf(stderr, REQNFMT, count); \
         Py_FatalError("REQN"); \
-    } else
+    } \
+} while (0)
 
 #else
 #define REQN(i, count)  /* empty */
@@ -378,7 +379,7 @@ typedef struct _ss_dfa {
 
 /* Forward */
 static void printssdfa(int xx_nstates, ss_state *xx_state, int nbits,
-                       labellist *ll, char *msg);
+                       labellist *ll, const char *msg);
 static void simplify(int xx_nstates, ss_state *xx_state);
 static void convert(dfa *d, int xx_nstates, ss_state *xx_state);
 
@@ -493,7 +494,7 @@ makedfa(nfagrammar *gr, nfa *nf, dfa *d)
 
 static void
 printssdfa(int xx_nstates, ss_state *xx_state, int nbits,
-           labellist *ll, char *msg)
+           labellist *ll, const char *msg)
 {
     int i, ibit, iarc;
     ss_state *yy;

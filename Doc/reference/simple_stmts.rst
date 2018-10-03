@@ -7,7 +7,7 @@ Simple statements
 
 .. index:: pair: simple; statement
 
-Simple statements are comprised within a single logical line. Several simple
+A simple statement is comprised within a single logical line. Several simple
 statements may occur on a single line separated by semicolons.  The syntax for
 simple statements is:
 
@@ -70,6 +70,7 @@ Assignment statements
 =====================
 
 .. index::
+   single: =; assignment statement
    pair: assignment; statement
    pair: binding; name
    pair: rebinding; name
@@ -90,8 +91,8 @@ attributes or items of mutable objects:
          : | `slicing`
          : | "*" `target`
 
-(See section :ref:`primaries` for the syntax definitions for the last three
-symbols.)
+(See section :ref:`primaries` for the syntax definitions for *attributeref*,
+*subscription*, and *slicing*.)
 
 An assignment statement evaluates the expression list (remember that this can be
 a single expression or a comma-separated list, the latter yielding a tuple) and
@@ -227,7 +228,7 @@ Assignment of an object to a single target is recursively defined as follows.
   inclusive.  Finally, the sequence object is asked to replace the slice with
   the items of the assigned sequence.  The length of the slice may be different
   from the length of the assigned sequence, thus changing the length of the
-  target sequence, if the object allows it.
+  target sequence, if the target sequence allows it.
 
 .. impl-detail::
 
@@ -235,14 +236,15 @@ Assignment of an object to a single target is recursively defined as follows.
    as for expressions, and invalid syntax is rejected during the code generation
    phase, causing less detailed error messages.
 
-WARNING: Although the definition of assignment implies that overlaps between the
-left-hand side and the right-hand side are 'safe' (for example ``a, b = b, a``
-swaps two variables), overlaps *within* the collection of assigned-to variables
-are not safe!  For instance, the following program prints ``[0, 2]``::
+Although the definition of assignment implies that overlaps between the
+left-hand side and the right-hand side are 'simultanenous' (for example ``a, b =
+b, a`` swaps two variables), overlaps *within* the collection of assigned-to
+variables occur left-to-right, sometimes resulting in confusion.  For instance,
+the following program prints ``[0, 2]``::
 
    x = [0, 1]
    i = 0
-   i, x[i] = 1, 2
+   i, x[i] = 1, 2         # i is updated, then x[i] is updated
    print(x)
 
 
@@ -260,6 +262,18 @@ Augmented assignment statements
 .. index::
    pair: augmented; assignment
    single: statement; assignment, augmented
+   single: +=; augmented assignment
+   single: -=; augmented assignment
+   single: *=; augmented assignment
+   single: /=; augmented assignment
+   single: %=; augmented assignment
+   single: &=; augmented assignment
+   single: ^=; augmented assignment
+   single: |=; augmented assignment
+   single: **=; augmented assignment
+   single: //=; augmented assignment
+   single: >>=; augmented assignment
+   single: <<=; augmented assignment
 
 Augmented assignment is the combination, in a single statement, of a binary
 operation and an assignment statement:
@@ -267,10 +281,10 @@ operation and an assignment statement:
 .. productionlist::
    augmented_assignment_stmt: `augtarget` `augop` (`expression_list` | `yield_expression`)
    augtarget: `identifier` | `attributeref` | `subscription` | `slicing`
-   augop: "+=" | "-=" | "*=" | "/=" | "//=" | "%=" | "**="
+   augop: "+=" | "-=" | "*=" | "@=" | "/=" | "//=" | "%=" | "**="
         : | ">>=" | "<<=" | "&=" | "^=" | "|="
 
-(See section :ref:`primaries` for the syntax definitions for the last three
+(See section :ref:`primaries` for the syntax definitions of the last three
 symbols.)
 
 An augmented assignment evaluates the target (which, unlike normal assignment
@@ -283,6 +297,11 @@ An augmented assignment expression like ``x += 1`` can be rewritten as ``x = x +
 version, ``x`` is only evaluated once. Also, when possible, the actual operation
 is performed *in-place*, meaning that rather than creating a new object and
 assigning that to the target, the old object is modified instead.
+
+Unlike normal assignments, augmented assignments evaluate the left-hand side
+*before* evaluating the right-hand side.  For example, ``a[i] += f(x)`` first
+looks-up ``a[i]``, then it evaluates ``f(x)`` and performs the addition, and
+lastly, it writes the result back to ``a[i]``.
 
 With the exception of assigning to tuples and multiple targets in a single
 statement, the assignment done by augmented assignment statements is handled the
@@ -445,53 +464,26 @@ The :keyword:`yield` statement
 .. productionlist::
    yield_stmt: `yield_expression`
 
-The :keyword:`yield` statement is only used when defining a generator function,
-and is only used in the body of the generator function. Using a :keyword:`yield`
-statement in a function definition is sufficient to cause that definition to
-create a generator function instead of a normal function.
+A :keyword:`yield` statement is semantically equivalent to a :ref:`yield
+expression <yieldexpr>`. The yield statement can be used to omit the parentheses
+that would otherwise be required in the equivalent yield expression
+statement. For example, the yield statements ::
 
-When a generator function is called, it returns an iterator known as a generator
-iterator, or more commonly, a generator.  The body of the generator function is
-executed by calling the :func:`next` function on the generator repeatedly until
-it raises an exception.
+  yield <expr>
+  yield from <expr>
 
-When a :keyword:`yield` statement is executed, the state of the generator is
-frozen and the value of :token:`expression_list` is returned to :meth:`next`'s
-caller.  By "frozen" we mean that all local state is retained, including the
-current bindings of local variables, the instruction pointer, and the internal
-evaluation stack: enough information is saved so that the next time :func:`next`
-is invoked, the function can proceed exactly as if the :keyword:`yield`
-statement were just another external call.
+are equivalent to the yield expression statements ::
 
-The :keyword:`yield` statement is allowed in the :keyword:`try` clause of a
-:keyword:`try` ...  :keyword:`finally` construct.  If the generator is not
-resumed before it is finalized (by reaching a zero reference count or by being
-garbage collected), the generator-iterator's :meth:`close` method will be
-called, allowing any pending :keyword:`finally` clauses to execute.
+  (yield <expr>)
+  (yield from <expr>)
 
-When ``yield from <expr>`` is used, it treats the supplied expression as
-a subiterator, producing values from it until the underlying iterator is
-exhausted.
+Yield expressions and statements are only used when defining a :term:`generator`
+function, and are only used in the body of the generator function.  Using yield
+in a function definition is sufficient to cause that definition to create a
+generator function instead of a normal function.
 
-   .. versionchanged:: 3.3
-      Added ``yield from <expr>`` to delegate control flow to a subiterator
-
-For full details of :keyword:`yield` semantics, refer to the :ref:`yieldexpr`
-section.
-
-.. seealso::
-
-   :pep:`0255` - Simple Generators
-      The proposal for adding generators and the :keyword:`yield` statement to Python.
-
-   :pep:`0342` - Coroutines via Enhanced Generators
-      The proposal to enhance the API and syntax of generators, making them
-      usable as simple coroutines.
-
-   :pep:`0380` - Syntax for Delegating to a Subgenerator
-      The proposal to introduce the :token:`yield_from` syntax, making delegation
-      to sub-generators easy.
-
+For full details of :keyword:`yield` semantics, refer to the
+:ref:`yieldexpr` section.
 
 .. _raise:
 
@@ -556,8 +548,8 @@ printed::
    RuntimeError: Something bad happened
 
 A similar mechanism works implicitly if an exception is raised inside an
-exception handler: the previous exception is then attached as the new
-exception's :attr:`__context__` attribute::
+exception handler or a :keyword:`finally` clause: the previous exception is then
+attached as the new exception's :attr:`__context__` attribute::
 
    >>> try:
    ...     print(1 / 0)
@@ -672,7 +664,7 @@ commas) the two steps are carried out separately for each clause, just
 as though the clauses had been separated out into individiual import
 statements.
 
-The details of the first step, finding and loading modules is described in
+The details of the first step, finding and loading modules are described in
 greater detail in the section on the :ref:`import system <importsystem>`,
 which also describes the various types of packages and modules that can
 be imported, as well as all the hooks that can be used to customize
@@ -682,6 +674,8 @@ initializing the module, which includes execution of the module's code.
 
 If the requested module is retrieved successfully, it will be made
 available in the local namespace in one of three ways:
+
+.. index:: single: as; import statement
 
 * If the module name is followed by :keyword:`as`, then the name
   following :keyword:`as` is bound directly to the imported module.
@@ -701,7 +695,7 @@ available in the local namespace in one of three ways:
 
 The :keyword:`from` form uses a slightly more complex process:
 
-#. find the module specified in the :keyword:`from` clause loading and
+#. find the module specified in the :keyword:`from` clause, loading and
    initializing it if necessary;
 #. for each of the identifiers specified in the :keyword:`import` clauses:
 
@@ -709,7 +703,7 @@ The :keyword:`from` form uses a slightly more complex process:
    #. if not, attempt to import a submodule with that name and then
       check the imported module again for that attribute
    #. if the attribute is not found, :exc:`ImportError` is raised.
-   #. otherwise, a reference to that value is bound in the local namespace,
+   #. otherwise, a reference to that value is stored in the local namespace,
       using the name in the :keyword:`as` clause if it is present,
       otherwise using the attribute name
 
@@ -737,10 +731,9 @@ in the module's namespace which do not begin with an underscore character
 to avoid accidentally exporting items that are not part of the API (such as
 library modules which were imported and used within the module).
 
-The :keyword:`from` form with ``*`` may only occur in a module scope.  The wild
-card form of import --- ``import *`` --- is only allowed at the module level.
-Attempting to use it in class or function definitions will raise a
-:exc:`SyntaxError`.
+The wild card form of import --- ``from module import *`` --- is only allowed at
+the module level.  Attempting to use it in class or function definitions will
+raise a :exc:`SyntaxError`.
 
 .. index::
     single: relative; import
@@ -759,7 +752,7 @@ import mod`` from within ``pkg.subpkg1`` you will import ``pkg.subpkg2.mod``.
 The specification for relative imports is contained within :pep:`328`.
 
 :func:`importlib.import_module` is provided to support applications that
-determine which modules need to be loaded dynamically.
+determine dynamically the modules to be loaded.
 
 
 .. _future:
@@ -771,10 +764,12 @@ Future statements
 
 A :dfn:`future statement` is a directive to the compiler that a particular
 module should be compiled using syntax or semantics that will be available in a
-specified future release of Python.  The future statement is intended to ease
-migration to future versions of Python that introduce incompatible changes to
-the language.  It allows use of the new features on a per-module basis before
-the release in which the feature becomes standard.
+specified future release of Python where the feature becomes standard.
+
+The future statement is intended to ease migration to future versions of Python
+that introduce incompatible changes to the language.  It allows use of the new
+features on a per-module basis before the release in which the feature becomes
+standard.
 
 .. productionlist:: *
    future_statement: "from" "__future__" "import" feature ["as" name]
@@ -869,7 +864,7 @@ definition, function definition, or :keyword:`import` statement.
 
 .. impl-detail::
 
-   The current implementation does not enforce the latter two restrictions, but
+   The current implementation does not enforce the two restrictions, but
    programs should not abuse this freedom, as future implementations may enforce
    them or silently change the meaning of the program.
 
@@ -902,16 +897,16 @@ The :keyword:`nonlocal` statement
                 : | "nonlocal" identifier augop expression_list
 
 The :keyword:`nonlocal` statement causes the listed identifiers to refer to
-previously bound variables in the nearest enclosing scope.  This is important
-because the default behavior for binding is to search the local namespace
-first.  The statement allows encapsulated code to rebind variables outside of
-the local scope besides the global (module) scope.
+previously bound variables in the nearest enclosing scope excluding globals.
+This is important because the default behavior for binding is to search the
+local namespace first.  The statement allows encapsulated code to rebind
+variables outside of the local scope besides the global (module) scope.
 
 .. XXX not implemented
    The :keyword:`nonlocal` statement may prepend an assignment or augmented
    assignment, but not an expression.
 
-Names listed in a :keyword:`nonlocal` statement, unlike to those listed in a
+Names listed in a :keyword:`nonlocal` statement, unlike those listed in a
 :keyword:`global` statement, must refer to pre-existing bindings in an
 enclosing scope (the scope in which a new binding should be created cannot
 be determined unambiguously).

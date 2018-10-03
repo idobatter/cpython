@@ -16,6 +16,7 @@ from io import StringIO
 from test import support
 
 
+import optparse
 from optparse import make_option, Option, \
      TitledHelpFormatter, OptionParser, OptionGroup, \
      SUPPRESS_USAGE, OptionError, OptionConflictError, \
@@ -395,6 +396,7 @@ class TestOptionParser(BaseTest):
         self.assertRaises(self.parser.remove_option, ('foo',), None,
                           ValueError, "no such option 'foo'")
 
+    @support.impl_detail('Relies on sys.getrefcount', cpython=True)
     def test_refleak(self):
         # If an OptionParser is carrying around a reference to a large
         # object, various cycles can prevent it from being GC'd in
@@ -1443,6 +1445,39 @@ Options:
   -h, --help         show this help message and exit
 """
 
+_expected_very_help_short_lines = """\
+Usage: bar.py [options]
+
+Options:
+  -a APPLE
+    throw
+    APPLEs at
+    basket
+  -b NUM, --boo=NUM
+    shout
+    "boo!" NUM
+    times (in
+    order to
+    frighten
+    away all
+    the evil
+    spirits
+    that cause
+    trouble and
+    mayhem)
+  --foo=FOO
+    store FOO
+    in the foo
+    list for
+    later
+    fooing
+  -h, --help
+    show this
+    help
+    message and
+    exit
+"""
+
 class TestHelp(BaseTest):
     def setUp(self):
         self.parser = self.make_parser(80)
@@ -1500,6 +1535,8 @@ class TestHelp(BaseTest):
         # we look at $COLUMNS.
         self.parser = self.make_parser(60)
         self.assertHelpEquals(_expected_help_short_lines)
+        self.parser = self.make_parser(0)
+        self.assertHelpEquals(_expected_very_help_short_lines)
 
     def test_help_unicode(self):
         self.parser = InterceptingOptionParser(usage=SUPPRESS_USAGE)
@@ -1612,6 +1649,12 @@ class TestParseNumber(BaseTest):
                              "option -l: invalid integer value: '0b0123'")
         self.assertParseFail(["-l", "0x12x"],
                              "option -l: invalid integer value: '0x12x'")
+
+
+class MiscTestCase(unittest.TestCase):
+    def test__all__(self):
+        blacklist = {'check_builtin', 'AmbiguousOptionError', 'NO_DEFAULT'}
+        support.check__all__(self, optparse, blacklist=blacklist)
 
 
 def test_main():

@@ -89,7 +89,8 @@ This module defines the following functions:
    Return the thread stack size used when creating new threads.  The optional
    *size* argument specifies the stack size to be used for subsequently created
    threads, and must be 0 (use platform or configured default) or a positive
-   integer value of at least 32,768 (32 KiB). If changing the thread stack size is
+   integer value of at least 32,768 (32 KiB). If *size* is not specified,
+   0 is used.  If changing the thread stack size is
    unsupported, a :exc:`RuntimeError` is raised.  If the specified stack size is
    invalid, a :exc:`ValueError` is raised and the stack size is unmodified.  32 KiB
    is currently the minimum supported stack size value to guarantee sufficient
@@ -354,7 +355,7 @@ called in the locked state; it changes the state to unlocked and returns
 immediately. If an attempt is made to release an unlocked lock, a
 :exc:`RuntimeError` will be raised.
 
-Locks also support the :ref:`context manager protocol <with-locks>`.
+Locks also support the :ref:`context management protocol <with-locks>`.
 
 When more than one thread is blocked in :meth:`~Lock.acquire` waiting for the
 state to turn to unlocked, only one thread proceeds when a :meth:`~Lock.release`
@@ -433,7 +434,7 @@ call pairs may be nested; only the final :meth:`~Lock.release` (the
 :meth:`~Lock.release` of the outermost pair) resets the lock to unlocked and
 allows another thread blocked in :meth:`~Lock.acquire` to proceed.
 
-Reentrant locks also support the :ref:`context manager protocol <with-locks>`.
+Reentrant locks also support the :ref:`context management protocol <with-locks>`.
 
 
 .. class:: RLock()
@@ -501,7 +502,7 @@ passed in or one will be created by default.  Passing one in is useful when
 several condition variables must share the same lock.  The lock is part of
 the condition object: you don't have to track it separately.
 
-A condition variable obeys the :ref:`context manager protocol <with-locks>`:
+A condition variable obeys the :ref:`context management protocol <with-locks>`:
 using the ``with`` statement acquires the associated lock for the duration of
 the enclosed block.  The :meth:`~Condition.acquire` and
 :meth:`~Condition.release` methods also call the corresponding methods of
@@ -630,7 +631,7 @@ item to the buffer only needs to wake up one consumer thread.
             cv.wait()
 
       Therefore, the same rules apply as with :meth:`wait`: The lock must be
-      held when called and is re-aquired on return.  The predicate is evaluated
+      held when called and is re-acquired on return.  The predicate is evaluated
       with the lock held.
 
       .. versionadded:: 3.2
@@ -677,7 +678,7 @@ call.  The counter can never go below zero; when :meth:`~Semaphore.acquire`
 finds that it is zero, it blocks, waiting until some other thread calls
 :meth:`~Semaphore.release`.
 
-Semaphores also support the :ref:`context manager protocol <with-locks>`.
+Semaphores also support the :ref:`context management protocol <with-locks>`.
 
 
 .. class:: Semaphore(value=1)
@@ -874,7 +875,7 @@ This class provides a simple synchronization primitive for use by a fixed number
 of threads that need to wait for each other.  Each of the threads tries to pass
 the barrier by calling the :meth:`~Barrier.wait` method and will block until
 all of the threads have made the call.  At this points, the threads are released
-simultanously.
+simultaneously.
 
 The barrier can be reused any number of times for the same number of threads.
 

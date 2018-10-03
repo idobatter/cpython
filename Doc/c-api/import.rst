@@ -39,7 +39,7 @@ Importing Modules
       behaviour isn't needed anymore.
 
 
-.. c:function:: PyObject* PyImport_ImportModuleEx(char *name, PyObject *globals, PyObject *locals, PyObject *fromlist)
+.. c:function:: PyObject* PyImport_ImportModuleEx(const char *name, PyObject *globals, PyObject *locals, PyObject *fromlist)
 
    .. index:: builtin: __import__
 
@@ -70,7 +70,7 @@ Importing Modules
    .. versionadded:: 3.3
 
 
-.. c:function:: PyObject* PyImport_ImportModuleLevel(char *name, PyObject *globals, PyObject *locals, PyObject *fromlist, int level)
+.. c:function:: PyObject* PyImport_ImportModuleLevel(const char *name, PyObject *globals, PyObject *locals, PyObject *fromlist, int level)
 
    Similar to :c:func:`PyImport_ImportModuleLevelObject`, but the name is an
    UTF-8 encoded string instead of a Unicode object.
@@ -132,8 +132,14 @@ Importing Modules
    such modules have no way to know that the module object is an unknown (and
    probably damaged with respect to the module author's intents) state.
 
+   The module's :attr:`__spec__` and :attr:`__loader__` will be set, if
+   not set already, with the appropriate values.  The spec's loader will
+   be set to the module's ``__loader__`` (if set) and to an instance of
+   :class:`SourceFileLoader` otherwise.
+
    The module's :attr:`__file__` attribute will be set to the code object's
-   :c:member:`co_filename`.
+   :c:member:`co_filename`.  If applicable, :attr:`__cached__` will also
+   be set.
 
    This function will reload the module if it was already imported.  See
    :c:func:`PyImport_ReloadModule` for the intended way to reload a module.
@@ -177,9 +183,9 @@ Importing Modules
 
 .. c:function:: long PyImport_GetMagicNumber()
 
-   Return the magic number for Python bytecode files (a.k.a. :file:`.pyc` and
-   :file:`.pyo` files).  The magic number should be present in the first four bytes
-   of the bytecode file, in little-endian byte order. Returns -1 on error.
+   Return the magic number for Python bytecode files (a.k.a. :file:`.pyc` file).
+   The magic number should be present in the first four bytes of the bytecode
+   file, in little-endian byte order. Returns -1 on error.
 
    .. versionchanged:: 3.3
       Return value of -1 upon failure.
@@ -230,11 +236,6 @@ Importing Modules
    For internal use only.
 
 
-.. c:function:: PyObject* _PyImport_FixupExtension(char *, char *)
-
-   For internal use only.
-
-
 .. c:function:: int PyImport_ImportFrozenModuleObject(PyObject *name)
 
    Load a frozen module named *name*.  Return ``1`` for success, ``0`` if the
@@ -244,6 +245,9 @@ Importing Modules
    reload the module if it was already imported.)
 
    .. versionadded:: 3.3
+
+   .. versionchanged:: 3.4
+      The ``__file__`` attribute is no longer set on the module.
 
 
 .. c:function:: int PyImport_ImportFrozenModule(const char *name)

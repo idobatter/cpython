@@ -35,7 +35,7 @@ The numeric tower
 
       Abstract. Retrieves the imaginary component of this number.
 
-   .. method:: conjugate()
+   .. abstractmethod:: conjugate()
 
       Abstract. Returns the complex conjugate. For example, ``(1+3j).conjugate()
       == (1-3j)``.
@@ -109,6 +109,8 @@ those. You can add ``MyFoo`` between :class:`Complex` and
     class MyFoo(Complex): ...
     MyFoo.register(Real)
 
+
+.. _implementing-the-arithmetic-operations:
 
 Implementing the arithmetic operations
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

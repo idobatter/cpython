@@ -33,6 +33,8 @@ digests.  The modern term is secure hash.
    also" section at the end.
 
 
+.. _hash-algorithms:
+
 Hash algorithms
 ---------------
 
@@ -58,12 +60,8 @@ concatenation of the data fed to it so far using the :meth:`digest` or
 
 Constructors for hash algorithms that are always present in this module are
 :func:`md5`, :func:`sha1`, :func:`sha224`, :func:`sha256`, :func:`sha384`,
-:func:`sha512`, :func:`sha3_224`, :func:`sha3_256`, :func:`sha3_384`, and
-:func:`sha3_512`. Additional algorithms may also be available depending upon
+and :func:`sha512`. Additional algorithms may also be available depending upon
 the OpenSSL library that Python uses on your platform.
-
-   .. versionchanged:: 3.4
-      Add sha3 family of hash algorithms.
 
 For example, to obtain the digest of the byte string ``b'Nobody inspects the
 spammish repetition'``::
@@ -103,18 +101,18 @@ Hashlib provides the following constant attributes:
 
 .. data:: algorithms_guaranteed
 
-   Contains the names of the hash algorithms guaranteed to be supported
+   A set containing the names of the hash algorithms guaranteed to be supported
    by this module on all platforms.
 
    .. versionadded:: 3.2
 
 .. data:: algorithms_available
 
-   Contains the names of the hash algorithms that are available
-   in the running Python interpreter.  These names will be recognized
-   when passed to :func:`new`.  :attr:`algorithms_guaranteed`
-   will always be a subset.  Duplicate algorithms with different
-   name formats may appear in this set (thanks to OpenSSL).
+   A set containing the names of the hash algorithms that are available in the
+   running Python interpreter.  These names will be recognized when passed to
+   :func:`new`.  :attr:`algorithms_guaranteed` will always be a subset.  The
+   same algorithm may appear multiple times in this set under different names
+   (thanks to OpenSSL).
 
    .. versionadded:: 3.2
 
@@ -178,13 +176,13 @@ A hash object has the following methods:
    compute the digests of data sharing a common initial substring.
 
 
-Key Derivation Function
------------------------
+Key derivation
+--------------
 
 Key derivation and key stretching algorithms are designed for secure password
-hashing. Naive algorithms such as ``sha1(password)`` are not resistant
-against brute-force attacks. A good password hashing function must be tunable,
-slow and include a salt.
+hashing. Naive algorithms such as ``sha1(password)`` are not resistant against
+brute-force attacks. A good password hashing function must be tunable, slow, and
+include a `salt <https://en.wikipedia.org/wiki/Salt_%28cryptography%29>`_.
 
 
 .. function:: pbkdf2_hmac(name, password, salt, rounds, dklen=None)
@@ -199,8 +197,7 @@ slow and include a salt.
    a proper source, e.g. :func:`os.urandom`.
 
    The number of *rounds* should be chosen based on the hash algorithm and
-   computing power. As of 2013 a value of at least 100,000 rounds of SHA-256
-   have been suggested.
+   computing power. As of 2013, at least 100,000 rounds of SHA-256 is suggested.
 
    *dklen* is the length of the derived key. If *dklen* is ``None`` then the
    digest size of the hash algorithm *name* is used, e.g. 64 for SHA-512.
@@ -212,9 +209,11 @@ slow and include a salt.
 
    .. versionadded:: 3.4
 
-   .. note:: A fast implementation of *pbkdf2_hmac* is available with OpenSSL.
-      The Python implementation uses an inline version of :mod:`hmac`. It is
-      about three times slower and doesn't release the GIL.
+   .. note::
+
+      A fast implementation of *pbkdf2_hmac* is available with OpenSSL.  The
+      Python implementation uses an inline version of :mod:`hmac`. It is about
+      three times slower and doesn't release the GIL.
 
 
 .. seealso::
@@ -228,7 +227,7 @@ slow and include a salt.
    http://csrc.nist.gov/publications/fips/fips180-2/fips180-2.pdf
       The FIPS 180-2 publication on Secure Hash Algorithms.
 
-   http://en.wikipedia.org/wiki/Cryptographic_hash_function#Cryptographic_hash_algorithms
+   https://en.wikipedia.org/wiki/Cryptographic_hash_function#Cryptographic_hash_algorithms
       Wikipedia article with information on which algorithms have known issues and
       what that means regarding their use.
 

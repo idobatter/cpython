@@ -168,7 +168,7 @@ class ABCMeta(type):
 
     def _dump_registry(cls, file=None):
         """Debug helper to print the ABC registry."""
-        print("Class: %s.%s" % (cls.__module__, cls.__name__), file=file)
+        print("Class: %s.%s" % (cls.__module__, cls.__qualname__), file=file)
         print("Inv.counter: %s" % ABCMeta._abc_invalidation_counter, file=file)
         for name in sorted(cls.__dict__.keys()):
             if name.startswith("_abc_"):
@@ -241,8 +241,8 @@ class ABC(metaclass=ABCMeta):
 def get_cache_token():
     """Returns the current ABC cache token.
 
-    The token is an opaque integer identifying the current version of
-    the ABC cache for virtual subclasses. This number changes with
-    every call to ``register()`` on any ABC.
+    The token is an opaque object (supporting equality testing) identifying the
+    current version of the ABC cache for virtual subclasses. The token changes
+    with every call to ``register()`` on any ABC.
     """
     return ABCMeta._abc_invalidation_counter

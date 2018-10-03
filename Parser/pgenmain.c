@@ -27,7 +27,7 @@ int Py_VerboseFlag;
 int Py_IgnoreEnvironmentFlag;
 
 /* Forward */
-grammar *getgrammar(char *filename);
+grammar *getgrammar(const char *filename);
 
 void Py_Exit(int) _Py_NO_RETURN;
 
@@ -76,7 +76,7 @@ main(int argc, char **argv)
 }
 
 grammar *
-getgrammar(char *filename)
+getgrammar(const char *filename)
 {
     FILE *fp;
     node *n;
@@ -96,10 +96,11 @@ getgrammar(char *filename)
         fprintf(stderr, "Parsing error %d, line %d.\n",
             err.error, err.lineno);
         if (err.text != NULL) {
-            size_t i;
+            size_t len;
+            int i;
             fprintf(stderr, "%s", err.text);
-            i = strlen(err.text);
-            if (i == 0 || err.text[i-1] != '\n')
+            len = strlen(err.text);
+            if (len == 0 || err.text[len-1] != '\n')
                 fprintf(stderr, "\n");
             for (i = 0; i < err.offset; i++) {
                 if (err.text[i] == '\t')

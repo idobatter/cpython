@@ -1,0 +1,262 @@
+****************************
+  What's New In Python 3.6
+****************************
+
+:Release: |release|
+:Date: |today|
+
+.. Rules for maintenance:
+
+   * Anyone can add text to this document.  Do not spend very much time
+   on the wording of your changes, because your text will probably
+   get rewritten to some degree.
+
+   * The maintainer will go through Misc/NEWS periodically and add
+   changes; it's therefore more important to add your changes to
+   Misc/NEWS than to this file.
+
+   * This is not a complete list of every single change; completeness
+   is the purpose of Misc/NEWS.  Some changes I consider too small
+   or esoteric to include.  If such a change is added to the text,
+   I'll just remove it.  (This is another reason you shouldn't spend
+   too much time on writing your addition.)
+
+   * If you want to draw your new text to the attention of the
+   maintainer, add 'XXX' to the beginning of the paragraph or
+   section.
+
+   * It's OK to just add a fragmentary note about a change.  For
+   example: "XXX Describe the transmogrify() function added to the
+   socket module."  The maintainer will research the change and
+   write the necessary text.
+
+   * You can comment out your additions if you like, but it's not
+   necessary (especially when a final release is some months away).
+
+   * Credit the author of a patch or bugfix.   Just the name is
+   sufficient; the e-mail address isn't necessary.
+
+   * It's helpful to add the bug/patch number as a comment:
+
+   XXX Describe the transmogrify() function added to the socket
+   module.
+   (Contributed by P.Y. Developer in :issue:`12345`.)
+
+   This saves the maintainer the effort of going through the Mercurial log
+   when researching a change.
+
+This article explains the new features in Python 3.6, compared to 3.5.
+
+For full details, see the :source:`Misc/NEWS` file.
+
+.. note::
+
+   Prerelease users should be aware that this document is currently in draft
+   form. It will be updated substantially as Python 3.6 moves towards release,
+   so it's worth checking back even after reading earlier versions.
+
+
+Summary -- Release highlights
+=============================
+
+.. This section singles out the most important changes in Python 3.6.
+   Brevity is key.
+
+* None yet.
+
+.. PEP-sized items next.
+
+.. _pep-4XX:
+
+.. PEP 4XX: Virtual Environments
+.. =============================
+
+
+.. (Implemented by Foo Bar.)
+
+.. .. seealso::
+
+    :pep:`4XX` - Python Virtual Environments
+       PEP written by Carl Meyer
+
+
+Other Language Changes
+======================
+
+* None yet.
+
+
+New Modules
+===========
+
+* None yet.
+
+
+Improved Modules
+================
+
+datetime
+--------
+
+The :meth:`datetime.strftime() <datetime.datetime.strftime>` and
+:meth:`date.strftime() <datetime.date.strftime>` methods now support ISO 8601 date
+directives ``%G``, ``%u`` and ``%V``.
+(Contributed by Ashley Anderson in :issue:`12006`.)
+
+
+pickle
+------
+
+Objects that need calling ``__new__`` with keyword arguments can now be pickled
+using :ref:`pickle protocols <pickle-protocols>` older than protocol version 4.
+Protocol version 4 already supports this case.  (Contributed by Serhiy
+Storchaka in :issue:`24164`.)
+
+
+rlcompleter
+-----------
+
+Private and special attribute names now are omitted unless the prefix starts
+with underscores.  A space or a colon is added after some completed keywords.
+(Contributed by Serhiy Storchaka in :issue:`25011` and :issue:`25209`.)
+
+Names of most attributes listed by :func:`dir` are now completed.
+Previously, names of properties and slots which were not yet created on
+an instance were excluded.  (Contributed by Martin Panter in :issue:`25590`.)
+
+
+telnetlib
+---------
+
+:class:`~telnetlib.Telnet` is now a context manager (contributed by
+Stéphane Wirtel in :issue:`25485`).
+
+
+urllib.robotparser
+------------------
+
+:class:`~urllib.robotparser.RobotFileParser` now supports the ``Crawl-delay`` and
+``Request-rate`` extensions.
+(Contributed by Nikolay Bogoychev in :issue:`16099`.)
+
+
+Optimizations
+=============
+
+* The ASCII decoder is now up to 60 times as fast for error handlers
+  ``surrogateescape``, ``ignore`` and ``replace`` (Contributed
+  by Victor Stinner in :issue:`24870`).
+
+* The ASCII and the Latin1 encoders are now up to 3 times as fast for the
+  error handler ``surrogateescape`` (Contributed by Victor Stinner in :issue:`25227`).
+
+* The UTF-8 encoder is now up to 75 times as fast for error handlers
+  ``ignore``, ``replace``, ``surrogateescape``, ``surrogatepass`` (Contributed
+  by Victor Stinner in :issue:`25267`).
+
+* The UTF-8 decoder is now up to 15 times as fast for error handlers
+  ``ignore``, ``replace`` and ``surrogateescape`` (Contributed
+  by Victor Stinner in :issue:`25301`).
+
+* ``bytes % args`` is now up to 2 times faster. (Contributed by Victor Stinner
+  in :issue:`25349`).
+
+* ``bytearray % args`` is now between 2.5 and 5 times faster. (Contributed by
+  Victor Stinner in :issue:`25399`).
+
+* Optimize :meth:`bytes.fromhex` and :meth:`bytearray.fromhex`: they are now
+  between 2x and 3.5x faster. (Contributed by Victor Stinner in :issue:`25401`).
+
+
+Build and C API Changes
+=======================
+
+* New :c:func:`Py_FinalizeEx` API which indicates if flushing buffered data
+  failed (:issue:`5319`).
+
+
+Deprecated
+==========
+
+New Keywords
+------------
+
+``async`` and ``await`` are not recommended to be used as variable, class,
+function or module names.  Introduced by :pep:`492` in Python 3.5, they will
+become proper keywords in Python 3.7.
+
+
+Deprecated Python modules, functions and methods
+------------------------------------------------
+
+* :meth:`importlib.machinery.SourceFileLoader` and
+  :meth:`importlib.machinery.SourcelessFileLoader` are now deprecated. They
+  were the only remaining implementations of
+  :meth:`importlib.abc.Loader.load_module` in :mod:`importlib` that had not
+  been deprecated in previous versions of Python in favour of
+  :meth:`importlib.abc.Loader.exec_module`.
+
+
+Deprecated functions and types of the C API
+-------------------------------------------
+
+* None yet.
+
+
+Deprecated features
+-------------------
+
+* The ``pyvenv`` script has been deprecated in favour of ``python3 -m venv``.
+  This prevents confusion as to what Python interpreter ``pyvenv`` is
+  connected to and thus what Python interpreter will be used by the virtual
+  environment. See :issue:`25154`.
+
+
+Removed
+=======
+
+API and Feature Removals
+------------------------
+
+* ``inspect.getargspec()`` was removed (was deprecated since CPython 3.0).
+  :func:`inspect.getfullargspec` is an almost drop in replacement.
+
+* ``inspect.getmoduleinfo()`` was removed (was deprecated since CPython 3.3).
+  :func:`inspect.getmodulename` should be used for obtaining the module
+  name for a given path.
+
+
+Porting to Python 3.6
+=====================
+
+This section lists previously described changes and other bugfixes
+that may require changes to your code.
+
+Changes in the Python API
+-------------------------
+
+* The functions in the :mod:`compileall` module now return booleans instead
+  of ``1`` or ``0`` to represent success or failure, respectively. Thanks to
+  booleans being a subclass of integers, this should only be an issue if you
+  were doing identity checks for ``1`` or ``0``. See :issue:`25768`.
+
+* Reading the :attr:`~urllib.parse.SplitResult.port` attribute of
+  :func:`urllib.parse.urlsplit` and :func:`~urllib.parse.urlparse` results
+  now raises :exc:`ValueError` for out-of-range values, rather than
+  returning :const:`None`.  See :issue:`20059`.
+
+* The :mod:`imp` module now raises a :exc:`DeprecationWarning` instead of
+  :exc:`PendingDeprecationWarning`.
+
+* The following modules have had missing APIs added to their :attr:`__all__`
+  attributes to match the documented APIs: :mod:`csv`, :mod:`enum`,
+  :mod:`ftplib`, :mod:`logging`, :mod:`optparse`, :mod:`threading` and
+  :mod:`wave`.  This means they will export new symbols when ``import *``
+  is used.  See :issue:`23883`.
+
+
+Changes in the C API
+--------------------
+
+* :c:func:`Py_Exit` (and the main interpreter) now override the exit status
+  with 120 if flushing buffered data failed.  See :issue:`5319`.

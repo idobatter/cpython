@@ -85,8 +85,6 @@ typedef struct { char c; _Bool x; } s_bool;
 #define BOOL_ALIGN 0
 #endif
 
-#define STRINGIFY(x)    #x
-
 #ifdef __powerc
 #pragma options align=reset
 #endif
@@ -546,8 +544,8 @@ np_short(char *p, PyObject *v, const formatdef *f)
         return -1;
     if (x < SHRT_MIN || x > SHRT_MAX){
         PyErr_SetString(StructError,
-                        "short format requires " STRINGIFY(SHRT_MIN)
-                        " <= number <= " STRINGIFY(SHRT_MAX));
+                        "short format requires " Py_STRINGIFY(SHRT_MIN)
+                        " <= number <= " Py_STRINGIFY(SHRT_MAX));
         return -1;
     }
     y = (short)x;
@@ -564,7 +562,8 @@ np_ushort(char *p, PyObject *v, const formatdef *f)
         return -1;
     if (x < 0 || x > USHRT_MAX){
         PyErr_SetString(StructError,
-                        "ushort format requires 0 <= number <= " STRINGIFY(USHRT_MAX));
+                        "ushort format requires 0 <= number <= "
+                        Py_STRINGIFY(USHRT_MAX));
         return -1;
     }
     y = (unsigned short)x;
@@ -724,7 +723,7 @@ np_void_p(char *p, PyObject *v, const formatdef *f)
     return 0;
 }
 
-static formatdef native_table[] = {
+static const formatdef native_table[] = {
     {'x',       sizeof(char),   0,              NULL},
     {'b',       sizeof(char),   0,              nu_byte,        np_byte},
     {'B',       sizeof(char),   0,              nu_ubyte,       np_ubyte},
@@ -1190,7 +1189,7 @@ static formatdef lilendian_table[] = {
 
 
 static const formatdef *
-whichtable(char **pfmt)
+whichtable(const char **pfmt)
 {
     const char *fmt = (*pfmt)++; /* May be backed out of later */
     switch (*fmt) {
@@ -1264,11 +1263,12 @@ prepare_s(PyStructObject *self)
     const char *s;
     const char *fmt;
     char c;
-    Py_ssize_t size, len, ncodes, num, itemsize;
+    Py_ssize_t size, len, num, itemsize;
+    size_t ncodes;
 
     fmt = PyBytes_AS_STRING(self->s_format);
 
-    f = whichtable((char **)&fmt);
+    f = whichtable(&fmt);
 
     s = fmt;
     size = 0;
@@ -1320,7 +1320,7 @@ prepare_s(PyStructObject *self)
     }
 
     /* check for overflow */
-    if ((ncodes + 1) > (PY_SSIZE_T_MAX / sizeof(formatcode))) {
+    if ((ncodes + 1) > ((size_t)PY_SSIZE_T_MAX / sizeof(formatcode))) {
         PyErr_NoMemory();
         return -1;
     }
@@ -1437,8 +1437,7 @@ s_init(PyObject *self, PyObject *args, PyObject *kwds)
         return -1;
     }
 
-    Py_CLEAR(soself->s_format);
-    soself->s_format = o_format;
+    Py_SETREF(soself->s_format, o_format);
 
     ret = prepare_s(soself);
     return ret;
@@ -1457,7 +1456,7 @@ s_dealloc(PyStructObject *s)
 }
 
 static PyObject *
-s_unpack_internal(PyStructObject *soself, char *startfrom) {
+s_unpack_internal(PyStructObject *soself, const char *startfrom) {
     formatcode *code;
     Py_ssize_t i = 0;
     PyObject *result = PyTuple_New(soself->s_len);
@@ -1842,8 +1841,8 @@ static PyObject *
 s_pack_into(PyObject *self, PyObject *args)
 {
     PyStructObject *soself;
-    char *buffer;
-    Py_ssize_t buffer_len, offset;
+    Py_buffer buffer;
+    Py_ssize_t offset;
 
     /* Validate arguments.  +1 is for the first arg as buffer. */
     soself = (PyStructObject *)self;
@@ -1868,34 +1867,37 @@ s_pack_into(PyObject *self, PyObject *args)
     }
 
     /* Extract a writable memory buffer from the first argument */
-    if ( PyObject_AsWriteBuffer(PyTuple_GET_ITEM(args, 0),
-                                                            (void**)&buffer, &buffer_len) == -1 ) {
+    if (!PyArg_Parse(PyTuple_GET_ITEM(args, 0), "w*", &buffer))
         return NULL;
-    }
-    assert( buffer_len >= 0 );
+    assert(buffer.len >= 0);
 
     /* Extract the offset from the first argument */
     offset = PyNumber_AsSsize_t(PyTuple_GET_ITEM(args, 1), PyExc_IndexError);
-    if (offset == -1 && PyErr_Occurred())
+    if (offset == -1 && PyErr_Occurred()) {
+        PyBuffer_Release(&buffer);
         return NULL;
+    }
 
     /* Support negative offsets. */
     if (offset < 0)
-        offset += buffer_len;
+        offset += buffer.len;
 
     /* Check boundaries */
-    if (offset < 0 || (buffer_len - offset) < soself->s_size) {
+    if (offset < 0 || (buffer.len - offset) < soself->s_size) {
         PyErr_Format(StructError,
                      "pack_into requires a buffer of at least %zd bytes",
                      soself->s_size);
+        PyBuffer_Release(&buffer);
         return NULL;
     }
 
     /* Call the guts */
-    if ( s_pack_internal(soself, args, 2, buffer + offset) != 0 ) {
+    if (s_pack_internal(soself, args, 2, (char*)buffer.buf + offset) != 0) {
+        PyBuffer_Release(&buffer);
         return NULL;
     }
 
+    PyBuffer_Release(&buffer);
     Py_RETURN_NONE;
 }
 
@@ -1921,7 +1923,7 @@ s_sizeof(PyStructObject *self, void *unused)
     Py_ssize_t size;
     formatcode *code;
 
-    size = sizeof(PyStructObject) + sizeof(formatcode);
+    size = _PyObject_SIZE(Py_TYPE(self)) + sizeof(formatcode);
     for (code = self->s_codes; code->fmtdef != NULL; code++)
         size += sizeof(formatcode);
     return PyLong_FromSsize_t(size);
@@ -2277,7 +2279,7 @@ PyInit__struct(void)
 
     /* Check endian and swap in faster functions */
     {
-        formatdef *native = native_table;
+        const formatdef *native = native_table;
         formatdef *other, *ptr;
 #if PY_LITTLE_ENDIAN
         other = lilendian_table;

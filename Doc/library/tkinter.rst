@@ -15,14 +15,14 @@ this should open a window demonstrating a simple Tk interface.
 
 .. seealso::
 
-   `Python Tkinter Resources <http://www.python.org/topics/tkinter/>`_
+   `Python Tkinter Resources <https://wiki.python.org/moin/TkInter>`_
       The Python Tkinter Topic Guide provides a great deal of information on using Tk
       from Python and links to other sources of information on Tk.
 
    `TKDocs <http://www.tkdocs.com/>`_
       Extensive tutorial plus friendlier widget pages for some of the widgets.
 
-   `Tkinter reference: a GUI for Python <http://infohost.nmt.edu/tcc/help/pubs/tkinter/>`_
+   `Tkinter reference: a GUI for Python <http://infohost.nmt.edu/tcc/help/pubs/tkinter/web/index.html>`_
       On-line reference material.
 
    `Tkinter docs from effbot <http://effbot.org/tkinterbook/>`_
@@ -31,13 +31,13 @@ this should open a window demonstrating a simple Tk interface.
    `Tcl/Tk manual <http://www.tcl.tk/man/tcl8.5/>`_
       Official manual for the latest tcl/tk version.
 
-   `Programming Python <http://www.amazon.com/Programming-Python-Mark-Lutz/dp/0596158106/>`_
+   `Programming Python <http://www.rmi.net/~lutz/about-pp4e.html>`_
       Book by Mark Lutz, has excellent coverage of Tkinter.
 
    `Modern Tkinter for Busy Python Developers <http://www.amazon.com/Modern-Tkinter-Python-Developers-ebook/dp/B0071QDNLO/>`_
       Book by Mark Rozerman about building attractive and modern graphical user interfaces with Python and Tkinter.
 
-   `Python and Tkinter Programming <http://www.amazon.com/exec/obidos/ASIN/1884777813>`_
+   `Python and Tkinter Programming <http://www.manning.com/grayson/>`_
       The book by John Grayson (ISBN 1-884777-81-3).
 
 
@@ -180,9 +180,9 @@ documentation that exists. Here are some hints:
       The Tk/Tcl development is largely taking place at ActiveState.
 
    `Tcl and the Tk Toolkit <http://www.amazon.com/exec/obidos/ASIN/020163337X>`_
-      The book by John Ousterhout, the inventor of Tcl .
+      The book by John Ousterhout, the inventor of Tcl.
 
-   `Practical Programming in Tcl and Tk <http://www.amazon.com/exec/obidos/ASIN/0130220280>`_
+   `Practical Programming in Tcl and Tk <http://www.beedub.com/book/>`_
       Brent Welch's encyclopedic book.
 
 
@@ -440,7 +440,7 @@ back will contain the name of the synonym and the "real" option (such as
 Example::
 
    >>> print(fred.config())
-   {'relief' : ('relief', 'relief', 'Relief', 'raised', 'groove')}
+   {'relief': ('relief', 'relief', 'Relief', 'raised', 'groove')}
 
 Of course, the dictionary printed will include all the options available and
 their values.  This is meant only as an example.
@@ -613,7 +613,7 @@ bitmap
    preceded with an ``@``, as in ``"@/usr/contrib/bitmap/gumby.bit"``.
 
 boolean
-   You can pass integers 0 or 1 or the strings ``"yes"`` or ``"no"`` .
+   You can pass integers 0 or 1 or the strings ``"yes"`` or ``"no"``.
 
 callback
    This is any Python function that takes no arguments.  For example::
@@ -794,3 +794,53 @@ some widget (e.g. labels, buttons, menus). In these cases, Tk will not keep a
 reference to the image. When the last Python reference to the image object is
 deleted, the image data is deleted as well, and Tk will display an empty box
 wherever the image was used.
+
+
+.. _tkinter-file-handlers:
+
+File Handlers
+-------------
+
+Tk allows you to register and unregister a callback function which will be
+called from the Tk mainloop when I/O is possible on a file descriptor.
+Only one handler may be registered per file descriptor. Example code::
+
+   import tkinter
+   widget = tkinter.Tk()
+   mask = tkinter.READABLE | tkinter.WRITABLE
+   widget.tk.createfilehandler(file, mask, callback)
+   ...
+   widget.tk.deletefilehandler(file)
+
+This feature is not available on Windows.
+
+Since you don't know how many bytes are available for reading, you may not
+want to use the :class:`~io.BufferedIOBase` or :class:`~io.TextIOBase`
+:meth:`~io.BufferedIOBase.read` or :meth:`~io.IOBase.readline` methods,
+since these will insist on reading a predefined number of bytes.
+For sockets, the :meth:`~socket.socket.recv` or
+:meth:`~socket.socket.recvfrom` methods will work fine; for other files,
+use raw reads or ``os.read(file.fileno(), maxbytecount)``.
+
+
+.. method:: Widget.tk.createfilehandler(file, mask, func)
+
+   Registers the file handler callback function *func*. The *file* argument
+   may either be an object with a :meth:`~io.IOBase.fileno` method (such as
+   a file or socket object), or an integer file descriptor. The *mask*
+   argument is an ORed combination of any of the three constants below.
+   The callback is called as follows::
+
+      callback(file, mask)
+
+
+.. method:: Widget.tk.deletefilehandler(file)
+
+   Unregisters a file handler.
+
+
+.. data:: READABLE
+          WRITABLE
+          EXCEPTION
+
+   Constants used in the *mask* arguments.

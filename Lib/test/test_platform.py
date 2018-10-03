@@ -1,7 +1,9 @@
+from unittest import mock
 import os
 import platform
 import subprocess
 import sys
+import tempfile
 import unittest
 import warnings
 
@@ -234,7 +236,14 @@ class PlatformTest(unittest.TestCase):
             self.assertEqual(sts, 0)
 
     def test_dist(self):
-        res = platform.dist()
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                'ignore',
+                'dist\(\) and linux_distribution\(\) '
+                'functions are deprecated .*',
+                PendingDeprecationWarning,
+            )
+            res = platform.dist()
 
     def test_libc_ver(self):
         import os
@@ -295,11 +304,45 @@ class PlatformTest(unittest.TestCase):
                     returncode = ret >> 8
                 self.assertEqual(returncode, len(data))
 
+    def test_linux_distribution_encoding(self):
+        # Issue #17429
+        with tempfile.TemporaryDirectory() as tempdir:
+            filename = os.path.join(tempdir, 'fedora-release')
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write('Fedora release 19 (Schr\xf6dinger\u2019s Cat)\n')
 
-def test_main():
-    support.run_unittest(
-        PlatformTest
-    )
+            with mock.patch('platform._UNIXCONFDIR', tempdir):
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        'ignore',
+                        'dist\(\) and linux_distribution\(\) '
+                        'functions are deprecated .*',
+                        PendingDeprecationWarning,
+                    )
+                    distname, version, distid = platform.linux_distribution()
+
+                self.assertEqual(distname, 'Fedora')
+            self.assertEqual(version, '19')
+            self.assertEqual(distid, 'Schr\xf6dinger\u2019s Cat')
+
+
+class DeprecationTest(unittest.TestCase):
+
+    def test_dist_deprecation(self):
+        with self.assertWarns(PendingDeprecationWarning) as cm:
+            platform.dist()
+        self.assertEqual(str(cm.warning),
+                         'dist() and linux_distribution() functions are '
+                         'deprecated in Python 3.5 and will be removed in '
+                         'Python 3.7')
+
+    def test_linux_distribution_deprecation(self):
+        with self.assertWarns(PendingDeprecationWarning) as cm:
+            platform.linux_distribution()
+        self.assertEqual(str(cm.warning),
+                         'dist() and linux_distribution() functions are '
+                         'deprecated in Python 3.5 and will be removed in '
+                         'Python 3.7')
 
 if __name__ == '__main__':
-    test_main()
+    unittest.main()

@@ -53,7 +53,7 @@ Notes on the availability of these functions:
 .. data:: name
 
    The name of the operating system dependent module imported.  The following
-   names have currently been registered: ``'posix'``, ``'nt'``, ``'mac'``,
+   names have currently been registered: ``'posix'``, ``'nt'``,
    ``'ce'``, ``'java'``.
 
    .. seealso::
@@ -65,6 +65,7 @@ Notes on the availability of these functions:
 
 
 .. _os-filenames:
+.. _filesystem-encoding:
 
 File Names, Command Line Arguments, and Environment Variables
 -------------------------------------------------------------
@@ -77,9 +78,10 @@ uses the file system encoding to perform this conversion (see
 
 .. versionchanged:: 3.1
    On some systems, conversion using the file system encoding may fail. In this
-   case, Python uses the ``surrogateescape`` encoding error handler, which means
-   that undecodable bytes are replaced by a Unicode character U+DCxx on
-   decoding, and these are again translated to the original byte on encoding.
+   case, Python uses the :ref:`surrogateescape encoding error handler
+   <surrogateescape>`, which means that undecodable bytes are replaced by a
+   Unicode character U+DCxx on decoding, and these are again translated to the
+   original byte on encoding.
 
 
 The file system encoding must guarantee to successfully decode all bytes
@@ -260,7 +262,9 @@ process and user.
 
    Availability: Unix.
 
-   .. note:: On Mac OS X, :func:`getgroups` behavior differs somewhat from
+   .. note::
+
+      On Mac OS X, :func:`getgroups` behavior differs somewhat from
       other Unix platforms. If the Python interpreter was built with a
       deployment target of :const:`10.5` or earlier, :func:`getgroups` returns
       the list of effective group ids associated with the current user process;
@@ -278,10 +282,10 @@ process and user.
 .. function:: getlogin()
 
    Return the name of the user logged in on the controlling terminal of the
-   process.  For most purposes, it is more useful to use the environment variables
-   :envvar:`LOGNAME` or :envvar:`USERNAME` to find out who the user is, or
-   ``pwd.getpwuid(os.getuid())[0]`` to get the login name of the currently
-   effective user id.
+   process.  For most purposes, it is more useful to use the environment
+   variables :envvar:`LOGNAME` or :envvar:`USERNAME` to find out who the user
+   is, or ``pwd.getpwuid(os.getuid())[0]`` to get the login name of the current
+   real user id.
 
    Availability: Unix, Windows.
 
@@ -307,8 +311,6 @@ process and user.
    .. index:: single: process; id
 
    Return the current process id.
-
-   Availability: Unix, Windows.
 
 
 .. function:: getppid()
@@ -377,7 +379,7 @@ process and user.
 
    .. index:: single: user; id
 
-   Return the current process's user id.
+   Return the current process's real user id.
 
    Availability: Unix.
 
@@ -546,8 +548,6 @@ process and user.
    On platforms where :c:func:`strerror` returns ``NULL`` when given an unknown
    error number, :exc:`ValueError` is raised.
 
-   Availability: Unix, Windows.
-
 
 .. data:: supports_bytes_environ
 
@@ -560,8 +560,6 @@ process and user.
 .. function:: umask(mask)
 
    Set the current numeric umask and return the previous umask.
-
-   Availability: Unix, Windows.
 
 
 .. function:: uname()
@@ -653,8 +651,6 @@ as internal buffering of data.
 
    Close file descriptor *fd*.
 
-   Availability: Unix, Windows.
-
    .. note::
 
       This function is intended for low-level I/O and must be applied to a file
@@ -674,8 +670,6 @@ as internal buffering of data.
           except OSError:
               pass
 
-   Availability: Unix, Windows.
-
 
 .. function:: device_encoding(fd)
 
@@ -692,8 +686,6 @@ as internal buffering of data.
    2: stderr), the new file descriptor is :ref:`inheritable
    <fd_inheritance>`.
 
-   Availability: Unix, Windows.
-
    .. versionchanged:: 3.4
       The new file descriptor is now non-inheritable.
 
@@ -703,8 +695,6 @@ as internal buffering of data.
    Duplicate file descriptor *fd* to *fd2*, closing the latter first if necessary.
    The file descriptor *fd2* is :ref:`inheritable <fd_inheritance>` by default,
    or non-inheritable if *inheritable* is ``False``.
-
-   Availability: Unix, Windows.
 
    .. versionchanged:: 3.4
       Add the optional *inheritable* parameter.
@@ -762,10 +752,14 @@ as internal buffering of data.
 
 .. function:: fstat(fd)
 
-   Return status for file descriptor *fd*, like :func:`~os.stat`.  As of Python
-   3.3, this is equivalent to ``os.stat(fd)``.
+   Get the status of the file descriptor *fd*. Return a :class:`stat_result`
+   object.
 
-   Availability: Unix, Windows.
+   As of Python 3.3, this is equivalent to ``os.stat(fd)``.
+
+   .. seealso::
+
+      The :func:`.stat` function.
 
 
 .. function:: fstatvfs(fd)
@@ -795,8 +789,21 @@ as internal buffering of data.
    most *length* bytes in size.  As of Python 3.3, this is equivalent to
    ``os.truncate(fd, length)``.
 
+   Availability: Unix, Windows.
+
+   .. versionchanged:: 3.5
+      Added support for Windows
+
+.. function:: get_blocking(fd)
+
+   Get the blocking mode of the file descriptor: ``False`` if the
+   :data:`O_NONBLOCK` flag is set, ``True`` if the flag is cleared.
+
+   See also :func:`set_blocking` and :meth:`socket.socket.setblocking`.
+
    Availability: Unix.
 
+   .. versionadded:: 3.5
 
 .. function:: isatty(fd)
 
@@ -837,8 +844,6 @@ as internal buffering of data.
    current position; :const:`SEEK_END` or ``2`` to set it relative to the end of
    the file. Return the new cursor position in bytes, starting from the beginning.
 
-   Availability: Unix, Windows.
-
 
 .. data:: SEEK_SET
           SEEK_CUR
@@ -847,16 +852,14 @@ as internal buffering of data.
    Parameters to the :func:`lseek` function. Their values are 0, 1, and 2,
    respectively.
 
-   Availability: Unix, Windows.
-
    .. versionadded:: 3.3
       Some operating systems could support additional values, like
       :data:`os.SEEK_HOLE` or :data:`os.SEEK_DATA`.
 
 
-.. function:: open(file, flags, mode=0o777, *, dir_fd=None)
+.. function:: open(path, flags, mode=0o777, *, dir_fd=None)
 
-   Open the file *file* and set various flags according to *flags* and possibly
+   Open the file *path* and set various flags according to *flags* and possibly
    its mode according to *mode*.  When computing *mode*, the current umask value
    is first masked out.  Return the file descriptor for the newly opened file.
    The new file descriptor is :ref:`non-inheritable <fd_inheritance>`.
@@ -868,8 +871,6 @@ as internal buffering of data.
 
    This function can support :ref:`paths relative to directory descriptors
    <dir_fd>` with the *dir_fd* parameter.
-
-   Availability: Unix, Windows.
 
    .. versionchanged:: 3.4
       The new file descriptor is now non-inheritable.
@@ -883,6 +884,11 @@ as internal buffering of data.
 
    .. versionadded:: 3.3
       The *dir_fd* argument.
+
+   .. versionchanged:: 3.5
+      If the system call is interrupted and the signal handler does not raise an
+      exception, the function now retries the system call instead of raising an
+      :exc:`InterruptedError` exception (see :pep:`475` for the rationale).
 
 The following constants are options for the *flags* parameter to the
 :func:`~os.open` function.  They can be combined using the bitwise OR operator
@@ -940,8 +946,9 @@ or `the MSDN <http://msdn.microsoft.com/en-us/library/z0kc8e3z.aspx>`_ on Window
    the C library.
 
    .. versionchanged:: 3.4
-      Add :data:`O_TMPFILE` constant. It's only available on Linux Kernel 3.11
-      or newer.
+      Add :data:`O_PATH` on systems that support it.
+      Add :data:`O_TMPFILE`, only available on Linux Kernel 3.11
+        or newer.
 
 
 .. function:: openpty()
@@ -1034,10 +1041,10 @@ or `the MSDN <http://msdn.microsoft.com/en-us/library/z0kc8e3z.aspx>`_ on Window
    .. versionadded:: 3.3
 
 
-.. function:: pwrite(fd, string, offset)
+.. function:: pwrite(fd, str, offset)
 
-   Write *string* to a file descriptor, *fd*, from *offset*, leaving the file
-   offset unchanged.
+   Write *bytestring* to a file descriptor, *fd*, from *offset*,
+   leaving the file offset unchanged.
 
    Availability: Unix.
 
@@ -1050,8 +1057,6 @@ or `the MSDN <http://msdn.microsoft.com/en-us/library/z0kc8e3z.aspx>`_ on Window
    bytes read.  If the end of the file referred to by *fd* has been reached, an
    empty bytes object is returned.
 
-   Availability: Unix, Windows.
-
    .. note::
 
       This function is intended for low-level I/O and must be applied to a file
@@ -1060,11 +1065,16 @@ or `the MSDN <http://msdn.microsoft.com/en-us/library/z0kc8e3z.aspx>`_ on Window
       :func:`popen` or :func:`fdopen`, or :data:`sys.stdin`, use its
       :meth:`~file.read` or :meth:`~file.readline` methods.
 
+   .. versionchanged:: 3.5
+      If the system call is interrupted and the signal handler does not raise an
+      exception, the function now retries the system call instead of raising an
+      :exc:`InterruptedError` exception (see :pep:`475` for the rationale).
 
-.. function:: sendfile(out, in, offset, nbytes)
-              sendfile(out, in, offset, nbytes, headers=None, trailers=None, flags=0)
 
-   Copy *nbytes* bytes from file descriptor *in* to file descriptor *out*
+.. function:: sendfile(out, in, offset, count)
+              sendfile(out, in, offset, count, [headers], [trailers], flags=0)
+
+   Copy *count* bytes from file descriptor *in* to file descriptor *out*
    starting at *offset*.
    Return the number of bytes sent. When EOF is reached return 0.
 
@@ -1078,15 +1088,35 @@ or `the MSDN <http://msdn.microsoft.com/en-us/library/z0kc8e3z.aspx>`_ on Window
    *trailers* are arbitrary sequences of buffers that are written before and
    after the data from *in* is written. It returns the same as the first case.
 
-   On Mac OS X and FreeBSD, a value of 0 for *nbytes* specifies to send until
+   On Mac OS X and FreeBSD, a value of 0 for *count* specifies to send until
    the end of *in* is reached.
 
    All platforms support sockets as *out* file descriptor, and some platforms
    allow other types (e.g. regular file, pipe) as well.
 
+   Cross-platform applications should not use *headers*, *trailers* and *flags*
+   arguments.
+
    Availability: Unix.
 
+   .. note::
+
+      For a higher-level wrapper of :func:`sendfile`, see
+      :meth:`socket.socket.sendfile`.
+
    .. versionadded:: 3.3
+
+
+.. function:: set_blocking(fd, blocking)
+
+   Set the blocking mode of the specified file descriptor. Set the
+   :data:`O_NONBLOCK` flag if blocking is ``False``, clear the flag otherwise.
+
+   See also :func:`get_blocking` and :meth:`socket.socket.setblocking`.
+
+   Availability: Unix.
+
+   .. versionadded:: 3.5
 
 
 .. data:: SF_NODISKIO
@@ -1103,9 +1133,12 @@ or `the MSDN <http://msdn.microsoft.com/en-us/library/z0kc8e3z.aspx>`_ on Window
 
 .. function:: readv(fd, buffers)
 
-   Read from a file descriptor into a number of writable buffers. *buffers* is
-   an arbitrary sequence of writable buffers. Returns the total number of bytes
-   read.
+   Read from a file descriptor *fd* into a number of mutable :term:`bytes-like
+   objects <bytes-like object>` *buffers*. :func:`~os.readv` will transfer data
+   into each buffer until it is full and then move on to the next buffer in the
+   sequence to hold the rest of the data. :func:`~os.readv` returns the total
+   number of bytes read (which may be less than the total capacity of all the
+   objects).
 
    Availability: Unix.
 
@@ -1142,8 +1175,6 @@ or `the MSDN <http://msdn.microsoft.com/en-us/library/z0kc8e3z.aspx>`_ on Window
    Write the bytestring in *str* to file descriptor *fd*. Return the number of
    bytes actually written.
 
-   Availability: Unix, Windows.
-
    .. note::
 
       This function is intended for low-level I/O and must be applied to a file
@@ -1152,12 +1183,18 @@ or `the MSDN <http://msdn.microsoft.com/en-us/library/z0kc8e3z.aspx>`_ on Window
       :func:`fdopen`, or :data:`sys.stdout` or :data:`sys.stderr`, use its
       :meth:`~file.write` method.
 
+   .. versionchanged:: 3.5
+      If the system call is interrupted and the signal handler does not raise an
+      exception, the function now retries the system call instead of raising an
+      :exc:`InterruptedError` exception (see :pep:`475` for the rationale).
+
 
 .. function:: writev(fd, buffers)
 
-   Write the contents of *buffers* to file descriptor *fd*, where *buffers*
-   is an arbitrary sequence of buffers.
-   Returns the total number of bytes written.
+   Write the contents of *buffers* to file descriptor *fd*. *buffers* must be a
+   sequence of :term:`bytes-like objects <bytes-like object>`.
+   :func:`~os.writev` writes the contents of each object to the file descriptor
+   and returns the total number of bytes written.
 
    Availability: Unix.
 
@@ -1313,8 +1350,6 @@ features:
    or not it is available using :data:`os.supports_effective_ids`.  If it is
    unavailable, using it will raise a :exc:`NotImplementedError`.
 
-   Availability: Unix, Windows.
-
    .. note::
 
       Using :func:`access` to check if a user is authorized to e.g. open a file
@@ -1366,8 +1401,6 @@ features:
 
    This function can support :ref:`specifying a file descriptor <path_fd>`.  The
    descriptor must refer to an opened directory, not an open file.
-
-   Availability: Unix, Windows.
 
    .. versionadded:: 3.3
       Added support for specifying *path* as a file descriptor
@@ -1430,8 +1463,6 @@ features:
    :ref:`paths relative to directory descriptors <dir_fd>` and :ref:`not
    following symlinks <follow_symlinks>`.
 
-   Availability: Unix, Windows.
-
    .. note::
 
       Although Windows supports :func:`chmod`, you can only set the file's
@@ -1482,14 +1513,10 @@ features:
 
    Return a string representing the current working directory.
 
-   Availability: Unix, Windows.
-
 
 .. function:: getcwdb()
 
    Return a bytestring representing the current working directory.
-
-   Availability: Unix, Windows.
 
 
 .. function:: lchflags(path, flags)
@@ -1553,7 +1580,11 @@ features:
    .. note::
       To encode ``str`` filenames to ``bytes``, use :func:`~os.fsencode`.
 
-   Availability: Unix, Windows.
+   .. seealso::
+
+      The :func:`scandir` function returns directory entries along with
+      file attribute information, giving better performance for many
+      common use cases.
 
    .. versionchanged:: 3.2
       The *path* parameter became optional.
@@ -1562,16 +1593,24 @@ features:
       Added support for specifying an open file descriptor for *path*.
 
 
-.. function:: lstat(path, *, dir_fd=None)
+.. function:: lstat(path, \*, dir_fd=None)
 
    Perform the equivalent of an :c:func:`lstat` system call on the given path.
-   Similar to :func:`~os.stat`, but does not follow symbolic links.  On
-   platforms that do not support symbolic links, this is an alias for
-   :func:`~os.stat`.  As of Python 3.3, this is equivalent to ``os.stat(path,
-   dir_fd=dir_fd, follow_symlinks=False)``.
+   Similar to :func:`~os.stat`, but does not follow symbolic links. Return a
+   :class:`stat_result` object.
+
+   On platforms that do not support symbolic links, this is an alias for
+   :func:`~os.stat`.
+
+   As of Python 3.3, this is equivalent to ``os.stat(path, dir_fd=dir_fd,
+   follow_symlinks=False)``.
 
    This function can also support :ref:`paths relative to directory descriptors
    <dir_fd>`.
+
+   .. seealso::
+
+      The :func:`.stat` function.
 
    .. versionchanged:: 3.2
       Added support for Windows 6.0 (Vista) symbolic links.
@@ -1594,13 +1633,11 @@ features:
    It is also possible to create temporary directories; see the
    :mod:`tempfile` module's :func:`tempfile.mkdtemp` function.
 
-   Availability: Unix, Windows.
-
    .. versionadded:: 3.3
       The *dir_fd* argument.
 
 
-.. function:: makedirs(path, mode=0o777, exist_ok=False)
+.. function:: makedirs(name, mode=0o777, exist_ok=False)
 
    .. index::
       single: directory; creating
@@ -1612,11 +1649,8 @@ features:
    The default *mode* is ``0o777`` (octal).  On some systems, *mode* is
    ignored.  Where it is used, the current umask value is first masked out.
 
-   If *exist_ok* is ``False`` (the default), an :exc:`OSError` is raised if
-   the target directory already exists.  If *exist_ok* is ``True`` an
-   :exc:`OSError` is still raised if the umask-masked *mode* is different from
-   the existing mode, on systems where the mode is used.  :exc:`OSError` will
-   also be raised if the directory creation fails.
+   If *exist_ok* is ``False`` (the default), an :exc:`OSError` is raised if the
+   target directory already exists.
 
    .. note::
 
@@ -1627,6 +1661,13 @@ features:
 
    .. versionadded:: 3.2
       The *exist_ok* parameter.
+
+   .. versionchanged:: 3.4.1
+
+      Before Python 3.4.1, if *exist_ok* was ``True`` and the directory existed,
+      :func:`makedirs` would still raise an error if *mode* did not match the
+      mode of the existing directory. Since this behavior was impossible to
+      implement safely, it was removed in Python 3.4.1. See :issue:`21082`.
 
 
 .. function:: mkfifo(path, mode=0o666, *, dir_fd=None)
@@ -1649,10 +1690,10 @@ features:
       The *dir_fd* argument.
 
 
-.. function:: mknod(filename, mode=0o600, device=0, *, dir_fd=None)
+.. function:: mknod(path, mode=0o600, device=0, *, dir_fd=None)
 
    Create a filesystem node (file, device special file or named pipe) named
-   *filename*. *mode* specifies both the permissions to use and the type of node
+   *path*. *mode* specifies both the permissions to use and the type of node
    to be created, being combined (bitwise OR) with one of ``stat.S_IFREG``,
    ``stat.S_IFCHR``, ``stat.S_IFBLK``, and ``stat.S_IFIFO`` (those constants are
    available in :mod:`stat`).  For ``stat.S_IFCHR`` and ``stat.S_IFBLK``,
@@ -1748,15 +1789,13 @@ features:
    be raised; on Unix, the directory entry is removed but the storage allocated
    to the file is not made available until the original file is no longer in use.
 
-   This function is identical to :func:`unlink`.
-
-   Availability: Unix, Windows.
+   This function is semantically identical to :func:`unlink`.
 
    .. versionadded:: 3.3
       The *dir_fd* argument.
 
 
-.. function:: removedirs(path)
+.. function:: removedirs(name)
 
    .. index:: single: directory; deleting
 
@@ -1784,8 +1823,6 @@ features:
    supply :ref:`paths relative to directory descriptors <dir_fd>`.
 
    If you want cross-platform overwriting of the destination, use :func:`replace`.
-
-   Availability: Unix, Windows.
 
    .. versionadded:: 3.3
       The *src_dir_fd* and *dst_dir_fd* arguments.
@@ -1815,8 +1852,6 @@ features:
    This function can support specifying *src_dir_fd* and/or *dst_dir_fd* to
    supply :ref:`paths relative to directory descriptors <dir_fd>`.
 
-   Availability: Unix, Windows.
-
    .. versionadded:: 3.3
 
 
@@ -1829,61 +1864,288 @@ features:
    This function can support :ref:`paths relative to directory descriptors
    <dir_fd>`.
 
-   Availability: Unix, Windows.
-
    .. versionadded:: 3.3
       The *dir_fd* parameter.
 
 
-.. function:: stat(path, *, dir_fd=None, follow_symlinks=True)
+.. function:: scandir(path='.')
 
-   Perform the equivalent of a :c:func:`stat` system call on the given path.
-   *path* may be specified as either a string or as an open file descriptor.
-   (This function normally follows symlinks; to stat a symlink add the argument
-   ``follow_symlinks=False``, or use :func:`lstat`.)
+   Return an iterator of :class:`DirEntry` objects corresponding to the entries
+   in the directory given by *path*. The entries are yielded in arbitrary
+   order, and the special entries ``'.'`` and ``'..'`` are not included.
 
-   The return value is an object whose attributes correspond roughly
-   to the members of the :c:type:`stat` structure, namely:
+   Using :func:`scandir` instead of :func:`listdir` can significantly
+   increase the performance of code that also needs file type or file
+   attribute information, because :class:`DirEntry` objects expose this
+   information if the operating system provides it when scanning a directory.
+   All :class:`DirEntry` methods may perform a system call, but
+   :func:`~DirEntry.is_dir` and :func:`~DirEntry.is_file` usually only
+   require a system call for symbolic links; :func:`DirEntry.stat`
+   always requires a system call on Unix but only requires one for
+   symbolic links on Windows.
 
-   * :attr:`st_mode` - protection bits,
-   * :attr:`st_ino` - inode number,
-   * :attr:`st_dev` - device,
-   * :attr:`st_nlink` - number of hard links,
-   * :attr:`st_uid` - user id of owner,
-   * :attr:`st_gid` - group id of owner,
-   * :attr:`st_size` - size of file, in bytes,
-   * :attr:`st_atime` - time of most recent access expressed in seconds,
-   * :attr:`st_mtime` - time of most recent content modification
-     expressed in seconds,
-   * :attr:`st_ctime` - platform dependent; time of most recent metadata
-     change on Unix, or the time of creation on Windows, expressed in seconds
-   * :attr:`st_atime_ns` - time of most recent access
-     expressed in nanoseconds as an integer,
-   * :attr:`st_mtime_ns` - time of most recent content modification
-     expressed in nanoseconds as an integer,
-   * :attr:`st_ctime_ns` - platform dependent; time of most recent metadata
-     change on Unix, or the time of creation on Windows,
-     expressed in nanoseconds as an integer
+   On Unix, *path* can be of type :class:`str` or :class:`bytes` (use
+   :func:`~os.fsencode` and :func:`~os.fsdecode` to encode and decode
+   :class:`bytes` paths). On Windows, *path* must be of type :class:`str`.
+   On both sytems, the type of the :attr:`~DirEntry.name` and
+   :attr:`~DirEntry.path` attributes of each :class:`DirEntry` will be of
+   the same type as *path*.
 
-   On some Unix systems (such as Linux), the following attributes may also be
-   available:
+   The following example shows a simple use of :func:`scandir` to display all
+   the files (excluding directories) in the given *path* that don't start with
+   ``'.'``. The ``entry.is_file()`` call will generally not make an additional
+   system call::
 
-   * :attr:`st_blocks` - number of 512-byte blocks allocated for file
-   * :attr:`st_blksize` - filesystem blocksize for efficient file system I/O
-   * :attr:`st_rdev` - type of device if an inode device
-   * :attr:`st_flags` - user defined flags for file
+      for entry in os.scandir(path):
+         if not entry.name.startswith('.') and entry.is_file():
+             print(entry.name)
 
-   On other Unix systems (such as FreeBSD), the following attributes may be
-   available (but may be only filled out if root tries to use them):
+   .. note::
 
-   * :attr:`st_gen` - file generation number
-   * :attr:`st_birthtime` - time of file creation
+      On Unix-based systems, :func:`scandir` uses the system's
+      `opendir() <http://pubs.opengroup.org/onlinepubs/009695399/functions/opendir.html>`_
+      and
+      `readdir() <http://pubs.opengroup.org/onlinepubs/009695399/functions/readdir_r.html>`_
+      functions. On Windows, it uses the Win32
+      `FindFirstFileW <http://msdn.microsoft.com/en-us/library/windows/desktop/aa364418(v=vs.85).aspx>`_
+      and
+      `FindNextFileW <http://msdn.microsoft.com/en-us/library/windows/desktop/aa364428(v=vs.85).aspx>`_
+      functions.
 
-   On Mac OS systems, the following attributes may also be available:
+   .. versionadded:: 3.5
 
-   * :attr:`st_rsize`
-   * :attr:`st_creator`
-   * :attr:`st_type`
+
+.. class:: DirEntry
+
+   Object yielded by :func:`scandir` to expose the file path and other file
+   attributes of a directory entry.
+
+   :func:`scandir` will provide as much of this information as possible without
+   making additional system calls. When a ``stat()`` or ``lstat()`` system call
+   is made, the ``DirEntry`` object will cache the result.
+
+   ``DirEntry`` instances are not intended to be stored in long-lived data
+   structures; if you know the file metadata has changed or if a long time has
+   elapsed since calling :func:`scandir`, call ``os.stat(entry.path)`` to fetch
+   up-to-date information.
+
+   Because the ``DirEntry`` methods can make operating system calls, they may
+   also raise :exc:`OSError`. If you need very fine-grained
+   control over errors, you can catch :exc:`OSError` when calling one of the
+   ``DirEntry`` methods and handle as appropriate.
+
+   Attributes and methods on a ``DirEntry`` instance are as follows:
+
+   .. attribute:: name
+
+      The entry's base filename, relative to the :func:`scandir` *path*
+      argument.
+
+      The :attr:`name` attribute will be of the same type (``str`` or
+      ``bytes``) as the :func:`scandir` *path* argument. Use
+      :func:`~os.fsdecode` to decode byte filenames.
+
+   .. attribute:: path
+
+      The entry's full path name: equivalent to ``os.path.join(scandir_path,
+      entry.name)`` where *scandir_path* is the :func:`scandir` *path*
+      argument.  The path is only absolute if the :func:`scandir` *path*
+      argument was absolute.
+
+      The :attr:`path` attribute will be of the same type (``str`` or
+      ``bytes``) as the :func:`scandir` *path* argument. Use
+      :func:`~os.fsdecode` to decode byte filenames.
+
+   .. method:: inode()
+
+      Return the inode number of the entry.
+
+      The result is cached on the ``DirEntry`` object, use ``os.stat(entry.path,
+      follow_symlinks=False).st_ino`` to fetch up-to-date information.
+
+      On Unix, no system call is required.
+
+   .. method:: is_dir(\*, follow_symlinks=True)
+
+      If *follow_symlinks* is ``True`` (the default), return ``True`` if the
+      entry is a directory or a symbolic link pointing to a directory;
+      return ``False`` if it is or points to any other kind of file, or if it
+      doesn't exist anymore.
+
+      If *follow_symlinks* is ``False``, return ``True`` only if this entry
+      is a directory; return ``False`` if it is any other kind of file
+      or if it doesn't exist anymore.
+
+      The result is cached on the ``DirEntry`` object. Call :func:`os.stat`
+      along with :func:`stat.S_ISDIR` to fetch up-to-date information.
+
+      This method can raise :exc:`OSError`, such as :exc:`PermissionError`,
+      but :exc:`FileNotFoundError` is caught and not raised.
+
+      In most cases, no system call is required.
+
+   .. method:: is_file(\*, follow_symlinks=True)
+
+      If *follow_symlinks* is ``True`` (the default), return ``True`` if the
+      entry is a file or a symbolic link pointing to a file; return ``False``
+      if it is or points to a directory or other non-file entry, or if it
+      doesn't exist anymore.
+
+      If *follow_symlinks* is ``False``, return ``True`` only if this entry
+      is a file; return ``False`` if it is a directory or other non-file entry,
+      or if it doesn't exist anymore.
+
+      The result is cached on the ``DirEntry`` object. Call :func:`os.stat`
+      along with :func:`stat.S_ISREG` to fetch up-to-date information.
+
+      This method can raise :exc:`OSError`, such as :exc:`PermissionError`,
+      but :exc:`FileNotFoundError` is caught and not raised.
+
+      In most cases, no system call is required.
+
+   .. method:: is_symlink()
+
+      Return ``True`` if this entry is a symbolic link (even if broken);
+      return ``False`` if it points to a directory or any kind of file,
+      or if it doesn't exist anymore.
+
+      The result is cached on the ``DirEntry`` object. Call
+      :func:`os.path.islink` to fetch up-to-date information.
+
+      The method can raise :exc:`OSError`, such as :exc:`PermissionError`,
+      but :exc:`FileNotFoundError` is caught and not raised.
+
+      In most cases, no system call is required.
+
+   .. method:: stat(\*, follow_symlinks=True)
+
+      Return a :class:`stat_result` object for this entry. This method
+      follows symbolic links by default; to stat a symbolic link add the
+      ``follow_symlinks=False`` argument.
+
+      On Unix, this method always requires a system call. On Windows,
+      ``DirEntry.stat()`` requires a system call only if the
+      entry is a symbolic link, and ``DirEntry.stat(follow_symlinks=False)``
+      never requires a system call.
+
+      On Windows, the ``st_ino``, ``st_dev`` and ``st_nlink`` attributes of the
+      :class:`stat_result` are always set to zero. Call :func:`os.stat` to
+      get these attributes.
+
+      The result is cached on the ``DirEntry`` object. Call :func:`os.stat`
+      to fetch up-to-date information.
+
+   .. versionadded:: 3.5
+
+
+.. function:: stat(path, \*, dir_fd=None, follow_symlinks=True)
+
+   Get the status of a file or a file descriptor. Perform the equivalent of a
+   :c:func:`stat` system call on the given path. *path* may be specified as
+   either a string or as an open file descriptor. Return a :class:`stat_result`
+   object.
+
+   This function normally follows symlinks; to stat a symlink add the argument
+   ``follow_symlinks=False``, or use :func:`lstat`.
+
+   This function can support :ref:`specifying a file descriptor <path_fd>` and
+   :ref:`not following symlinks <follow_symlinks>`.
+
+   .. index:: module: stat
+
+   Example::
+
+      >>> import os
+      >>> statinfo = os.stat('somefile.txt')
+      >>> statinfo
+      os.stat_result(st_mode=33188, st_ino=7876932, st_dev=234881026,
+      st_nlink=1, st_uid=501, st_gid=501, st_size=264, st_atime=1297230295,
+      st_mtime=1297230027, st_ctime=1297230027)
+      >>> statinfo.st_size
+      264
+
+   .. seealso::
+
+      :func:`fstat` and :func:`lstat` functions.
+
+   .. versionadded:: 3.3
+      Added the *dir_fd* and *follow_symlinks* arguments, specifying a file
+      descriptor instead of a path.
+
+
+.. class:: stat_result
+
+   Object whose attributes correspond roughly to the members of the
+   :c:type:`stat` structure. It is used for the result of :func:`os.stat`,
+   :func:`os.fstat` and :func:`os.lstat`.
+
+   Attributes:
+
+   .. attribute:: st_mode
+
+      File mode: file type and file mode bits (permissions).
+
+   .. attribute:: st_ino
+
+      Inode number.
+
+   .. attribute:: st_dev
+
+      Identifier of the device on which this file resides.
+
+   .. attribute:: st_nlink
+
+      Number of hard links.
+
+   .. attribute:: st_uid
+
+      User identifier of the file owner.
+
+   .. attribute:: st_gid
+
+      Group identifier of the file owner.
+
+   .. attribute:: st_size
+
+      Size of the file in bytes, if it is a regular file or a symbolic link.
+      The size of a symbolic link is the length of the pathname it contains,
+      without a terminating null byte.
+
+   Timestamps:
+
+   .. attribute:: st_atime
+
+      Time of most recent access expressed in seconds.
+
+   .. attribute:: st_mtime
+
+      Time of most recent content modification expressed in seconds.
+
+   .. attribute:: st_ctime
+
+      Platform dependent:
+
+      * the time of most recent metadata change on Unix,
+      * the time of creation on Windows, expressed in seconds.
+
+   .. attribute:: st_atime_ns
+
+      Time of most recent access expressed in nanoseconds as an integer.
+
+   .. attribute:: st_mtime_ns
+
+      Time of most recent content modification expressed in nanoseconds as an
+      integer.
+
+   .. attribute:: st_ctime_ns
+
+      Platform dependent:
+
+      * the time of most recent metadata change on Unix,
+      * the time of creation on Windows, expressed in nanoseconds as an
+        integer.
+
+   See also the :func:`stat_float_times` function.
 
    .. note::
 
@@ -1893,6 +2155,7 @@ features:
       or FAT32 file systems, :attr:`st_mtime` has 2-second resolution, and
       :attr:`st_atime` has only 1-day resolution.  See your operating system
       documentation for details.
+
       Similarly, although :attr:`st_atime_ns`, :attr:`st_mtime_ns`,
       and :attr:`st_ctime_ns` are always expressed in nanoseconds, many
       systems do not provide nanosecond precision.  On systems that do
@@ -1902,41 +2165,80 @@ features:
       If you need the exact timestamps you should always use
       :attr:`st_atime_ns`, :attr:`st_mtime_ns`, and :attr:`st_ctime_ns`.
 
-   For backward compatibility, the return value of :func:`~os.stat` is also
+   On some Unix systems (such as Linux), the following attributes may also be
+   available:
+
+   .. attribute:: st_blocks
+
+      Number of 512-byte blocks allocated for file.
+      This may be smaller than :attr:`st_size`/512 when the file has holes.
+
+   .. attribute:: st_blksize
+
+      "Preferred" blocksize for efficient file system I/O. Writing to a file in
+      smaller chunks may cause an inefficient read-modify-rewrite.
+
+   .. attribute:: st_rdev
+
+      Type of device if an inode device.
+
+   .. attribute:: st_flags
+
+      User defined flags for file.
+
+   On other Unix systems (such as FreeBSD), the following attributes may be
+   available (but may be only filled out if root tries to use them):
+
+   .. attribute:: st_gen
+
+      File generation number.
+
+   .. attribute:: st_birthtime
+
+      Time of file creation.
+
+   On Mac OS systems, the following attributes may also be available:
+
+   .. attribute:: st_rsize
+
+      Real size of the file.
+
+   .. attribute:: st_creator
+
+      Creator of the file.
+
+   .. attribute:: st_type
+
+      File type.
+
+   On Windows systems, the following attribute is also available:
+
+   .. attribute:: st_file_attributes
+
+      Windows file attributes: ``dwFileAttributes`` member of the
+      ``BY_HANDLE_FILE_INFORMATION`` structure returned by
+      :c:func:`GetFileInformationByHandle`. See the ``FILE_ATTRIBUTE_*``
+      constants in the :mod:`stat` module.
+
+   The standard module :mod:`stat` defines functions and constants that are
+   useful for extracting information from a :c:type:`stat` structure. (On
+   Windows, some items are filled with dummy values.)
+
+   For backward compatibility, a :class:`stat_result` instance is also
    accessible as a tuple of at least 10 integers giving the most important (and
    portable) members of the :c:type:`stat` structure, in the order
    :attr:`st_mode`, :attr:`st_ino`, :attr:`st_dev`, :attr:`st_nlink`,
    :attr:`st_uid`, :attr:`st_gid`, :attr:`st_size`, :attr:`st_atime`,
    :attr:`st_mtime`, :attr:`st_ctime`. More items may be added at the end by
-   some implementations.
-
-   This function can support :ref:`specifying a file descriptor <path_fd>` and
-   :ref:`not following symlinks <follow_symlinks>`.
-
-   .. index:: module: stat
-
-   The standard module :mod:`stat` defines functions and constants that are useful
-   for extracting information from a :c:type:`stat` structure. (On Windows, some
-   items are filled with dummy values.)
-
-   Example::
-
-      >>> import os
-      >>> statinfo = os.stat('somefile.txt')
-      >>> statinfo
-      posix.stat_result(st_mode=33188, st_ino=7876932, st_dev=234881026,
-      st_nlink=1, st_uid=501, st_gid=501, st_size=264, st_atime=1297230295,
-      st_mtime=1297230027, st_ctime=1297230027)
-      >>> statinfo.st_size
-      264
-
-   Availability: Unix, Windows.
+   some implementations. For compatibility with older Python versions,
+   accessing :class:`stat_result` as a tuple always returns integers.
 
    .. versionadded:: 3.3
-      Added the *dir_fd* and *follow_symlinks* arguments,
-      specifying a file descriptor instead of a path,
-      and the :attr:`st_atime_ns`, :attr:`st_mtime_ns`,
-      and :attr:`st_ctime_ns` members.
+      Added the :attr:`st_atime_ns`, :attr:`st_mtime_ns`, and
+      :attr:`st_ctime_ns` members.
+
+   .. versionadded:: 3.5
+      Added the :attr:`st_file_attributes` member on Windows.
 
 
 .. function:: stat_float_times([newvalue])
@@ -1980,10 +2282,25 @@ features:
    read-only, and if :const:`ST_NOSUID` is set, the semantics of
    setuid/setgid bits are disabled or not supported.
 
+   Additional module-level constants are defined for GNU/glibc based systems.
+   These are :const:`ST_NODEV` (disallow access to device special files),
+   :const:`ST_NOEXEC` (disallow program execution), :const:`ST_SYNCHRONOUS`
+   (writes are synced at once), :const:`ST_MANDLOCK` (allow mandatory locks on an FS),
+   :const:`ST_WRITE` (write on file/directory/symlink), :const:`ST_APPEND`
+   (append-only file), :const:`ST_IMMUTABLE` (immutable file), :const:`ST_NOATIME`
+   (do not update access times), :const:`ST_NODIRATIME` (do not update directory access
+   times), :const:`ST_RELATIME` (update atime relative to mtime/ctime).
+
    This function can support :ref:`specifying a file descriptor <path_fd>`.
 
    .. versionchanged:: 3.2
       The :const:`ST_RDONLY` and :const:`ST_NOSUID` constants were added.
+
+   .. versionchanged:: 3.4
+      The :const:`ST_NODEV`, :const:`ST_NOEXEC`, :const:`ST_SYNCHRONOUS`,
+      :const:`ST_MANDLOCK`, :const:`ST_WRITE`, :const:`ST_APPEND`,
+      :const:`ST_IMMUTABLE`, :const:`ST_NOATIME`, :const:`ST_NODIRATIME`,
+      and :const:`ST_RELATIME` constants were added.
 
    Availability: Unix.
 
@@ -2021,7 +2338,8 @@ features:
    contain :func:`os.access`, otherwise it will be empty.
 
    To check whether you can use the *effective_ids* parameter for
-   :func:`os.access`, use the ``in`` operator on ``supports_dir_fd``, like so::
+   :func:`os.access`, use the ``in`` operator on ``supports_effective_ids``,
+   like so::
 
        os.access in os.supports_effective_ids
 
@@ -2071,9 +2389,9 @@ features:
    .. versionadded:: 3.3
 
 
-.. function:: symlink(source, link_name, target_is_directory=False, *, dir_fd=None)
+.. function:: symlink(src, dst, target_is_directory=False, *, dir_fd=None)
 
-   Create a symbolic link pointing to *source* named *link_name*.
+   Create a symbolic link pointing to *src* named *dst*.
 
    On Windows, a symlink represents either a file or a directory, and does not
    morph to the target dynamically.  If the target is present, the type of the
@@ -2125,38 +2443,38 @@ features:
 
    This function can support :ref:`specifying a file descriptor <path_fd>`.
 
-   Availability: Unix.
+   Availability: Unix, Windows.
 
    .. versionadded:: 3.3
 
+   .. versionchanged:: 3.5
+      Added support for Windows
 
 .. function:: unlink(path, *, dir_fd=None)
 
-   Remove (delete) the file *path*.  This function is identical to
-   :func:`remove`; the ``unlink`` name is its traditional Unix
-   name.  Please see the documentation for :func:`remove` for
-   further information.
-
-   Availability: Unix, Windows.
+   Remove (delete) the file *path*.  This function is semantically
+   identical to :func:`remove`; the ``unlink`` name is its
+   traditional Unix name.  Please see the documentation for
+   :func:`remove` for further information.
 
    .. versionadded:: 3.3
       The *dir_fd* parameter.
 
 
-.. function:: utime(path, times=None, *, ns=None, dir_fd=None, follow_symlinks=True)
+.. function:: utime(path, times=None, *[, ns], dir_fd=None, follow_symlinks=True)
 
    Set the access and modified times of the file specified by *path*.
 
    :func:`utime` takes two optional parameters, *times* and *ns*.
    These specify the times set on *path* and are used as follows:
 
-   - If *ns* is not ``None``,
+   - If *ns* is specified,
      it must be a 2-tuple of the form ``(atime_ns, mtime_ns)``
      where each member is an int expressing nanoseconds.
    - If *times* is not ``None``,
      it must be a 2-tuple of the form ``(atime, mtime)``
      where each member is an int or float expressing seconds.
-   - If *times* and *ns* are both ``None``,
+   - If *times* is ``None`` and *ns* is unspecified,
      this is equivalent to specifying ``ns=(atime_ns, mtime_ns)``
      where both times are the current time.
 
@@ -2174,8 +2492,6 @@ features:
    This function can support :ref:`specifying a file descriptor <path_fd>`,
    :ref:`paths relative to directory descriptors <dir_fd>` and :ref:`not
    following symlinks <follow_symlinks>`.
-
-   Availability: Unix, Windows.
 
    .. versionadded:: 3.3
       Added support for specifying an open file descriptor for *path*,
@@ -2202,18 +2518,20 @@ features:
 
    If optional argument *topdown* is ``True`` or not specified, the triple for a
    directory is generated before the triples for any of its subdirectories
-   (directories are generated top-down).  If *topdown* is ``False``, the triple for a
-   directory is generated after the triples for all of its subdirectories
-   (directories are generated bottom-up).
+   (directories are generated top-down).  If *topdown* is ``False``, the triple
+   for a directory is generated after the triples for all of its subdirectories
+   (directories are generated bottom-up). No matter the value of *topdown*, the
+   list of subdirectories is retrieved before the tuples for the directory and
+   its subdirectories are generated.
 
    When *topdown* is ``True``, the caller can modify the *dirnames* list in-place
    (perhaps using :keyword:`del` or slice assignment), and :func:`walk` will only
    recurse into the subdirectories whose names remain in *dirnames*; this can be
    used to prune the search, impose a specific order of visiting, or even to inform
    :func:`walk` about directories the caller creates or renames before it resumes
-   :func:`walk` again.  Modifying *dirnames* when *topdown* is ``False`` is
-   ineffective, because in bottom-up mode the directories in *dirnames* are
-   generated before *dirpath* itself is generated.
+   :func:`walk` again.  Modifying *dirnames* when *topdown* is ``False`` has
+   no effect on the behavior of the walk, because in bottom-up mode the directories
+   in *dirnames* are generated before *dirpath* itself is generated.
 
    By default, errors from the :func:`listdir` call are ignored.  If optional
    argument *onerror* is specified, it should be a function; it will be called with
@@ -2250,8 +2568,9 @@ features:
           if 'CVS' in dirs:
               dirs.remove('CVS')  # don't visit CVS directories
 
-   In the next example, walking the tree bottom-up is essential: :func:`rmdir`
-   doesn't allow deleting a directory before the directory is empty::
+   In the next example (simple implementation of :func:`shutil.rmtree`),
+   walking the tree bottom-up is essential, :func:`rmdir` doesn't allow
+   deleting a directory before the directory is empty::
 
       # Delete everything reachable from the directory named in "top",
       # assuming there are no symbolic links.
@@ -2263,6 +2582,10 @@ features:
               os.remove(os.path.join(root, name))
           for name in dirs:
               os.rmdir(os.path.join(root, name))
+
+   .. versionchanged:: 3.5
+      This function now calls :func:`os.scandir` instead of :func:`os.listdir`,
+      making it faster by reducing the number of calls to :func:`os.stat`.
 
 
 .. function:: fwalk(top='.', topdown=True, onerror=None, *, follow_symlinks=False, dir_fd=None)
@@ -2420,8 +2743,6 @@ to be ignored.
    Python signal handler registered for :const:`SIGABRT` with
    :func:`signal.signal`.
 
-   Availability: Unix, Windows.
-
 
 .. function:: execl(path, arg0, arg1, ...)
               execle(path, arg0, arg1, ..., env)
@@ -2484,8 +2805,6 @@ to be ignored.
 
    Exit the process with status *n*, without calling cleanup handlers, flushing
    stdio buffers, etc.
-
-   Availability: Unix, Windows.
 
    .. note::
 
@@ -2634,7 +2953,7 @@ written in Python, such as a mail server's external command delivery program.
    Fork a child process.  Return ``0`` in the child and the child's process id in the
    parent.  If an error occurs :exc:`OSError` is raised.
 
-   Note that some platforms including FreeBSD <= 6.3, Cygwin and OS/2 EMX have
+   Note that some platforms including FreeBSD <= 6.3 and Cygwin have
    known issues when using fork() from a thread.
 
    .. warning::
@@ -2704,10 +3023,28 @@ written in Python, such as a mail server's external command delivery program.
    Availability: Unix.
 
 
-.. function:: popen(...)
+.. function:: popen(cmd, mode='r', buffering=-1)
 
-   Run child processes, returning opened pipes for communications.  These functions
-   are described in section :ref:`os-newstreams`.
+   Open a pipe to or from command *cmd*.
+   The return value is an open file object
+   connected to the pipe, which can be read or written depending on whether *mode*
+   is ``'r'`` (default) or ``'w'``. The *buffering* argument has the same meaning as
+   the corresponding argument to the built-in :func:`open` function. The
+   returned file object reads or writes text strings rather than bytes.
+
+   The ``close`` method returns :const:`None` if the subprocess exited
+   successfully, or the subprocess's return code if there was an
+   error. On POSIX systems, if the return code is positive it
+   represents the return value of the process left-shifted by one
+   byte.  If the return code is negative, the process was terminated
+   by the signal given by the negated value of the return code.  (For
+   example, the return value might be ``- signal.SIGKILL`` if the
+   subprocess was killed.)  On Windows systems, the return value
+   contains the signed integer return code from the child process.
+
+   This is implemented using :class:`subprocess.Popen`; see that class's
+   documentation for more powerful ways to manage and communicate with
+   subprocesses.
 
 
 .. function:: spawnl(mode, path, ...)
@@ -2831,6 +3168,10 @@ written in Python, such as a mail server's external command delivery program.
    doesn't work if it is.  Use the :func:`os.path.normpath` function to ensure that
    the path is properly encoded for Win32.
 
+   To reduce interpreter startup overhead, the Win32 :c:func:`ShellExecute`
+   function is not resolved until this function is first called.  If the function
+   cannot be resolved, :exc:`NotImplementedError` will be raised.
+
    Availability: Windows.
 
 
@@ -2880,7 +3221,6 @@ written in Python, such as a mail server's external command delivery program.
    :manpage:`times(2)` or the corresponding Windows Platform API documentation.
    On Windows, only :attr:`user` and :attr:`system` are known; the other
    attributes are zero.
-   On OS/2, only :attr:`elapsed` is known; the other attributes are zero.
 
    Availability: Unix, Windows.
 
@@ -2978,6 +3318,11 @@ written in Python, such as a mail server's external command delivery program.
    value of integer *options* has no effect. *pid* can refer to any process whose
    id is known, not necessarily a child process. The :func:`spawn\* <spawnl>`
    functions called with :const:`P_NOWAIT` return suitable process handles.
+
+   .. versionchanged:: 3.5
+      If the system call is interrupted and the signal handler does not raise an
+      exception, the function now retries the system call instead of raising an
+      :exc:`InterruptedError` exception (see :pep:`475` for the rationale).
 
 
 .. function:: wait3(options)
@@ -3252,6 +3597,11 @@ Miscellaneous System Information
 
    Return the number of CPUs in the system. Returns None if undetermined.
 
+   This number is not equivalent to the number of CPUs the current process can
+   use.  The number of usable CPUs can be obtained with
+   ``len(os.sched_getaffinity(0))``
+
+
    .. versionadded:: 3.4
 
 
@@ -3386,3 +3736,9 @@ Miscellaneous Functions
 
    For an easy-to-use interface to the random number generator
    provided by your platform, please see :class:`random.SystemRandom`.
+
+   .. versionchanged:: 3.5
+      On Linux 3.17 and newer, the ``getrandom()`` syscall is now used
+      when available.  On OpenBSD 5.6 and newer, the C ``getentropy()``
+      function is now used. These functions avoid the usage of an internal file
+      descriptor.

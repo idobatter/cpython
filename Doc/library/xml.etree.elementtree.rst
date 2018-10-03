@@ -105,12 +105,28 @@ Children are nested, and we can access specific child nodes by index::
    >>> root[0][1].text
    '2008'
 
+
+.. note::
+
+   Not all elements of the XML input will end up as elements of the
+   parsed tree. Currently, this module skips over any XML comments,
+   processing instructions, and document type declarations in the
+   input. Nevertheless, trees built using this module's API rather
+   than parsing from XML text can have comments and processing
+   instructions in them; they will be included when generating XML
+   output. A document type declaration may be accessed by passing a
+   custom :class:`TreeBuilder` instance to the :class:`XMLParser`
+   constructor.
+
+
+.. _elementtree-pull-parsing:
+
 Pull API for non-blocking parsing
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Most parsing functions provided by this module require to read the whole
-document at once before returning any result.  It is possible to use a
-:class:`XMLParser` and feed data into it incrementally, but it's a push API that
+Most parsing functions provided by this module require the whole document
+to be read at once before returning any result.  It is possible to use an
+:class:`XMLParser` and feed data into it incrementally, but it is a push API that
 calls methods on a callback target, which is too low-level and inconvenient for
 most needs.  Sometimes what the user really wants is to be able to parse XML
 incrementally, without blocking operations, while enjoying the convenience of
@@ -119,7 +135,7 @@ fully constructed :class:`Element` objects.
 The most powerful tool for doing this is :class:`XMLPullParser`.  It does not
 require a blocking read to obtain the XML data, and is instead fed with data
 incrementally with :meth:`XMLPullParser.feed` calls.  To get the parsed XML
-elements, call :meth:`XMLPullParser.read_events`.  Here's an example::
+elements, call :meth:`XMLPullParser.read_events`.  Here is an example::
 
    >>> parser = ET.XMLPullParser(['start', 'end'])
    >>> parser.feed('<mytag>sometext')
@@ -268,6 +284,72 @@ sub-elements for a given element::
    >>> ET.dump(a)
    <a><b /><c><d /></c></a>
 
+Parsing XML with Namespaces
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If the XML input has `namespaces
+<https://en.wikipedia.org/wiki/XML_namespace>`__, tags and attributes
+with prefixes in the form ``prefix:sometag`` get expanded to
+``{uri}sometag`` where the *prefix* is replaced by the full *URI*.
+Also, if there is a `default namespace
+<http://www.w3.org/TR/2006/REC-xml-names-20060816/#defaulting>`__,
+that full URI gets prepended to all of the non-prefixed tags.
+
+Here is an XML example that incorporates two namespaces, one with the
+prefix "fictional" and the other serving as the default namespace:
+
+.. code-block:: xml
+
+    <?xml version="1.0"?>
+    <actors xmlns:fictional="http://characters.example.com"
+            xmlns="http://people.example.com">
+        <actor>
+            <name>John Cleese</name>
+            <fictional:character>Lancelot</fictional:character>
+            <fictional:character>Archie Leach</fictional:character>
+        </actor>
+        <actor>
+            <name>Eric Idle</name>
+            <fictional:character>Sir Robin</fictional:character>
+            <fictional:character>Gunther</fictional:character>
+            <fictional:character>Commander Clement</fictional:character>
+        </actor>
+    </actors>
+
+One way to search and explore this XML example is to manually add the
+URI to every tag or attribute in the xpath of a
+:meth:`~Element.find` or :meth:`~Element.findall`::
+
+    root = fromstring(xml_text)
+    for actor in root.findall('{http://people.example.com}actor'):
+        name = actor.find('{http://people.example.com}name')
+        print(name.text)
+        for char in actor.findall('{http://characters.example.com}character'):
+            print(' |-->', char.text)
+
+A better way to search the namespaced XML example is to create a
+dictionary with your own prefixes and use those in the search functions::
+
+    ns = {'real_person': 'http://people.example.com',
+          'role': 'http://characters.example.com'}
+
+    for actor in root.findall('real_person:actor', ns):
+        name = actor.find('real_person:name', ns)
+        print(name.text)
+        for char in actor.findall('role:character', ns):
+            print(' |-->', char.text)
+
+These two approaches both output::
+
+    John Cleese
+     |--> Lancelot
+     |--> Archie Leach
+    Eric Idle
+     |--> Sir Robin
+     |--> Gunther
+     |--> Commander Clement
+
+
 Additional resources
 ^^^^^^^^^^^^^^^^^^^^
 
@@ -322,7 +404,7 @@ Supported XPath syntax
 +=======================+======================================================+
 | ``tag``               | Selects all child elements with the given tag.       |
 |                       | For example, ``spam`` selects all child elements     |
-|                       | named ``spam``, ``spam/egg`` selects all             |
+|                       | named ``spam``, and ``spam/egg`` selects all         |
 |                       | grandchildren named ``egg`` in all children named    |
 |                       | ``spam``.                                            |
 +-----------------------+------------------------------------------------------+
@@ -349,6 +431,10 @@ Supported XPath syntax
 +-----------------------+------------------------------------------------------+
 | ``[tag]``             | Selects all elements that have a child named         |
 |                       | ``tag``.  Only immediate children are supported.     |
++-----------------------+------------------------------------------------------+
+| ``[tag='text']``      | Selects all elements that have a child named         |
+|                       | ``tag`` whose complete text content, including       |
+|                       | descendants, equals the given ``text``.              |
 +-----------------------+------------------------------------------------------+
 | ``[position]``        | Selects all elements that are located at the given   |
 |                       | position.  The position can be either an integer     |
@@ -378,6 +464,10 @@ Functions
    string containing the comment string.  Returns an element instance
    representing a comment.
 
+   Note that :class:`XMLParser` skips over comments in the input
+   instead of creating comment objects for them. An :class:`ElementTree` will
+   only contain comment nodes if they have been inserted into to
+   the tree using one of the :class:`Element` methods.
 
 .. function:: dump(elem)
 
@@ -458,6 +548,11 @@ Functions
    containing the PI target.  *text* is a string containing the PI contents, if
    given.  Returns an element instance, representing a processing instruction.
 
+   Note that :class:`XMLParser` skips over processing instructions
+   in the input instead of creating comment objects for them. An
+   :class:`ElementTree` will only contain processing instruction nodes if
+   they have been inserted into to the tree using one of the
+   :class:`Element` methods.
 
 .. function:: register_namespace(prefix, uri)
 
@@ -508,7 +603,7 @@ Functions
    *short_empty_elements* has the same meaning as in :meth:`ElementTree.write`.
    Returns a list of (optionally) encoded strings containing the XML data.
    It does not guarantee any specific sequence, except that
-   ``"".join(tostringlist(element)) == tostring(element)``.
+   ``b"".join(tostringlist(element)) == tostring(element)``.
 
    .. versionadded:: 3.2
 
@@ -556,21 +651,29 @@ Element Objects
 
 
    .. attribute:: text
+                  tail
 
-      The *text* attribute can be used to hold additional data associated with
-      the element.  As the name implies this attribute is usually a string but
-      may be any application-specific object.  If the element is created from
-      an XML file the attribute will contain any text found between the element
-      tags.
+      These attributes can be used to hold additional data associated with
+      the element.  Their values are usually strings but may be any
+      application-specific object.  If the element is created from
+      an XML file, the *text* attribute holds either the text between
+      the element's start tag and its first child or end tag, or ``None``, and
+      the *tail* attribute holds either the text between the element's
+      end tag and the next tag, or ``None``.  For the XML data
 
+      .. code-block:: xml
 
-   .. attribute:: tail
+         <a><b>1<c>2<d/>3</c></b>4</a>
 
-      The *tail* attribute can be used to hold additional data associated with
-      the element.  This attribute is usually a string but may be any
-      application-specific object.  If the element is created from an XML file
-      the attribute will contain any text found after the element's end tag and
-      before the next tag.
+      the *a* element has ``None`` for both *text* and *tail* attributes,
+      the *b* element has *text* ``"1"`` and *tail* ``"4"``,
+      the *c* element has *text* ``"2"`` and *tail* ``None``,
+      and the *d* element has *text* ``None`` and *tail* ``"3"``.
+
+      To collect the inner text of an element, see :meth:`itertext`, for
+      example ``"".join(element.itertext())``.
+
+      Applications may store arbitrary objects in these attributes.
 
 
    .. attribute:: attrib
@@ -788,7 +891,7 @@ ElementTree Objects
 
       Creates and returns a tree iterator for the root element.  The iterator
       loops over all elements in this tree, in section order.  *tag* is the tag
-      to look for (default is to return all elements)
+      to look for (default is to return all elements).
 
 
    .. method:: iterfind(match, namespaces=None)
@@ -831,8 +934,8 @@ ElementTree Objects
       :term:`file object`; make sure you do not try to write a string to a
       binary stream and vice versa.
 
-   .. versionadded:: 3.4
-      The *short_empty_elements* parameter.
+      .. versionadded:: 3.4
+         The *short_empty_elements* parameter.
 
 
 This is the XML file that is going to be manipulated::
@@ -949,7 +1052,8 @@ XMLParser Objects
    specified in the XML file.
 
    .. deprecated:: 3.4
-      The *html* argument.
+      The *html* argument.  The remaining arguments should be passed via
+      keywword to prepare for the removal of the *html* argument.
 
    .. method:: close()
 
@@ -1038,15 +1142,17 @@ XMLPullParser Objects
 
    .. method:: read_events()
 
-      Iterate over the events which have been encountered in the data fed to the
-      parser.  This method yields ``(event, elem)`` pairs, where *event* is a
+      Return an iterator over the events which have been encountered in the
+      data fed to the
+      parser.  The iterator yields ``(event, elem)`` pairs, where *event* is a
       string representing the type of event (e.g. ``"end"``) and *elem* is the
       encountered :class:`Element` object.
 
       Events provided in a previous call to :meth:`read_events` will not be
-      yielded again. As events are consumed from the internal queue only as
-      they are retrieved from the iterator, multiple readers calling
-      :meth:`read_events` in parallel will have unpredictable results.
+      yielded again.  Events are consumed from the internal queue only when
+      they are retrieved from the iterator, so multiple readers iterating in
+      parallel over iterators obtained from :meth:`read_events` will have
+      unpredictable results.
 
    .. note::
 
@@ -1084,4 +1190,4 @@ Exceptions
 .. [#] The encoding string included in XML output should conform to the
    appropriate standards.  For example, "UTF-8" is valid, but "UTF8" is
    not.  See http://www.w3.org/TR/2006/REC-xml11-20060816/#NT-EncodingDecl
-   and http://www.iana.org/assignments/character-sets.
+   and http://www.iana.org/assignments/character-sets/character-sets.xhtml.

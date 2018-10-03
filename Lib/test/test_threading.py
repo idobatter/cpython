@@ -3,23 +3,22 @@ Tests for the threading module.
 """
 
 import test.support
-from test.support import verbose, strip_python_stderr, import_module
-from test.script_helper import assert_python_ok
+from test.support import verbose, strip_python_stderr, import_module, cpython_only
+from test.support.script_helper import assert_python_ok, assert_python_failure
 
 import random
 import re
 import sys
 _thread = import_module('_thread')
 threading = import_module('threading')
-import _testcapi
 import time
 import unittest
 import weakref
 import os
-from test.script_helper import assert_python_ok, assert_python_failure
 import subprocess
 
 from test import lock_tests
+from test import support
 
 
 # Between fork() and exec(), only async-safe functions are allowed (issues
@@ -617,50 +616,45 @@ class ThreadTests(BaseTestCase):
                 t.join()
             self.assertRaises(ValueError, bs.release)
 
-    def test_locals_at_exit(self):
-        # Issue #19466: thread locals must not be deleted before destructors
-        # are called
-        rc, out, err = assert_python_ok("-c", """if 1:
-            import threading
+    @cpython_only
+    def test_frame_tstate_tracing(self):
+        # Issue #14432: Crash when a generator is created in a C thread that is
+        # destroyed while the generator is still used. The issue was that a
+        # generator contains a frame, and the frame kept a reference to the
+        # Python state of the destroyed C thread. The crash occurs when a trace
+        # function is setup.
 
-            class Atexit:
-                def __del__(self):
-                    print("thread_dict.atexit = %r" % thread_dict.atexit)
+        def noop_trace(frame, event, arg):
+            # no operation
+            return noop_trace
 
-            thread_dict = threading.local()
-            thread_dict.atexit = "atexit"
+        def generator():
+            while 1:
+                yield "generator"
 
-            atexit = Atexit()
-        """)
-        self.assertEqual(out.rstrip(), b"thread_dict.atexit = 'atexit'")
+        def callback():
+            if callback.gen is None:
+                callback.gen = generator()
+            return next(callback.gen)
+        callback.gen = None
 
-    def test_warnings_at_exit(self):
-        # Issue #19466: try to call most destructors at Python shutdown before
-        # destroying Python thread states
-        filename = __file__
-        rc, out, err = assert_python_ok("-Wd", "-c", """if 1:
-            import time
-            import threading
+        old_trace = sys.gettrace()
+        sys.settrace(noop_trace)
+        try:
+            # Install a trace function
+            threading.settrace(noop_trace)
 
-            def open_sleep():
-                # a warning will be emitted when the open file will be
-                # destroyed (without being explicitly closed) while the daemon
-                # thread is destroyed
-                fileobj = open(%a, 'rb')
-                start_event.set()
-                time.sleep(60.0)
+            # Create a generator in a C thread which exits after the call
+            import _testcapi
+            _testcapi.call_in_temporary_c_thread(callback)
 
-            start_event = threading.Event()
-
-            thread = threading.Thread(target=open_sleep)
-            thread.daemon = True
-            thread.start()
-
-            # wait until the thread started
-            start_event.wait()
-        """ % filename)
-        self.assertRegex(err.rstrip(),
-                         b"^sys:1: ResourceWarning: unclosed file ")
+            # Call the generator in a different Python thread, check that the
+            # generator didn't keep a reference to the destroyed thread state
+            for test in range(3):
+                # The trace function is still called here
+                callback()
+        finally:
+            sys.settrace(old_trace)
 
 
 class ThreadJoinOnShutdown(BaseTestCase):
@@ -747,10 +741,6 @@ class ThreadJoinOnShutdown(BaseTestCase):
             import sys
             import time
             import threading
-            import warnings
-
-            # ignore "unclosed file ..." warnings
-            warnings.filterwarnings('ignore', '', ResourceWarning)
 
             thread_has_run = set()
 
@@ -890,6 +880,7 @@ class SubinterpThreadingTests(BaseTestCase):
         # The thread was joined properly.
         self.assertEqual(os.read(r, 1), b"x")
 
+    @cpython_only
     def test_daemon_threads_fatal_error(self):
         subinterp_code = r"""if 1:
             import os
@@ -955,7 +946,7 @@ class ThreadingExceptionTests(BaseTestCase):
             def outer():
                 try:
                     recurse()
-                except RuntimeError:
+                except RecursionError:
                     pass
 
             w = threading.Thread(target=outer)
@@ -970,6 +961,88 @@ class ThreadingExceptionTests(BaseTestCase):
         data = stdout.decode().replace('\r', '')
         self.assertEqual(p.returncode, 0, "Unexpected error: " + stderr.decode())
         self.assertEqual(data, expected_output)
+
+    def test_print_exception(self):
+        script = r"""if True:
+            import threading
+            import time
+
+            running = False
+            def run():
+                global running
+                running = True
+                while running:
+                    time.sleep(0.01)
+                1/0
+            t = threading.Thread(target=run)
+            t.start()
+            while not running:
+                time.sleep(0.01)
+            running = False
+            t.join()
+            """
+        rc, out, err = assert_python_ok("-c", script)
+        self.assertEqual(out, b'')
+        err = err.decode()
+        self.assertIn("Exception in thread", err)
+        self.assertIn("Traceback (most recent call last):", err)
+        self.assertIn("ZeroDivisionError", err)
+        self.assertNotIn("Unhandled exception", err)
+
+    def test_print_exception_stderr_is_none_1(self):
+        script = r"""if True:
+            import sys
+            import threading
+            import time
+
+            running = False
+            def run():
+                global running
+                running = True
+                while running:
+                    time.sleep(0.01)
+                1/0
+            t = threading.Thread(target=run)
+            t.start()
+            while not running:
+                time.sleep(0.01)
+            sys.stderr = None
+            running = False
+            t.join()
+            """
+        rc, out, err = assert_python_ok("-c", script)
+        self.assertEqual(out, b'')
+        err = err.decode()
+        self.assertIn("Exception in thread", err)
+        self.assertIn("Traceback (most recent call last):", err)
+        self.assertIn("ZeroDivisionError", err)
+        self.assertNotIn("Unhandled exception", err)
+
+    def test_print_exception_stderr_is_none_2(self):
+        script = r"""if True:
+            import sys
+            import threading
+            import time
+
+            running = False
+            def run():
+                global running
+                running = True
+                while running:
+                    time.sleep(0.01)
+                1/0
+            sys.stderr = None
+            t = threading.Thread(target=run)
+            t.start()
+            while not running:
+                time.sleep(0.01)
+            running = False
+            t.join()
+            """
+        rc, out, err = assert_python_ok("-c", script)
+        self.assertEqual(out, b'')
+        self.assertNotIn("Unhandled exception", err.decode())
+
 
 class TimerTests(BaseTestCase):
 
@@ -1025,6 +1098,13 @@ class BoundedSemaphoreTests(lock_tests.BoundedSemaphoreTests):
 
 class BarrierTests(lock_tests.BarrierTests):
     barriertype = staticmethod(threading.Barrier)
+
+class MiscTestCase(unittest.TestCase):
+    def test__all__(self):
+        extra = {"ThreadError"}
+        blacklist = {'currentThread', 'activeCount'}
+        support.check__all__(self, threading, ('threading', '_thread'),
+                             extra=extra, blacklist=blacklist)
 
 if __name__ == "__main__":
     unittest.main()

@@ -76,11 +76,7 @@ nis_mapname (char *map, int *pfix)
 
     *pfix = 0;
     for (i=0; aliases[i].alias != 0L; i++) {
-        if (!strcmp (aliases[i].alias, map)) {
-            *pfix = aliases[i].fix;
-            return aliases[i].map;
-        }
-        if (!strcmp (aliases[i].map, map)) {
+        if (!strcmp (aliases[i].alias, map) || !strcmp (aliases[i].map, map)) {
             *pfix = aliases[i].fix;
             return aliases[i].map;
         }
@@ -456,8 +452,8 @@ static struct PyModuleDef nismodule = {
     NULL
 };
 
-PyObject*
-PyInit_nis (void)
+PyMODINIT_FUNC
+PyInit_nis(void)
 {
     PyObject *m, *d;
     m = PyModule_Create(&nismodule);

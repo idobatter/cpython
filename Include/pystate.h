@@ -33,7 +33,6 @@ typedef struct _is {
     int codecs_initialized;
     int fscodec_initialized;
 
-
 #ifdef HAVE_DLOPEN
     int dlopenflags;
 #endif
@@ -41,6 +40,7 @@ typedef struct _is {
     int tscdump;
 #endif
 
+    PyObject *builtins_copy;
 } PyInterpreterState;
 #endif
 
@@ -134,6 +134,9 @@ typedef struct _ts {
     void (*on_delete)(void *);
     void *on_delete_data;
 
+    PyObject *coroutine_wrapper;
+    int in_coroutine_wrapper;
+
     /* XXX signal handlers should also be here */
 
 } PyThreadState;
@@ -175,15 +178,12 @@ PyAPI_FUNC(int) PyThreadState_SetAsyncExc(long, PyObject *);
 
 /* Assuming the current thread holds the GIL, this is the
    PyThreadState for the current thread. */
-#ifndef Py_LIMITED_API
+#ifdef Py_BUILD_CORE
 PyAPI_DATA(_Py_atomic_address) _PyThreadState_Current;
-#endif
-
-#if defined(Py_DEBUG) || defined(Py_LIMITED_API)
-#define PyThreadState_GET() PyThreadState_Get()
+#  define PyThreadState_GET() \
+             ((PyThreadState*)_Py_atomic_load_relaxed(&_PyThreadState_Current))
 #else
-#define PyThreadState_GET() \
-    ((PyThreadState*)_Py_atomic_load_relaxed(&_PyThreadState_Current))
+#  define PyThreadState_GET() PyThreadState_Get()
 #endif
 
 typedef
@@ -236,7 +236,9 @@ PyAPI_FUNC(PyThreadState *) PyGILState_GetThisThreadState(void);
 /* Helper/diagnostic function - return 1 if the current thread
  * currently holds the GIL, 0 otherwise
  */
+#ifndef Py_LIMITED_API
 PyAPI_FUNC(int) PyGILState_Check(void);
+#endif
 
 #endif   /* #ifdef WITH_THREAD */
 

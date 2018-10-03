@@ -325,7 +325,7 @@ _PyOS_ascii_strtod(const char *nptr, char **endptr)
 
    On overflow (e.g., when trying to convert '1e500' on an IEEE 754 machine),
    if overflow_exception is NULL then +-Py_HUGE_VAL is returned, and no Python
-   exception is raised.  Otherwise, overflow_exception should point to a
+   exception is raised.  Otherwise, overflow_exception should point to
    a Python exception, this exception will be raised, -1.0 will be returned,
    and *endptr will point just past the end of the converted value.
 
@@ -881,12 +881,12 @@ PyAPI_FUNC(char *) PyOS_double_to_string(double val,
 #define OFS_E 2
 
 /* The lengths of these are known to the code below, so don't change them */
-static char *lc_float_strings[] = {
+static const char * const lc_float_strings[] = {
     "inf",
     "nan",
     "e",
 };
-static char *uc_float_strings[] = {
+static const char * const uc_float_strings[] = {
     "INF",
     "NAN",
     "E",
@@ -925,7 +925,8 @@ static char *
 format_float_short(double d, char format_code,
                    int mode, int precision,
                    int always_add_sign, int add_dot_0_if_integer,
-                   int use_alt_formatting, char **float_strings, int *type)
+                   int use_alt_formatting, const char * const *float_strings,
+                   int *type)
 {
     char *buf = NULL;
     char *p = NULL;
@@ -1176,7 +1177,7 @@ PyAPI_FUNC(char *) PyOS_double_to_string(double val,
                                          int flags,
                                          int *type)
 {
-    char **float_strings = lc_float_strings;
+    const char * const *float_strings = lc_float_strings;
     int mode;
 
     /* Validate format_code, and map upper and lower case. Compute the

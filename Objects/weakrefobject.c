@@ -265,7 +265,7 @@ insert_head(PyWeakReference *newref, PyWeakReference **list)
 }
 
 static int
-parse_weakref_init_args(char *funcname, PyObject *args, PyObject *kwargs,
+parse_weakref_init_args(const char *funcname, PyObject *args, PyObject *kwargs,
                         PyObject **obp, PyObject **callbackp)
 {
     /* XXX Should check that kwargs == NULL or is empty. */
@@ -900,11 +900,9 @@ PyObject_ClearWeakRefs(PyObject *object)
     if (*list != NULL) {
         PyWeakReference *current = *list;
         Py_ssize_t count = _PyWeakref_GetWeakrefCount(current);
-        int restore_error = PyErr_Occurred() ? 1 : 0;
         PyObject *err_type, *err_value, *err_tb;
 
-        if (restore_error)
-            PyErr_Fetch(&err_type, &err_value, &err_tb);
+        PyErr_Fetch(&err_type, &err_value, &err_tb);
         if (count == 1) {
             PyObject *callback = current->wr_callback;
 
@@ -922,8 +920,7 @@ PyObject_ClearWeakRefs(PyObject *object)
 
             tuple = PyTuple_New(count * 2);
             if (tuple == NULL) {
-                if (restore_error)
-                    PyErr_Fetch(&err_type, &err_value, &err_tb);
+                _PyErr_ChainExceptions(err_type, err_value, err_tb);
                 return;
             }
 
@@ -954,7 +951,7 @@ PyObject_ClearWeakRefs(PyObject *object)
             }
             Py_DECREF(tuple);
         }
-        if (restore_error)
-            PyErr_Restore(err_type, err_value, err_tb);
+        assert(!PyErr_Occurred());
+        PyErr_Restore(err_type, err_value, err_tb);
     }
 }

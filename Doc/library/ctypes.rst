@@ -39,7 +39,7 @@ loads libraries which export functions using the standard ``cdecl`` calling
 convention, while *windll* libraries call functions using the ``stdcall``
 calling convention. *oledll* also uses the ``stdcall`` calling convention, and
 assumes the functions return a Windows :c:type:`HRESULT` error code. The error
-code is used to automatically raise a :class:`OSError` exception when the
+code is used to automatically raise an :class:`OSError` exception when the
 function call fails.
 
 .. versionchanged:: 3.3
@@ -218,7 +218,7 @@ more about :mod:`ctypes` data types.
 Fundamental data types
 ^^^^^^^^^^^^^^^^^^^^^^
 
-:mod:`ctypes` defines a number of primitive C compatible data types :
+:mod:`ctypes` defines a number of primitive C compatible data types:
 
 +----------------------+------------------------------------------+----------------------------+
 | ctypes type          | C type                                   | Python type                |
@@ -1022,12 +1022,18 @@ As we can easily check, our array is sorted now::
    1 5 7 33 99
    >>>
 
-**Important note for callback functions:**
+.. note::
 
-Make sure you keep references to :func:`CFUNCTYPE` objects as long as they are
-used from C code. :mod:`ctypes` doesn't, and if you don't, they may be garbage
-collected, crashing your program when a callback is made.
+   Make sure you keep references to :func:`CFUNCTYPE` objects as long as they
+   are used from C code. :mod:`ctypes` doesn't, and if you don't, they may be
+   garbage collected, crashing your program when a callback is made.
 
+   Also, note that if the callback function is called in a thread created
+   outside of Python's control (e.g. by the foreign code that calls the
+   callback), ctypes creates a new dummy Python thread on every invocation. This
+   behavior is correct for most purposes, but it means that values stored with
+   :class:`threading.local` will *not* survive across different callbacks, even when
+   those calls are made from the same C thread.
 
 .. _ctypes-accessing-values-exported-from-dlls:
 
@@ -1285,7 +1291,7 @@ module instead of using :func:`find_library` to locate the library at runtime.
 Loading shared libraries
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-There are several ways to loaded shared libraries into the Python process.  One
+There are several ways to load shared libraries into the Python process.  One
 way is to instantiate one of the following classes:
 
 
@@ -1380,11 +1386,16 @@ copy of the windows error code.
    The default mode which is used to load shared libraries.  On OSX 10.3, this is
    *RTLD_GLOBAL*, otherwise it is the same as *RTLD_LOCAL*.
 
-Instances of these classes have no public methods, however :meth:`__getattr__`
-and :meth:`__getitem__` have special behavior: functions exported by the shared
-library can be accessed as attributes of by index.  Please note that both
-:meth:`__getattr__` and :meth:`__getitem__` cache their result, so calling them
-repeatedly returns the same object each time.
+Instances of these classes have no public methods.  Functions exported by the
+shared library can be accessed as attributes or by index.  Please note that
+accessing the function through an attribute caches the result and therefore
+accessing it repeatedly returns the same object each time.  On the other hand,
+accessing it through an index returns a new object each time:
+
+   >>> libc.time == libc.time
+   True
+   >>> libc['time'] == libc['time']
+   False
 
 The following public attributes are available, their name starts with an
 underscore to not clash with exported function names:
@@ -1651,7 +1662,7 @@ the windows header file is this::
 
    WINUSERAPI int WINAPI
    MessageBoxA(
-       HWND hWnd ,
+       HWND hWnd,
        LPCSTR lpText,
        LPCSTR lpCaption,
        UINT uType);
@@ -1822,7 +1833,7 @@ Utility functions
 .. function:: find_msvcrt()
    :module: ctypes.util
 
-   Windows only: return the filename of the VC runtype library used by Python,
+   Windows only: return the filename of the VC runtime library used by Python,
    and by the extension modules.  If the name of the library cannot be
    determined, ``None`` is returned.
 
@@ -2323,11 +2334,6 @@ other data types containing pointer type fields.
       type is first used (an instance is created, :func:`sizeof` is called on it,
       and so on).  Later assignments to the :attr:`_fields_` class variable will
       raise an AttributeError.
-
-      Structure and union subclass constructors accept both positional and named
-      arguments.  Positional arguments are used to initialize the fields in the
-      same order as they appear in the :attr:`_fields_` definition, named
-      arguments are used to initialize the fields with the corresponding name.
 
       It is possible to defined sub-subclasses of structure types, they inherit
       the fields of the base class plus the :attr:`_fields_` defined in the

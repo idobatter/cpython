@@ -27,27 +27,12 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include "pythread.h"
-
-#if defined(__BORLANDC__)
-/* These overrides not needed for Win32 */
-#define timezone _timezone
-#define tzname _tzname
-#define daylight _daylight
-#endif /* __BORLANDC__ */
 #endif /* MS_WINDOWS */
 #endif /* !__WATCOMC__ || __QNX__ */
 
-#if defined(__APPLE__)
-#include <mach/mach_time.h>
-#endif
-
 /* Forward declarations */
-static int floatsleep(double);
+static int pysleep(_PyTime_t);
 static PyObject* floattime(_Py_clock_info_t *info);
-
-#ifdef MS_WINDOWS
-static OSVERSIONINFOEX winver;
-#endif
 
 static PyObject *
 time_time(PyObject *self, PyObject *unused)
@@ -92,12 +77,12 @@ floatclock(_Py_clock_info_t *info)
 }
 #endif /* HAVE_CLOCK */
 
-#if defined(MS_WINDOWS) && !defined(__BORLANDC__)
+#ifdef MS_WINDOWS
 #define WIN32_PERF_COUNTER
 /* Win32 has better clock replacement; we have our own version, due to Mark
    Hammond and Tim Peters */
-static int
-win_perf_counter(_Py_clock_info_t *info, PyObject **result)
+static PyObject*
+win_perf_counter(_Py_clock_info_t *info)
 {
     static LONGLONG cpu_frequency = 0;
     static LONGLONG ctrStart;
@@ -109,10 +94,8 @@ win_perf_counter(_Py_clock_info_t *info, PyObject **result)
         QueryPerformanceCounter(&now);
         ctrStart = now.QuadPart;
         if (!QueryPerformanceFrequency(&freq) || freq.QuadPart == 0) {
-            /* Unlikely to happen - this works on all intel
-               machines at least!  Revert to clock() */
-            *result = NULL;
-            return -1;
+            PyErr_SetFromWindowsErr(0);
+            return NULL;
         }
         cpu_frequency = freq.QuadPart;
     }
@@ -124,10 +107,9 @@ win_perf_counter(_Py_clock_info_t *info, PyObject **result)
         info->monotonic = 1;
         info->adjustable = 0;
     }
-    *result = PyFloat_FromDouble(diff / (double)cpu_frequency);
-    return 0;
+    return PyFloat_FromDouble(diff / (double)cpu_frequency);
 }
-#endif
+#endif   /* MS_WINDOWS */
 
 #if defined(WIN32_PERF_COUNTER) || defined(HAVE_CLOCK)
 #define PYCLOCK
@@ -135,11 +117,10 @@ static PyObject*
 pyclock(_Py_clock_info_t *info)
 {
 #ifdef WIN32_PERF_COUNTER
-    PyObject *res;
-    if (win_perf_counter(info, &res) == 0)
-        return res;
-#endif
+    return win_perf_counter(info);
+#else
     return floatclock(info);
+#endif
 }
 
 static PyObject *
@@ -169,7 +150,7 @@ time_clock_gettime(PyObject *self, PyObject *args)
 
     ret = clock_gettime((clockid_t)clk_id, &tp);
     if (ret != 0) {
-        PyErr_SetFromErrno(PyExc_IOError);
+        PyErr_SetFromErrno(PyExc_OSError);
         return NULL;
     }
     return PyFloat_FromDouble(tp.tv_sec + tp.tv_nsec * 1e-9);
@@ -185,22 +166,22 @@ time_clock_settime(PyObject *self, PyObject *args)
 {
     int clk_id;
     PyObject *obj;
-    time_t tv_sec;
-    long tv_nsec;
+    _PyTime_t t;
     struct timespec tp;
     int ret;
 
     if (!PyArg_ParseTuple(args, "iO:clock_settime", &clk_id, &obj))
         return NULL;
 
-    if (_PyTime_ObjectToTimespec(obj, &tv_sec, &tv_nsec) == -1)
+    if (_PyTime_FromSecondsObject(&t, obj, _PyTime_ROUND_FLOOR) < 0)
         return NULL;
-    tp.tv_sec = tv_sec;
-    tp.tv_nsec = tv_nsec;
+
+    if (_PyTime_AsTimespec(t, &tp) == -1)
+        return NULL;
 
     ret = clock_settime((clockid_t)clk_id, &tp);
     if (ret != 0) {
-        PyErr_SetFromErrno(PyExc_IOError);
+        PyErr_SetFromErrno(PyExc_OSError);
         return NULL;
     }
     Py_RETURN_NONE;
@@ -223,7 +204,7 @@ time_clock_getres(PyObject *self, PyObject *args)
 
     ret = clock_getres((clockid_t)clk_id, &tp);
     if (ret != 0) {
-        PyErr_SetFromErrno(PyExc_IOError);
+        PyErr_SetFromErrno(PyExc_OSError);
         return NULL;
     }
 
@@ -237,17 +218,17 @@ Return the resolution (precision) of the specified clock clk_id.");
 #endif   /* HAVE_CLOCK_GETTIME */
 
 static PyObject *
-time_sleep(PyObject *self, PyObject *args)
+time_sleep(PyObject *self, PyObject *obj)
 {
-    double secs;
-    if (!PyArg_ParseTuple(args, "d:sleep", &secs))
+    _PyTime_t secs;
+    if (_PyTime_FromSecondsObject(&secs, obj, _PyTime_ROUND_CEILING))
         return NULL;
     if (secs < 0) {
         PyErr_SetString(PyExc_ValueError,
                         "sleep length must be non-negative");
         return NULL;
     }
-    if (floatsleep(secs) != 0)
+    if (pysleep(secs) != 0)
         return NULL;
     Py_INCREF(Py_None);
     return Py_None;
@@ -330,7 +311,7 @@ tmtotuple(struct tm *p)
    Returns non-zero on success (parallels PyArg_ParseTuple).
 */
 static int
-parse_time_t_args(PyObject *args, char *format, time_t *pwhen)
+parse_time_t_args(PyObject *args, const char *format, time_t *pwhen)
 {
     PyObject *ot = NULL;
     time_t whent;
@@ -341,7 +322,7 @@ parse_time_t_args(PyObject *args, char *format, time_t *pwhen)
         whent = time(NULL);
     }
     else {
-        if (_PyTime_ObjectToTime_t(ot, &whent) == -1)
+        if (_PyTime_ObjectToTime_t(ot, &whent, _PyTime_ROUND_FLOOR) == -1)
             return 0;
     }
     *pwhen = whent;
@@ -629,21 +610,15 @@ time_strftime(PyObject *self, PyObject *args)
 
 #if defined(MS_WINDOWS) && !defined(HAVE_WCSFTIME)
     /* check that the format string contains only valid directives */
-    for(outbuf = strchr(fmt, '%');
+    for (outbuf = strchr(fmt, '%');
         outbuf != NULL;
         outbuf = strchr(outbuf+2, '%'))
     {
-        if (outbuf[1]=='#')
+        if (outbuf[1] == '#')
             ++outbuf; /* not documented by python, */
-        if (outbuf[1]=='\0' ||
-            !strchr("aAbBcdHIjmMpSUwWxXyYzZ%", outbuf[1]))
-        {
-            PyErr_SetString(PyExc_ValueError, "Invalid format string");
-            Py_DECREF(format);
-            return NULL;
-        }
-        if ((outbuf[1] == 'y') && buf.tm_year < 0)
-        {
+        if (outbuf[1] == '\0')
+            break;
+        if ((outbuf[1] == 'y') && buf.tm_year < 0) {
             PyErr_SetString(PyExc_ValueError,
                         "format %y requires year >= 1900 on Windows");
             Py_DECREF(format);
@@ -651,10 +626,12 @@ time_strftime(PyObject *self, PyObject *args)
         }
     }
 #elif (defined(_AIX) || defined(sun)) && defined(HAVE_WCSFTIME)
-    for(outbuf = wcschr(fmt, '%');
+    for (outbuf = wcschr(fmt, '%');
         outbuf != NULL;
         outbuf = wcschr(outbuf+2, '%'))
     {
+        if (outbuf[1] == L'\0')
+            break;
         /* Issue #19634: On AIX, wcsftime("y", (1899, 1, 1, 0, 0, 0, 0, 0, 0))
            returns "0/" instead of "99" */
         if (outbuf[1] == L'y' && buf.tm_year < 0) {
@@ -671,17 +648,24 @@ time_strftime(PyObject *self, PyObject *args)
      * will be ahead of time...
      */
     for (i = 1024; ; i += i) {
-#if defined _MSC_VER && _MSC_VER >= 1400 && defined(__STDC_SECURE_LIB__)
-        int err;
-#endif
         outbuf = (time_char *)PyMem_Malloc(i*sizeof(time_char));
         if (outbuf == NULL) {
             PyErr_NoMemory();
             break;
         }
-        buflen = format_time(outbuf, i, fmt, &buf);
 #if defined _MSC_VER && _MSC_VER >= 1400 && defined(__STDC_SECURE_LIB__)
-        err = errno;
+        errno = 0;
+#endif
+        _Py_BEGIN_SUPPRESS_IPH
+        buflen = format_time(outbuf, i, fmt, &buf);
+        _Py_END_SUPPRESS_IPH
+#if defined _MSC_VER && _MSC_VER >= 1400 && defined(__STDC_SECURE_LIB__)
+        /* VisualStudio .NET 2005 does this properly */
+        if (buflen == 0 && errno == EINVAL) {
+            PyErr_SetString(PyExc_ValueError, "Invalid format string");
+            PyMem_Free(outbuf);
+            break;
+        }
 #endif
         if (buflen > 0 || i >= 256 * fmtlen) {
             /* If the buffer is 256 times as long as the format,
@@ -699,13 +683,6 @@ time_strftime(PyObject *self, PyObject *args)
             break;
         }
         PyMem_Free(outbuf);
-#if defined _MSC_VER && _MSC_VER >= 1400 && defined(__STDC_SECURE_LIB__)
-        /* VisualStudio .NET 2005 does this properly */
-        if (buflen == 0 && err == EINVAL) {
-            PyErr_SetString(PyExc_ValueError, "Invalid format string");
-            break;
-        }
-#endif
     }
 #ifdef HAVE_WCSFTIME
     PyMem_Free(format);
@@ -755,10 +732,10 @@ _asctime(struct tm *timeptr)
 {
     /* Inspired by Open Group reference implementation available at
      * http://pubs.opengroup.org/onlinepubs/009695399/functions/asctime.html */
-    static char wday_name[7][4] = {
+    static const char wday_name[7][4] = {
         "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
     };
-    static char mon_name[12][4] = {
+    static const char mon_name[12][4] = {
         "Jan", "Feb", "Mar", "Apr", "May", "Jun",
         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
     };
@@ -823,7 +800,18 @@ time_mktime(PyObject *self, PyObject *tup)
     time_t tt;
     if (!gettmarg(tup, &buf))
         return NULL;
+#ifdef _AIX
+    /* year < 1902 or year > 2037 */
+    if (buf.tm_year < 2 || buf.tm_year > 137) {
+        /* Issue #19748: On AIX, mktime() doesn't report overflow error for
+         * timestamp < -2^31 or timestamp > 2**31-1. */
+        PyErr_SetString(PyExc_OverflowError,
+                        "mktime argument out of range");
+        return NULL;
+    }
+#else
     buf.tm_wday = -1;  /* sentinel; original value ignored */
+#endif
     tt = mktime(&buf);
     /* Return value of -1 does not necessarily mean an error, but tm_wday
      * cannot remain set to -1 if mktime succeeded. */
@@ -892,122 +880,17 @@ the local timezone used by methods such as localtime, but this behaviour\n\
 should not be relied on.");
 #endif /* HAVE_WORKING_TZSET */
 
-#if defined(MS_WINDOWS) || defined(__APPLE__) \
-    || (defined(HAVE_CLOCK_GETTIME) \
-        && (defined(CLOCK_HIGHRES) || defined(CLOCK_MONOTONIC)))
-#define PYMONOTONIC
-#endif
-
-#ifdef PYMONOTONIC
-static PyObject*
+static PyObject *
 pymonotonic(_Py_clock_info_t *info)
 {
-#if defined(MS_WINDOWS)
-    static ULONGLONG (*GetTickCount64) (void) = NULL;
-    static ULONGLONG (CALLBACK *Py_GetTickCount64)(void);
-    static int has_getickcount64 = -1;
-    double result;
-
-    if (has_getickcount64 == -1) {
-        /* GetTickCount64() was added to Windows Vista */
-        if (winver.dwMajorVersion >= 6) {
-            HINSTANCE hKernel32;
-            hKernel32 = GetModuleHandleW(L"KERNEL32");
-            *(FARPROC*)&Py_GetTickCount64 = GetProcAddress(hKernel32,
-                                                           "GetTickCount64");
-            has_getickcount64 = (Py_GetTickCount64 != NULL);
-        }
-        else
-            has_getickcount64 = 0;
-    }
-
-    if (has_getickcount64) {
-        ULONGLONG ticks;
-        ticks = Py_GetTickCount64();
-        result = (double)ticks * 1e-3;
-    }
-    else {
-        static DWORD last_ticks = 0;
-        static DWORD n_overflow = 0;
-        DWORD ticks;
-
-        ticks = GetTickCount();
-        if (ticks < last_ticks)
-            n_overflow++;
-        last_ticks = ticks;
-
-        result = ldexp(n_overflow, 32);
-        result += ticks;
-        result *= 1e-3;
-    }
-
-    if (info) {
-        DWORD timeAdjustment, timeIncrement;
-        BOOL isTimeAdjustmentDisabled, ok;
-        if (has_getickcount64)
-            info->implementation = "GetTickCount64()";
-        else
-            info->implementation = "GetTickCount()";
-        info->monotonic = 1;
-        ok = GetSystemTimeAdjustment(&timeAdjustment, &timeIncrement,
-                                     &isTimeAdjustmentDisabled);
-        if (!ok) {
-            PyErr_SetFromWindowsErr(0);
-            return NULL;
-        }
-        info->resolution = timeIncrement * 1e-7;
-        info->adjustable = 0;
-    }
-    return PyFloat_FromDouble(result);
-
-#elif defined(__APPLE__)
-    static mach_timebase_info_data_t timebase;
-    uint64_t time;
-    double secs;
-
-    if (timebase.denom == 0) {
-        /* According to the Technical Q&A QA1398, mach_timebase_info() cannot
-           fail: https://developer.apple.com/library/mac/#qa/qa1398/ */
-        (void)mach_timebase_info(&timebase);
-    }
-
-    time = mach_absolute_time();
-    secs = (double)time * timebase.numer / timebase.denom * 1e-9;
-    if (info) {
-        info->implementation = "mach_absolute_time()";
-        info->resolution = (double)timebase.numer / timebase.denom * 1e-9;
-        info->monotonic = 1;
-        info->adjustable = 0;
-    }
-    return PyFloat_FromDouble(secs);
-
-#elif defined(HAVE_CLOCK_GETTIME) && (defined(CLOCK_HIGHRES) || defined(CLOCK_MONOTONIC))
-    struct timespec tp;
-#ifdef CLOCK_HIGHRES
-    const clockid_t clk_id = CLOCK_HIGHRES;
-    const char *function = "clock_gettime(CLOCK_HIGHRES)";
-#else
-    const clockid_t clk_id = CLOCK_MONOTONIC;
-    const char *function = "clock_gettime(CLOCK_MONOTONIC)";
-#endif
-
-    if (clock_gettime(clk_id, &tp) != 0) {
-        PyErr_SetFromErrno(PyExc_OSError);
+    _PyTime_t t;
+    double d;
+    if (_PyTime_GetMonotonicClockWithInfo(&t, info) < 0) {
+        assert(info != NULL);
         return NULL;
     }
-
-    if (info) {
-        struct timespec res;
-        info->monotonic = 1;
-        info->implementation = function;
-        info->adjustable = 0;
-        if (clock_getres(clk_id, &res) == 0)
-            info->resolution = res.tv_sec + res.tv_nsec * 1e-9;
-        else
-            info->resolution = 1e-9;
-    }
-    return PyFloat_FromDouble(tp.tv_sec + tp.tv_nsec * 1e-9);
-#endif
+    d = _PyTime_AsSecondsDouble(t);
+    return PyFloat_FromDouble(d);
 }
 
 static PyObject *
@@ -1020,40 +903,15 @@ PyDoc_STRVAR(monotonic_doc,
 "monotonic() -> float\n\
 \n\
 Monotonic clock, cannot go backward.");
-#endif   /* PYMONOTONIC */
 
 static PyObject*
 perf_counter(_Py_clock_info_t *info)
 {
-#if defined(WIN32_PERF_COUNTER) || defined(PYMONOTONIC)
-    PyObject *res;
-#endif
-#if defined(WIN32_PERF_COUNTER)
-    static int use_perf_counter = 1;
-#endif
-#ifdef PYMONOTONIC
-    static int use_monotonic = 1;
-#endif
-
 #ifdef WIN32_PERF_COUNTER
-    if (use_perf_counter) {
-        if (win_perf_counter(info, &res) == 0)
-            return res;
-        use_perf_counter = 0;
-    }
+    return win_perf_counter(info);
+#else
+    return pymonotonic(info);
 #endif
-
-#ifdef PYMONOTONIC
-    if (use_monotonic) {
-        res = pymonotonic(info);
-        if (res != NULL)
-            return res;
-        use_monotonic = 0;
-        PyErr_Clear();
-    }
-#endif
-
-    return floattime(info);
 }
 
 static PyObject *
@@ -1220,10 +1078,8 @@ time_get_clock_info(PyObject *self, PyObject *args)
     else if (strcmp(name, "clock") == 0)
         obj = pyclock(&info);
 #endif
-#ifdef PYMONOTONIC
     else if (strcmp(name, "monotonic") == 0)
         obj = pymonotonic(&info);
-#endif
     else if (strcmp(name, "perf_counter") == 0)
         obj = perf_counter(&info);
     else if (strcmp(name, "process_time") == 0)
@@ -1400,7 +1256,7 @@ static PyMethodDef time_methods[] = {
     {"clock_settime",   time_clock_settime, METH_VARARGS, clock_settime_doc},
     {"clock_getres",    time_clock_getres, METH_VARARGS, clock_getres_doc},
 #endif
-    {"sleep",           time_sleep, METH_VARARGS, sleep_doc},
+    {"sleep",           time_sleep, METH_O, sleep_doc},
     {"gmtime",          time_gmtime, METH_VARARGS, gmtime_doc},
     {"localtime",       time_localtime, METH_VARARGS, localtime_doc},
     {"asctime",         time_asctime, METH_VARARGS, asctime_doc},
@@ -1415,9 +1271,7 @@ static PyMethodDef time_methods[] = {
 #ifdef HAVE_WORKING_TZSET
     {"tzset",           time_tzset, METH_NOARGS, tzset_doc},
 #endif
-#ifdef PYMONOTONIC
     {"monotonic",       time_monotonic, METH_NOARGS, monotonic_doc},
-#endif
     {"process_time",    time_process_time, METH_NOARGS, process_time_doc},
     {"perf_counter",    time_perf_counter, METH_NOARGS, perf_counter_doc},
     {"get_clock_info",  time_get_clock_info, METH_VARARGS, get_clock_info_doc},
@@ -1499,15 +1353,6 @@ PyInit_time(void)
         if (PyStructSequence_InitType2(&StructTimeType,
                                        &struct_time_type_desc) < 0)
             return NULL;
-
-#ifdef MS_WINDOWS
-        winver.dwOSVersionInfoSize = sizeof(winver);
-        if (!GetVersionEx((OSVERSIONINFO*)&winver)) {
-            Py_DECREF(m);
-            PyErr_SetFromWindowsErr(0);
-            return NULL;
-        }
-#endif
     }
     Py_INCREF(&StructTimeType);
 #ifdef HAVE_STRUCT_TM_TM_ZONE
@@ -1523,109 +1368,93 @@ PyInit_time(void)
 static PyObject*
 floattime(_Py_clock_info_t *info)
 {
-    _PyTime_timeval t;
-#ifdef HAVE_CLOCK_GETTIME
-    struct timespec tp;
-    int ret;
-
-    /* _PyTime_gettimeofday() does not use clock_gettime()
-       because it would require to link Python to the rt (real-time)
-       library, at least on Linux */
-    ret = clock_gettime(CLOCK_REALTIME, &tp);
-    if (ret == 0) {
-        if (info) {
-            struct timespec res;
-            info->implementation = "clock_gettime(CLOCK_REALTIME)";
-            info->monotonic = 0;
-            info->adjustable = 1;
-            if (clock_getres(CLOCK_REALTIME, &res) == 0)
-                info->resolution = res.tv_sec + res.tv_nsec * 1e-9;
-            else
-                info->resolution = 1e-9;
-        }
-        return PyFloat_FromDouble(tp.tv_sec + tp.tv_nsec * 1e-9);
+    _PyTime_t t;
+    double d;
+    if (_PyTime_GetSystemClockWithInfo(&t, info) < 0) {
+        assert(info != NULL);
+        return NULL;
     }
-#endif
-    _PyTime_gettimeofday_info(&t, info);
-    return PyFloat_FromDouble((double)t.tv_sec + t.tv_usec * 1e-6);
+    d = _PyTime_AsSecondsDouble(t);
+    return PyFloat_FromDouble(d);
 }
 
 
-/* Implement floatsleep() for various platforms.
+/* Implement pysleep() for various platforms.
    When interrupted (or when another error occurs), return -1 and
    set an exception; else return 0. */
 
 static int
-floatsleep(double secs)
+pysleep(_PyTime_t secs)
 {
-/* XXX Should test for MS_WINDOWS first! */
-#if defined(HAVE_SELECT) && !defined(__EMX__)
-    struct timeval t;
-    double frac;
-    int err;
-
-    frac = fmod(secs, 1.0);
-    secs = floor(secs);
-    t.tv_sec = (long)secs;
-    t.tv_usec = (long)(frac*1000000.0);
-    Py_BEGIN_ALLOW_THREADS
-    err = select(0, (fd_set *)0, (fd_set *)0, (fd_set *)0, &t);
-    Py_END_ALLOW_THREADS
-    if (err != 0) {
-#ifdef EINTR
-        if (errno == EINTR) {
-            if (PyErr_CheckSignals())
-                return -1;
-        }
-        else
+    _PyTime_t deadline, monotonic;
+#ifndef MS_WINDOWS
+    struct timeval timeout;
+    int err = 0;
+#else
+    _PyTime_t millisecs;
+    unsigned long ul_millis;
+    DWORD rc;
+    HANDLE hInterruptEvent;
 #endif
-        {
-            PyErr_SetFromErrno(PyExc_IOError);
+
+    deadline = _PyTime_GetMonotonicClock() + secs;
+
+    do {
+#ifndef MS_WINDOWS
+        if (_PyTime_AsTimeval(secs, &timeout, _PyTime_ROUND_CEILING) < 0)
+            return -1;
+
+        Py_BEGIN_ALLOW_THREADS
+        err = select(0, (fd_set *)0, (fd_set *)0, (fd_set *)0, &timeout);
+        Py_END_ALLOW_THREADS
+
+        if (err == 0)
+            break;
+
+        if (errno != EINTR) {
+            PyErr_SetFromErrno(PyExc_OSError);
             return -1;
         }
-    }
-#elif defined(__WATCOMC__) && !defined(__QNX__)
-    /* XXX Can't interrupt this sleep */
-    Py_BEGIN_ALLOW_THREADS
-    delay((int)(secs * 1000 + 0.5));  /* delay() uses milliseconds */
-    Py_END_ALLOW_THREADS
-#elif defined(MS_WINDOWS)
-    {
-        double millisecs = secs * 1000.0;
-        unsigned long ul_millis;
-
+#else
+        millisecs = _PyTime_AsMilliseconds(secs, _PyTime_ROUND_CEILING);
         if (millisecs > (double)ULONG_MAX) {
             PyErr_SetString(PyExc_OverflowError,
                             "sleep length is too large");
             return -1;
         }
-        Py_BEGIN_ALLOW_THREADS
+
         /* Allow sleep(0) to maintain win32 semantics, and as decreed
          * by Guido, only the main thread can be interrupted.
          */
         ul_millis = (unsigned long)millisecs;
-        if (ul_millis == 0 || !_PyOS_IsMainThread())
+        if (ul_millis == 0 || !_PyOS_IsMainThread()) {
+            Py_BEGIN_ALLOW_THREADS
             Sleep(ul_millis);
-        else {
-            DWORD rc;
-            HANDLE hInterruptEvent = _PyOS_SigintEvent();
-            ResetEvent(hInterruptEvent);
-            rc = WaitForSingleObjectEx(hInterruptEvent, ul_millis, FALSE);
-            if (rc == WAIT_OBJECT_0) {
-                Py_BLOCK_THREADS
-                errno = EINTR;
-                PyErr_SetFromErrno(PyExc_IOError);
-                return -1;
-            }
+            Py_END_ALLOW_THREADS
+            break;
         }
+
+        hInterruptEvent = _PyOS_SigintEvent();
+        ResetEvent(hInterruptEvent);
+
+        Py_BEGIN_ALLOW_THREADS
+        rc = WaitForSingleObjectEx(hInterruptEvent, ul_millis, FALSE);
         Py_END_ALLOW_THREADS
-    }
-#else
-    /* XXX Can't interrupt this sleep */
-    Py_BEGIN_ALLOW_THREADS
-    sleep((int)secs);
-    Py_END_ALLOW_THREADS
+
+        if (rc != WAIT_OBJECT_0)
+            break;
 #endif
+
+        /* sleep was interrupted by SIGINT */
+        if (PyErr_CheckSignals())
+            return -1;
+
+        monotonic = _PyTime_GetMonotonicClock();
+        secs = deadline - monotonic;
+        if (secs < 0)
+            break;
+        /* retry with the recomputed delay */
+    } while (1);
 
     return 0;
 }

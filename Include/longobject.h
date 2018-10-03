@@ -65,7 +65,8 @@ PyAPI_FUNC(PyObject *) PyLong_GetInfo(void);
 #  error "void* different in size from int, long and long long"
 #endif /* SIZEOF_VOID_P */
 
-/* Used by Python/mystrtoul.c. */
+/* Used by Python/mystrtoul.c, _PyBytes_FromHex(),
+   _PyBytes_DecodeEscapeRecode(), etc. */
 #ifndef Py_LIMITED_API
 PyAPI_DATA(unsigned char) _PyLong_DigitValue[256];
 #endif
@@ -165,6 +166,12 @@ PyAPI_FUNC(int) _PyLong_AsByteArray(PyLongObject* v,
     unsigned char* bytes, size_t n,
     int little_endian, int is_signed);
 
+/* _PyLong_FromNbInt: Convert the given object to a PyLongObject
+   using the nb_int slot, if available.  Raise TypeError if either the
+   nb_int slot is not available or the result of the call to nb_int
+   returns something not of type int.
+*/
+PyAPI_FUNC(PyLongObject *)_PyLong_FromNbInt(PyObject *);
 
 /* _PyLong_Format: Convert the long to a string object with given base,
    appending a base prefix of 0[box] if base is 2, 8 or 16. */
@@ -172,6 +179,13 @@ PyAPI_FUNC(PyObject *) _PyLong_Format(PyObject *obj, int base);
 
 PyAPI_FUNC(int) _PyLong_FormatWriter(
     _PyUnicodeWriter *writer,
+    PyObject *obj,
+    int base,
+    int alternate);
+
+PyAPI_FUNC(char*) _PyLong_FormatBytesWriter(
+    _PyBytesWriter *writer,
+    char *str,
     PyObject *obj,
     int base,
     int alternate);
@@ -191,6 +205,9 @@ PyAPI_FUNC(int) _PyLong_FormatAdvancedWriter(
  */
 PyAPI_FUNC(unsigned long) PyOS_strtoul(const char *, char **, int);
 PyAPI_FUNC(long) PyOS_strtol(const char *, char **, int);
+
+/* For use by the gcd function in mathmodule.c */
+PyAPI_FUNC(PyObject *) _PyLong_GCD(PyObject *, PyObject *);
 
 #ifdef __cplusplus
 }

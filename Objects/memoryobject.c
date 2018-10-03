@@ -1,6 +1,7 @@
 /* Memoryview object implementation */
 
 #include "Python.h"
+#include "pystrhex.h"
 #include <stddef.h>
 
 
@@ -47,9 +48,6 @@
      releasebufferprocs must NOT decrement view.obj.
 */
 
-
-#define XSTRINGIZE(v) #v
-#define STRINGIZE(v) XSTRINGIZE(v)
 
 #define CHECK_MBUF_RELEASED(mbuf) \
     if (((_PyManagedBufferObject *)mbuf)->flags&_Py_MANAGED_BUFFER_RELEASED) { \
@@ -195,10 +193,10 @@ PyTypeObject _PyManagedBuffer_Type = {
 #define VIEW_ADDR(mv) (&((PyMemoryViewObject *)mv)->view)
 
 /* Check for the presence of suboffsets in the first dimension. */
-#define HAVE_PTR(suboffsets) (suboffsets && suboffsets[0] >= 0)
+#define HAVE_PTR(suboffsets, dim) (suboffsets && suboffsets[dim] >= 0)
 /* Adjust ptr if suboffsets are present. */
-#define ADJUST_PTR(ptr, suboffsets) \
-    (HAVE_PTR(suboffsets) ? *((char**)ptr) + suboffsets[0] : ptr)
+#define ADJUST_PTR(ptr, suboffsets, dim) \
+    (HAVE_PTR(suboffsets, dim) ? *((char**)ptr) + suboffsets[dim] : ptr)
 
 /* Memoryview buffer properties */
 #define MV_C_CONTIGUOUS(flags) (flags&(_Py_MEMORYVIEW_SCALAR|_Py_MEMORYVIEW_C))
@@ -223,7 +221,7 @@ PyTypeObject _PyManagedBuffer_Type = {
 
 
 PyDoc_STRVAR(memory_doc,
-"memoryview(object)\n\
+"memoryview($module, object)\n--\n\
 \n\
 Create a new memoryview object which references the given object.");
 
@@ -335,11 +333,11 @@ copy_base(const Py_ssize_t *shape, Py_ssize_t itemsize,
         char *p;
         Py_ssize_t i;
         for (i=0, p=mem; i < shape[0]; p+=itemsize, sptr+=sstrides[0], i++) {
-            char *xsptr = ADJUST_PTR(sptr, ssuboffsets);
+            char *xsptr = ADJUST_PTR(sptr, ssuboffsets, 0);
             memcpy(p, xsptr, itemsize);
         }
         for (i=0, p=mem; i < shape[0]; p+=itemsize, dptr+=dstrides[0], i++) {
-            char *xdptr = ADJUST_PTR(dptr, dsuboffsets);
+            char *xdptr = ADJUST_PTR(dptr, dsuboffsets, 0);
             memcpy(xdptr, p, itemsize);
         }
     }
@@ -367,8 +365,8 @@ copy_rec(const Py_ssize_t *shape, Py_ssize_t ndim, Py_ssize_t itemsize,
     }
 
     for (i = 0; i < shape[0]; dptr+=dstrides[0], sptr+=sstrides[0], i++) {
-        char *xdptr = ADJUST_PTR(dptr, dsuboffsets);
-        char *xsptr = ADJUST_PTR(sptr, ssuboffsets);
+        char *xdptr = ADJUST_PTR(dptr, dsuboffsets, 0);
+        char *xsptr = ADJUST_PTR(sptr, ssuboffsets, 0);
 
         copy_rec(shape+1, ndim-1, itemsize,
                  xdptr, dstrides+1, dsuboffsets ? dsuboffsets+1 : NULL,
@@ -660,7 +658,7 @@ mbuf_add_view(_PyManagedBufferObject *mbuf, const Py_buffer *src)
     if (src->ndim > PyBUF_MAX_NDIM) {
         PyErr_SetString(PyExc_ValueError,
             "memoryview: number of dimensions must not exceed "
-            STRINGIZE(PyBUF_MAX_NDIM));
+            Py_STRINGIFY(PyBUF_MAX_NDIM));
         return NULL;
     }
 
@@ -795,7 +793,7 @@ PyMemoryView_FromObject(PyObject *v)
     }
 
     PyErr_Format(PyExc_TypeError,
-        "memoryview: %.200s object does not have the buffer interface",
+        "memoryview: a bytes-like object is required, not '%.200s'",
         Py_TYPE(v)->tp_name);
     return NULL;
 }
@@ -895,7 +893,7 @@ memory_from_contiguous_copy(Py_buffer *src, char order)
    The logical structure of the input and output buffers is the same
    (i.e. tolist(input) == tolist(output)), but the physical layout in
    memory can be explicitly chosen.
- 
+
    As usual, if buffertype=PyBUF_WRITE, the exporter's buffer must be writable,
    otherwise it may be writable or read-only.
 
@@ -1135,6 +1133,51 @@ get_native_fmtchar(char *result, const char *fmt)
     return -1;
 }
 
+Py_LOCAL_INLINE(const char *)
+get_native_fmtstr(const char *fmt)
+{
+    int at = 0;
+
+    if (fmt[0] == '@') {
+        at = 1;
+        fmt++;
+    }
+    if (fmt[0] == '\0' || fmt[1] != '\0') {
+        return NULL;
+    }
+
+#define RETURN(s) do { return at ? "@" s : s; } while (0)
+
+    switch (fmt[0]) {
+    case 'c': RETURN("c");
+    case 'b': RETURN("b");
+    case 'B': RETURN("B");
+    case 'h': RETURN("h");
+    case 'H': RETURN("H");
+    case 'i': RETURN("i");
+    case 'I': RETURN("I");
+    case 'l': RETURN("l");
+    case 'L': RETURN("L");
+    #ifdef HAVE_LONG_LONG
+    case 'q': RETURN("q");
+    case 'Q': RETURN("Q");
+    #endif
+    case 'n': RETURN("n");
+    case 'N': RETURN("N");
+    case 'f': RETURN("f");
+    case 'd': RETURN("d");
+    #ifdef HAVE_C99_BOOL
+    case '?': RETURN("?");
+    #else
+    case '?': RETURN("?");
+    #endif
+    case 'P': RETURN("P");
+    }
+
+    return NULL;
+}
+
+
 /* Cast a memoryview's data type to 'format'. The input array must be
    C-contiguous. At least one of input-format, output-format must have
    byte size. The output array is 1-D, with the same byte length as the
@@ -1154,13 +1197,6 @@ cast_to_1D(PyMemoryViewObject *mv, PyObject *format)
     assert(view->strides == mv->ob_array + view->ndim);
     assert(view->suboffsets == mv->ob_array + 2*view->ndim);
 
-    if (get_native_fmtchar(&srcchar, view->format) < 0) {
-        PyErr_SetString(PyExc_ValueError,
-            "memoryview: source format must be a native single character "
-            "format prefixed with an optional '@'");
-        return ret;
-    }
-
     asciifmt = PyUnicode_AsASCIIString(format);
     if (asciifmt == NULL)
         return ret;
@@ -1173,7 +1209,8 @@ cast_to_1D(PyMemoryViewObject *mv, PyObject *format)
         goto out;
     }
 
-    if (!IS_BYTE_FORMAT(srcchar) && !IS_BYTE_FORMAT(destchar)) {
+    if ((get_native_fmtchar(&srcchar, view->format) < 0 ||
+         !IS_BYTE_FORMAT(srcchar)) && !IS_BYTE_FORMAT(destchar)) {
         PyErr_SetString(PyExc_TypeError,
             "memoryview: cannot cast between two non-byte formats");
         goto out;
@@ -1184,10 +1221,13 @@ cast_to_1D(PyMemoryViewObject *mv, PyObject *format)
         goto out;
     }
 
-    strncpy(mv->format, PyBytes_AS_STRING(asciifmt),
-            _Py_MEMORYVIEW_MAX_FORMAT);
-    mv->format[_Py_MEMORYVIEW_MAX_FORMAT-1] = '\0';
-    view->format = mv->format;
+    view->format = (char *)get_native_fmtstr(PyBytes_AS_STRING(asciifmt));
+    if (view->format == NULL) {
+        /* NOT_REACHED: get_native_fmtchar() already validates the format. */
+        PyErr_SetString(PyExc_RuntimeError,
+            "memoryview: internal error");
+        goto out;
+    }
     view->itemsize = itemsize;
 
     view->ndim = 1;
@@ -1196,7 +1236,7 @@ cast_to_1D(PyMemoryViewObject *mv, PyObject *format)
     view->suboffsets = NULL;
 
     init_flags(mv);
- 
+
     ret = 0;
 
 out:
@@ -1341,7 +1381,7 @@ memory_cast(PyMemoryViewObject *self, PyObject *args, PyObject *kwds)
         if (ndim > PyBUF_MAX_NDIM) {
             PyErr_SetString(PyExc_ValueError,
                 "memoryview: number of dimensions must not exceed "
-                STRINGIZE(PyBUF_MAX_NDIM));
+                Py_STRINGIFY(PyBUF_MAX_NDIM));
             return NULL;
         }
         if (self->view.ndim != 1 && ndim != 1) {
@@ -2012,7 +2052,7 @@ tolist_base(const char *ptr, const Py_ssize_t *shape,
         return NULL;
 
     for (i = 0; i < shape[0]; ptr+=strides[0], i++) {
-        const char *xptr = ADJUST_PTR(ptr, suboffsets);
+        const char *xptr = ADJUST_PTR(ptr, suboffsets, 0);
         item = unpack_single(xptr, fmt);
         if (item == NULL) {
             Py_DECREF(lst);
@@ -2046,7 +2086,7 @@ tolist_rec(const char *ptr, Py_ssize_t ndim, const Py_ssize_t *shape,
         return NULL;
 
     for (i = 0; i < shape[0]; ptr+=strides[0], i++) {
-        const char *xptr = ADJUST_PTR(ptr, suboffsets);
+        const char *xptr = ADJUST_PTR(ptr, suboffsets, 0);
         item = tolist_rec(xptr, ndim-1, shape+1,
                           strides+1, suboffsets ? suboffsets+1 : NULL,
                           fmt);
@@ -2113,6 +2153,29 @@ memory_tobytes(PyMemoryViewObject *self, PyObject *dummy)
 }
 
 static PyObject *
+memory_hex(PyMemoryViewObject *self, PyObject *dummy)
+{
+    Py_buffer *src = VIEW_ADDR(self);
+    PyObject *bytes;
+    PyObject *ret;
+
+    CHECK_RELEASED(self);
+
+    if (MV_C_CONTIGUOUS(self->flags)) {
+        return _Py_strhex(src->buf, src->len);
+    }
+
+    bytes = memory_tobytes(self, dummy);
+    if (bytes == NULL)
+        return NULL;
+
+    ret = _Py_strhex(PyBytes_AS_STRING(bytes), Py_SIZE(bytes));
+    Py_DECREF(bytes);
+
+    return ret;
+}
+
+static PyObject *
 memory_repr(PyMemoryViewObject *self)
 {
     if (self->flags & _Py_MEMORYVIEW_RELEASED)
@@ -2126,30 +2189,63 @@ memory_repr(PyMemoryViewObject *self)
 /*                          Indexing and slicing                          */
 /**************************************************************************/
 
-/* Get the pointer to the item at index. */
 static char *
-ptr_from_index(Py_buffer *view, Py_ssize_t index)
+lookup_dimension(Py_buffer *view, char *ptr, int dim, Py_ssize_t index)
 {
-    char *ptr;
-    Py_ssize_t nitems; /* items in the first dimension */
+    Py_ssize_t nitems; /* items in the given dimension */
 
     assert(view->shape);
     assert(view->strides);
 
-    nitems = view->shape[0];
+    nitems = view->shape[dim];
     if (index < 0) {
         index += nitems;
     }
     if (index < 0 || index >= nitems) {
-        PyErr_SetString(PyExc_IndexError, "index out of bounds");
+        PyErr_Format(PyExc_IndexError,
+                     "index out of bounds on dimension %d", dim + 1);
         return NULL;
     }
 
-    ptr = (char *)view->buf;
-    ptr += view->strides[0] * index;
+    ptr += view->strides[dim] * index;
 
-    ptr = ADJUST_PTR(ptr, view->suboffsets);
+    ptr = ADJUST_PTR(ptr, view->suboffsets, dim);
 
+    return ptr;
+}
+
+/* Get the pointer to the item at index. */
+static char *
+ptr_from_index(Py_buffer *view, Py_ssize_t index)
+{
+    char *ptr = (char *)view->buf;
+    return lookup_dimension(view, ptr, 0, index);
+}
+
+/* Get the pointer to the item at tuple. */
+static char *
+ptr_from_tuple(Py_buffer *view, PyObject *tup)
+{
+    char *ptr = (char *)view->buf;
+    Py_ssize_t dim, nindices = PyTuple_GET_SIZE(tup);
+
+    if (nindices > view->ndim) {
+        PyErr_Format(PyExc_TypeError,
+                     "cannot index %zd-dimension view with %zd-element tuple",
+                     view->ndim, nindices);
+        return NULL;
+    }
+
+    for (dim = 0; dim < nindices; dim++) {
+        Py_ssize_t index;
+        index = PyNumber_AsSsize_t(PyTuple_GET_ITEM(tup, dim),
+                                   PyExc_IndexError);
+        if (index == -1 && PyErr_Occurred())
+            return NULL;
+        ptr = lookup_dimension(view, ptr, (int)dim, index);
+        if (ptr == NULL)
+            return NULL;
+    }
     return ptr;
 }
 
@@ -2182,6 +2278,32 @@ memory_item(PyMemoryViewObject *self, Py_ssize_t index)
     PyErr_SetString(PyExc_NotImplementedError,
         "multi-dimensional sub-views are not implemented");
     return NULL;
+}
+
+/* Return the item at position *key* (a tuple of indices). */
+static PyObject *
+memory_item_multi(PyMemoryViewObject *self, PyObject *tup)
+{
+    Py_buffer *view = &(self->view);
+    const char *fmt;
+    Py_ssize_t nindices = PyTuple_GET_SIZE(tup);
+    char *ptr;
+
+    CHECK_RELEASED(self);
+
+    fmt = adjust_fmt(view);
+    if (fmt == NULL)
+        return NULL;
+
+    if (nindices < view->ndim) {
+        PyErr_SetString(PyExc_NotImplementedError,
+                        "sub-views are not implemented");
+        return NULL;
+    }
+    ptr = ptr_from_tuple(view, tup);
+    if (ptr == NULL)
+        return NULL;
+    return unpack_single(ptr, fmt);
 }
 
 Py_LOCAL_INLINE(int)
@@ -2232,6 +2354,22 @@ is_multislice(PyObject *key)
     return 1;
 }
 
+static Py_ssize_t
+is_multiindex(PyObject *key)
+{
+    Py_ssize_t size, i;
+
+    if (!PyTuple_Check(key))
+        return 0;
+    size = PyTuple_GET_SIZE(key);
+    for (i = 0; i < size; i++) {
+        PyObject *x = PyTuple_GET_ITEM(key, i);
+        if (!PyIndex_Check(x))
+            return 0;
+    }
+    return 1;
+}
+
 /* mv[obj] returns an object holding the data for one element if obj
    fully indexes the memoryview or another memoryview object if it
    does not.
@@ -2243,7 +2381,7 @@ memory_subscript(PyMemoryViewObject *self, PyObject *key)
 {
     Py_buffer *view;
     view = &(self->view);
-    
+
     CHECK_RELEASED(self);
 
     if (view->ndim == 0) {
@@ -2286,6 +2424,9 @@ memory_subscript(PyMemoryViewObject *self, PyObject *key)
         init_flags(sliced);
 
         return (PyObject *)sliced;
+    }
+    else if (is_multiindex(key)) {
+        return memory_item_multi(self, key);
     }
     else if (is_multislice(key)) {
         PyErr_SetString(PyExc_NotImplementedError,
@@ -2331,14 +2472,15 @@ memory_ass_sub(PyMemoryViewObject *self, PyObject *key, PyObject *value)
             return -1;
         }
     }
-    if (view->ndim != 1) {
-        PyErr_SetString(PyExc_NotImplementedError,
-            "memoryview assignments are currently restricted to ndim = 1");
-        return -1;
-    }
 
     if (PyIndex_Check(key)) {
-        Py_ssize_t index = PyNumber_AsSsize_t(key, PyExc_IndexError);
+        Py_ssize_t index;
+        if (1 < view->ndim) {
+            PyErr_SetString(PyExc_NotImplementedError,
+                            "sub-views are not implemented");
+            return -1;
+        }
+        index = PyNumber_AsSsize_t(key, PyExc_IndexError);
         if (index == -1 && PyErr_Occurred())
             return -1;
         ptr = ptr_from_index(view, index);
@@ -2373,7 +2515,19 @@ memory_ass_sub(PyMemoryViewObject *self, PyObject *key, PyObject *value)
         PyBuffer_Release(&src);
         return ret;
     }
-    else if (PySlice_Check(key) || is_multislice(key)) {
+    if (is_multiindex(key)) {
+        char *ptr;
+        if (PyTuple_GET_SIZE(key) < view->ndim) {
+            PyErr_SetString(PyExc_NotImplementedError,
+                            "sub-views are not implemented");
+            return -1;
+        }
+        ptr = ptr_from_tuple(view, key);
+        if (ptr == NULL)
+            return -1;
+        return pack_single(ptr, value, fmt);
+    }
+    if (PySlice_Check(key) || is_multislice(key)) {
         /* Call memory_subscript() to produce a sliced lvalue, then copy
            rvalue into lvalue. This is already implemented in _testbuffer.c. */
         PyErr_SetString(PyExc_NotImplementedError,
@@ -2546,8 +2700,8 @@ cmp_base(const char *p, const char *q, const Py_ssize_t *shape,
     int equal;
 
     for (i = 0; i < shape[0]; p+=pstrides[0], q+=qstrides[0], i++) {
-        const char *xp = ADJUST_PTR(p, psuboffsets);
-        const char *xq = ADJUST_PTR(q, qsuboffsets);
+        const char *xp = ADJUST_PTR(p, psuboffsets, 0);
+        const char *xq = ADJUST_PTR(q, qsuboffsets, 0);
         equal = unpack_cmp(xp, xq, fmt, unpack_p, unpack_q);
         if (equal <= 0)
             return equal;
@@ -2581,8 +2735,8 @@ cmp_rec(const char *p, const char *q,
     }
 
     for (i = 0; i < shape[0]; p+=pstrides[0], q+=qstrides[0], i++) {
-        const char *xp = ADJUST_PTR(p, psuboffsets);
-        const char *xq = ADJUST_PTR(q, qsuboffsets);
+        const char *xp = ADJUST_PTR(p, psuboffsets, 0);
+        const char *xq = ADJUST_PTR(q, qsuboffsets, 0);
         equal = cmp_rec(xp, xq, ndim-1, shape+1,
                         pstrides+1, psuboffsets ? psuboffsets+1 : NULL,
                         qstrides+1, qsuboffsets ? qsuboffsets+1 : NULL,
@@ -2900,6 +3054,7 @@ PyDoc_STRVAR(memory_f_contiguous_doc,
 PyDoc_STRVAR(memory_contiguous_doc,
              "A bool indicating whether the memory is contiguous.");
 
+
 static PyGetSetDef memory_getsetlist[] = {
     {"obj",             (getter)memory_obj_get,        NULL, memory_obj_doc},
     {"nbytes",          (getter)memory_nbytes_get,     NULL, memory_nbytes_doc},
@@ -2917,25 +3072,30 @@ static PyGetSetDef memory_getsetlist[] = {
 };
 
 PyDoc_STRVAR(memory_release_doc,
-"M.release() -> None\n\
+"release($self, /)\n--\n\
 \n\
 Release the underlying buffer exposed by the memoryview object.");
 PyDoc_STRVAR(memory_tobytes_doc,
-"M.tobytes() -> bytes\n\
+"tobytes($self, /)\n--\n\
 \n\
 Return the data in the buffer as a byte string.");
+PyDoc_STRVAR(memory_hex_doc,
+"hex($self, /)\n--\n\
+\n\
+Return the data in the buffer as a string of hexadecimal numbers.");
 PyDoc_STRVAR(memory_tolist_doc,
-"M.tolist() -> list\n\
+"tolist($self, /)\n--\n\
 \n\
 Return the data in the buffer as a list of elements.");
 PyDoc_STRVAR(memory_cast_doc,
-"M.cast(format[, shape]) -> memoryview\n\
+"cast($self, /, format, *, shape)\n--\n\
 \n\
 Cast a memoryview to a new format or shape.");
 
 static PyMethodDef memory_methods[] = {
     {"release",     (PyCFunction)memory_release, METH_NOARGS, memory_release_doc},
     {"tobytes",     (PyCFunction)memory_tobytes, METH_NOARGS, memory_tobytes_doc},
+    {"hex",         (PyCFunction)memory_hex, METH_NOARGS, memory_hex_doc},
     {"tolist",      (PyCFunction)memory_tolist, METH_NOARGS, memory_tolist_doc},
     {"cast",        (PyCFunction)memory_cast, METH_VARARGS|METH_KEYWORDS, memory_cast_doc},
     {"__enter__",   memory_enter, METH_NOARGS, NULL},

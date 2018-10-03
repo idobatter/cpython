@@ -119,7 +119,7 @@ PyFloat_FromDouble(double fval)
             return PyErr_NoMemory();
     }
     /* Inline PyObject_New */
-    PyObject_INIT(op, &PyFloat_Type);
+    (void)PyObject_INIT(op, &PyFloat_Type);
     op->ob_fval = fval;
     return (PyObject *) op;
 }
@@ -131,6 +131,7 @@ PyFloat_FromString(PyObject *v)
     double x;
     PyObject *s_buffer = NULL;
     Py_ssize_t len;
+    Py_buffer view = {NULL, NULL};
     PyObject *result = NULL;
 
     if (PyUnicode_Check(v)) {
@@ -143,7 +144,26 @@ PyFloat_FromString(PyObject *v)
             return NULL;
         }
     }
-    else if (PyObject_AsCharBuffer(v, &s, &len)) {
+    else if (PyBytes_Check(v)) {
+        s = PyBytes_AS_STRING(v);
+        len = PyBytes_GET_SIZE(v);
+    }
+    else if (PyByteArray_Check(v)) {
+        s = PyByteArray_AS_STRING(v);
+        len = PyByteArray_GET_SIZE(v);
+    }
+    else if (PyObject_GetBuffer(v, &view, PyBUF_SIMPLE) == 0) {
+        s = (const char *)view.buf;
+        len = view.len;
+        /* Copy to NUL-terminated buffer. */
+        s_buffer = PyBytes_FromStringAndSize(s, len);
+        if (s_buffer == NULL) {
+            PyBuffer_Release(&view);
+            return NULL;
+        }
+        s = PyBytes_AS_STRING(s_buffer);
+    }
+    else {
         PyErr_Format(PyExc_TypeError,
             "float() argument must be a string or a number, not '%.200s'",
             Py_TYPE(v)->tp_name);
@@ -170,6 +190,7 @@ PyFloat_FromString(PyObject *v)
     else
         result = PyFloat_FromDouble(x);
 
+    PyBuffer_Release(&view);
     Py_XDECREF(s_buffer);
     return result;
 }
@@ -214,6 +235,7 @@ PyFloat_AsDouble(PyObject *op)
     if (fo == NULL)
         return -1;
     if (!PyFloat_Check(fo)) {
+        Py_DECREF(fo);
         PyErr_SetString(PyExc_TypeError,
                         "nb_float should return float object");
         return -1;
@@ -979,8 +1001,9 @@ float_round(PyObject *v, PyObject *args)
     x = PyFloat_AsDouble(v);
     if (!PyArg_ParseTuple(args, "|O", &o_ndigits))
         return NULL;
-    if (o_ndigits == NULL) {
-        /* single-argument round: round to nearest integer */
+    if (o_ndigits == NULL || o_ndigits == Py_None) {
+        /* single-argument round or with None ndigits:
+         * round to nearest integer */
         rounded = round(x);
         if (fabs(x-rounded) == 0.5)
             /* halfway case: round to even */
@@ -1428,29 +1451,23 @@ float_as_integer_ratio(PyObject *v, PyObject *unused)
     int exponent;
     int i;
 
-    PyObject *prev;
     PyObject *py_exponent = NULL;
     PyObject *numerator = NULL;
     PyObject *denominator = NULL;
     PyObject *result_pair = NULL;
     PyNumberMethods *long_methods = PyLong_Type.tp_as_number;
 
-#define INPLACE_UPDATE(obj, call) \
-    prev = obj; \
-    obj = call; \
-    Py_DECREF(prev); \
-
     CONVERT_TO_DOUBLE(v, self);
 
     if (Py_IS_INFINITY(self)) {
-      PyErr_SetString(PyExc_OverflowError,
-                      "Cannot pass infinity to float.as_integer_ratio.");
-      return NULL;
+        PyErr_SetString(PyExc_OverflowError,
+                        "cannot convert Infinity to integer ratio");
+        return NULL;
     }
     if (Py_IS_NAN(self)) {
-      PyErr_SetString(PyExc_ValueError,
-                      "Cannot pass NaN to float.as_integer_ratio.");
-      return NULL;
+        PyErr_SetString(PyExc_ValueError,
+                        "cannot convert NaN to integer ratio");
+        return NULL;
     }
 
     PyFPE_START_PROTECT("as_integer_ratio", goto error);
@@ -1466,29 +1483,31 @@ float_as_integer_ratio(PyObject *v, PyObject *unused)
        to be truncated by PyLong_FromDouble(). */
 
     numerator = PyLong_FromDouble(float_part);
-    if (numerator == NULL) goto error;
+    if (numerator == NULL)
+        goto error;
+    denominator = PyLong_FromLong(1);
+    if (denominator == NULL)
+        goto error;
+    py_exponent = PyLong_FromLong(Py_ABS(exponent));
+    if (py_exponent == NULL)
+        goto error;
 
     /* fold in 2**exponent */
-    denominator = PyLong_FromLong(1);
-    py_exponent = PyLong_FromLong(labs((long)exponent));
-    if (py_exponent == NULL) goto error;
-    INPLACE_UPDATE(py_exponent,
-                   long_methods->nb_lshift(denominator, py_exponent));
-    if (py_exponent == NULL) goto error;
     if (exponent > 0) {
-        INPLACE_UPDATE(numerator,
-                       long_methods->nb_multiply(numerator, py_exponent));
-        if (numerator == NULL) goto error;
+        Py_SETREF(numerator,
+                  long_methods->nb_lshift(numerator, py_exponent));
+        if (numerator == NULL)
+            goto error;
     }
     else {
-        Py_DECREF(denominator);
-        denominator = py_exponent;
-        py_exponent = NULL;
+        Py_SETREF(denominator,
+                  long_methods->nb_lshift(denominator, py_exponent));
+        if (denominator == NULL)
+            goto error;
     }
 
     result_pair = PyTuple_Pack(2, numerator, denominator);
 
-#undef INPLACE_UPDATE
 error:
     Py_XDECREF(py_exponent);
     Py_XDECREF(denominator);
@@ -1545,7 +1564,7 @@ float_subtype_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     tmp = float_new(&PyFloat_Type, args, kwds);
     if (tmp == NULL)
         return NULL;
-    assert(PyFloat_CheckExact(tmp));
+    assert(PyFloat_Check(tmp));
     newobj = type->tp_alloc(type, 0);
     if (newobj == NULL) {
         Py_DECREF(tmp);
@@ -2026,7 +2045,7 @@ _PyFloat_Pack4(double x, unsigned char *p, int le)
     }
     else {
         float y = (float)x;
-        const char *s = (char*)&y;
+        const unsigned char *s = (unsigned char*)&y;
         int i, incr = 1;
 
         if (Py_IS_INFINITY(y) && !Py_IS_INFINITY(x))
@@ -2162,7 +2181,7 @@ _PyFloat_Pack8(double x, unsigned char *p, int le)
         return -1;
     }
     else {
-        const char *s = (char*)&x;
+        const unsigned char *s = (unsigned char*)&x;
         int i, incr = 1;
 
         if ((double_format == ieee_little_endian_format && !le)

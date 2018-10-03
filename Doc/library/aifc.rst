@@ -54,8 +54,8 @@ Module :mod:`aifc` defines the following function:
    The :func:`.open` function may be used in a :keyword:`with` statement.  When
    the :keyword:`with` block completes, the :meth:`~aifc.close` method is called.
 
-.. versionchanged:: 3.4
-   Support for the :keyword:`with` statement was added.
+   .. versionchanged:: 3.4
+      Support for the :keyword:`with` statement was added.
 
 Objects returned by :func:`.open` when a file is opened for reading have the
 following methods:
@@ -226,7 +226,7 @@ number of frames must be filled in.
    file parameters have been set.
 
    .. versionchanged:: 3.4
-      Any :term:`bytes-like object`\ s are now accepted.
+      Any :term:`bytes-like object` is now accepted.
 
 
 .. method:: aifc.writeframesraw(data)
@@ -235,7 +235,7 @@ number of frames must be filled in.
    updated.
 
    .. versionchanged:: 3.4
-      Any :term:`bytes-like object`\ s are now accepted.
+      Any :term:`bytes-like object` is now accepted.
 
 
 .. method:: aifc.close()

@@ -2,8 +2,10 @@
 ========================================================
 
 .. module:: ensurepip
-   :synopsis: Bootstrapping the ``pip`` installer into an existing Python
+   :synopsis: Bootstrapping the "pip" installer into an existing Python
               installation or virtual environment.
+
+.. versionadded:: 3.4
 
 The :mod:`ensurepip` package provides support for bootstrapping the ``pip``
 installer into an existing Python installation or virtual environment. This
@@ -18,8 +20,6 @@ needed if installing ``pip`` was skipped when installing Python (or
 when creating a virtual environment) or after explicitly uninstalling
 ``pip``.
 
-.. versionadded:: 3.4
-
 .. note::
 
    This module *does not* access the internet. All of the components
@@ -28,7 +28,7 @@ when creating a virtual environment) or after explicitly uninstalling
 
 .. seealso::
 
-   :ref:`install-index`
+   :ref:`installing-index`
       The end user guide for installing Python packages
 
    :pep:`453`: Explicit bootstrapping of pip in Python installations
@@ -116,6 +116,12 @@ Module API
 
    *verbosity* controls the level of output to :data:`sys.stdout` from the
    bootstrapping operation.
+
+   .. note::
+
+      The bootstrapping process has side effects on both ``sys.path`` and
+      ``os.environ``. Invoking the command line interface in a subprocess
+      instead allows these side effects to be avoided.
 
    .. note::
 

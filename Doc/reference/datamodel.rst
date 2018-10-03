@@ -77,7 +77,7 @@ are still reachable.
    module for information on controlling the collection of cyclic garbage.
    Other implementations act differently and CPython may change.
    Do not depend on immediate finalization of objects when they become
-   unreachable (ex: always close files).
+   unreachable (so you should always close files explicitly).
 
 Note that the use of the implementation's tracing or debugging facilities may
 keep objects alive that would normally be collectable. Also note that catching
@@ -154,10 +154,15 @@ NotImplemented
 
    This type has a single value.  There is a single object with this value. This
    object is accessed through the built-in name ``NotImplemented``. Numeric methods
-   and rich comparison methods may return this value if they do not implement the
+   and rich comparison methods should return this value if they do not implement the
    operation for the operands provided.  (The interpreter will then try the
    reflected operation, or some other fallback, depending on the operator.)  Its
    truth value is true.
+
+   See
+   :ref:`implementing-the-arithmetic-operations`
+   for more details.
+
 
 Ellipsis
    .. index:: object: Ellipsis
@@ -222,7 +227,7 @@ Ellipsis
       at the mercy of the underlying machine architecture (and C or Java
       implementation) for the accepted range and handling of overflow. Python does not
       support single-precision floating point numbers; the savings in processor and
-      memory usage that are usually the reason for using these is dwarfed by the
+      memory usage that are usually the reason for using these are dwarfed by the
       overhead of using objects in Python, so there is no reason to complicate the
       language with two kinds of floating point numbers.
 
@@ -285,16 +290,17 @@ Sequences
             single: integer
             single: Unicode
 
-         A string is a sequence of values that represent Unicode codepoints.
-         All the codepoints in range ``U+0000 - U+10FFFF`` can be represented
-         in a string.  Python doesn't have a :c:type:`chr` type, and
-         every character in the string is represented as a string object
-         with length ``1``.  The built-in function :func:`ord` converts a
-         character to its codepoint (as an integer); :func:`chr` converts
-         an integer in range ``0 - 10FFFF`` to the corresponding character.
+         A string is a sequence of values that represent Unicode code points.
+         All the code points in the range ``U+0000 - U+10FFFF`` can be
+         represented in a string.  Python doesn't have a :c:type:`char` type;
+         instead, every code point in the string is represented as a string
+         object with length ``1``.  The built-in function :func:`ord`
+         converts a code point from its string form to an integer in the
+         range ``0 - 10FFFF``; :func:`chr` converts an integer in the range
+         ``0 - 10FFFF`` to the corresponding length ``1`` string object.
          :meth:`str.encode` can be used to convert a :class:`str` to
-         :class:`bytes` using the given encoding, and :meth:`bytes.decode` can
-         be used to achieve the opposite.
+         :class:`bytes` using the given text encoding, and
+         :meth:`bytes.decode` can be used to achieve the opposite.
 
       Tuples
          .. index::
@@ -323,8 +329,6 @@ Sequences
          object: mutable sequence
          object: mutable
          pair: assignment; statement
-         single: delete
-         statement: del
          single: subscription
          single: slicing
 
@@ -455,7 +459,8 @@ Callable types
       +=========================+===============================+===========+
       | :attr:`__doc__`         | The function's documentation  | Writable  |
       |                         | string, or ``None`` if        |           |
-      |                         | unavailable                   |           |
+      |                         | unavailable; not inherited by |           |
+      |                         | subclasses                    |           |
       +-------------------------+-------------------------------+-----------+
       | :attr:`__name__`        | The function's name           | Writable  |
       +-------------------------+-------------------------------+-----------+
@@ -495,7 +500,7 @@ Callable types
       | :attr:`__annotations__` | A dict containing annotations | Writable  |
       |                         | of parameters.  The keys of   |           |
       |                         | the dict are the parameter    |           |
-      |                         | names, or ``'return'`` for    |           |
+      |                         | names, and ``'return'`` for   |           |
       |                         | the return annotation, if     |           |
       |                         | provided.                     |           |
       +-------------------------+-------------------------------+-----------+
@@ -611,6 +616,16 @@ Callable types
       exception is raised and the iterator will have reached the end of the set of
       values to be returned.
 
+   Coroutine functions
+      .. index::
+         single: coroutine; function
+
+      A function or method which is defined using :keyword:`async def` is called
+      a :dfn:`coroutine function`.  Such a function, when called, returns a
+      :term:`coroutine` object.  It may contain :keyword:`await` expressions,
+      as well as :keyword:`async with` and :keyword:`async for` statements. See
+      also the :ref:`coroutine-objects` section.
+
    Built-in functions
       .. index::
          object: built-in function
@@ -709,7 +724,7 @@ Custom classes
    where there are multiple inheritance paths leading back to a common ancestor.
    Additional details on the C3 MRO used by Python can be found in the
    documentation accompanying the 2.3 release at
-   http://www.python.org/download/releases/2.3/mro/.
+   https://www.python.org/download/releases/2.3/mro/.
 
    .. XXX: Could we add that MRO doc as an appendix to the language ref?
 
@@ -1095,13 +1110,17 @@ Basic customization
 
    .. index:: pair: class; constructor
 
-   Called when the instance is created.  The arguments are those passed to the
-   class constructor expression.  If a base class has an :meth:`__init__` method,
-   the derived class's :meth:`__init__` method, if any, must explicitly call it to
-   ensure proper initialization of the base class part of the instance; for
-   example: ``BaseClass.__init__(self, [args...])``.  As a special constraint on
-   constructors, no value may be returned; doing so will cause a :exc:`TypeError`
-   to be raised at runtime.
+   Called after the instance has been created (by :meth:`__new__`), but before
+   it is returned to the caller.  The arguments are those passed to the
+   class constructor expression.  If a base class has an :meth:`__init__`
+   method, the derived class's :meth:`__init__` method, if any, must explicitly
+   call it to ensure proper initialization of the base class part of the
+   instance; for example: ``BaseClass.__init__(self, [args...])``.
+
+   Because :meth:`__new__` and :meth:`__init__` work together in constructing
+   objects (:meth:`__new__` to create it, and :meth:`__init__` to customise it),
+   no non-``None`` value may be returned by :meth:`__init__`; doing so will
+   cause a :exc:`TypeError` to be raised at runtime.
 
 
 .. method:: object.__del__(self)
@@ -1133,8 +1152,10 @@ Basic customization
       reference to the object on the stack frame that raised an unhandled
       exception in interactive mode (the traceback stored in
       ``sys.last_traceback`` keeps the stack frame alive).  The first situation
-      can only be remedied by explicitly breaking the cycles; the latter two
-      situations can be resolved by storing ``None`` in ``sys.last_traceback``.
+      can only be remedied by explicitly breaking the cycles; the second can be
+      resolved by freeing the reference to the traceback object when it is no
+      longer useful, and the third can be resolved by storing ``None`` in
+      ``sys.last_traceback``.
       Circular references which are garbage are detected and cleaned up when
       the cyclic garbage collector is enabled (it's on by default). Refer to the
       documentation for the :mod:`gc` module for more information about this
@@ -1226,6 +1247,10 @@ Basic customization
 
    The return value must be a string object.
 
+   .. versionchanged:: 3.4
+      The __format__ method of ``object`` itself raises a :exc:`TypeError`
+      if passed any non-empty string.
+
 
 .. _richcmpfuncs:
 .. method:: object.__lt__(self, other)
@@ -1251,10 +1276,14 @@ Basic customization
    context (e.g., in the condition of an ``if`` statement), Python will call
    :func:`bool` on the value to determine if the result is true or false.
 
-   There are no implied relationships among the comparison operators. The truth
-   of ``x==y`` does not imply that ``x!=y`` is false.  Accordingly, when
-   defining :meth:`__eq__`, one should also define :meth:`__ne__` so that the
-   operators will behave as expected.  See the paragraph on :meth:`__hash__` for
+   By default, :meth:`__ne__` delegates to :meth:`__eq__` and
+   inverts the result unless it is ``NotImplemented``.  There are no other
+   implied relationships among the comparison operators, for example,
+   the truth of ``(x<y or x==y)`` does not imply ``x<=y``.
+   To automatically generate ordering operations from a single root operation,
+   see :func:`functools.total_ordering`.
+
+   See the paragraph on :meth:`__hash__` for
    some important notes on creating :term:`hashable` objects which support
    custom comparison operations and are usable as dictionary keys.
 
@@ -1263,11 +1292,11 @@ Basic customization
    rather, :meth:`__lt__` and :meth:`__gt__` are each other's reflection,
    :meth:`__le__` and :meth:`__ge__` are each other's reflection, and
    :meth:`__eq__` and :meth:`__ne__` are their own reflection.
-
-   Arguments to rich comparison methods are never coerced.
-
-   To automatically generate ordering operations from a single root operation,
-   see :func:`functools.total_ordering`.
+   If the operands are of different types, and right operand's type is
+   a direct or indirect subclass of the left operand's type,
+   the reflected method of the right operand has priority, otherwise
+   the left operand's method has priority.  Virtual subclassing is
+   not considered.
 
 .. method:: object.__hash__(self)
 
@@ -1291,7 +1320,7 @@ Basic customization
      object's   :meth:`__hash__` must interoperate on builds of different bit
      sizes, be sure to check the width on all supported builds.  An easy way
      to do this is with
-     ``python -c "import sys; print(sys.hash_info.width)"``
+     ``python -c "import sys; print(sys.hash_info.width)"``.
 
    If a class does not define an :meth:`__eq__` method it should not define a
    :meth:`__hash__` operation either; if it defines :meth:`__eq__` but not
@@ -1312,7 +1341,7 @@ Basic customization
    :meth:`__hash__` method of a class is ``None``, instances of the class will
    raise an appropriate :exc:`TypeError` when a program attempts to retrieve
    their hash value, and will also be correctly identified as unhashable when
-   checking ``isinstance(obj, collections.Hashable``).
+   checking ``isinstance(obj, collections.Hashable)``.
 
    If a class that overrides :meth:`__eq__` needs to retain the implementation
    of :meth:`__hash__` from a parent class, the interpreter must be told this
@@ -1463,6 +1492,14 @@ class' :attr:`__dict__`.
    Called to delete the attribute on an instance *instance* of the owner class.
 
 
+The attribute :attr:`__objclass__` is interpreted by the :mod:`inspect` module
+as specifying the class where this object was defined (setting this
+appropriately can assist in runtime introspection of dynamic class attributes).
+For callables, it may indicate that an instance of the given type (or a
+subclass) is expected or required as the first positional argument (for example,
+CPython sets this attribute for unbound methods that are implemented in C).
+
+
 .. _descriptor-invocation:
 
 Invoking Descriptors
@@ -1544,9 +1581,9 @@ saved because *__dict__* is not created for each instance.
 .. data:: object.__slots__
 
    This class variable can be assigned a string, iterable, or sequence of
-   strings with variable names used by instances.  If defined in a
-   class, *__slots__* reserves space for the declared variables and prevents the
-   automatic creation of *__dict__* and *__weakref__* for each instance.
+   strings with variable names used by instances.  *__slots__* reserves space
+   for the declared variables and prevents the automatic creation of *__dict__*
+   and *__weakref__* for each instance.
 
 
 Notes on using *__slots__*
@@ -1583,7 +1620,7 @@ Notes on using *__slots__*
   program undefined.  In the future, a check may be added to prevent this.
 
 * Nonempty *__slots__* does not work for classes derived from "variable-length"
-  built-in types such as :class:`int`, :class:`str` and :class:`tuple`.
+  built-in types such as :class:`int`, :class:`bytes` and :class:`tuple`.
 
 * Any non-string iterable may be assigned to *__slots__*. Mappings may also be
   used; however, in the future, special meaning may be assigned to the values
@@ -1642,6 +1679,8 @@ base classes. The most derived metaclass is one which is a subtype of *all*
 of these candidate metaclasses. If none of the candidate metaclasses meets
 that criterion, then the class definition will fail with ``TypeError``.
 
+
+.. _prepare:
 
 Preparing the class namespace
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -1710,7 +1749,7 @@ property creation, proxies, frameworks, and automatic resource
 locking/synchronization.
 
 Here is an example of a metaclass that uses an :class:`collections.OrderedDict`
-to remember the order that class members were defined::
+to remember the order that class variables are defined::
 
     class OrderedClass(type):
 
@@ -1883,6 +1922,12 @@ through the container; for mappings, :meth:`__iter__` should be the same as
       indexes to allow proper detection of the end of the sequence.
 
 
+.. method:: object.__missing__(self, key)
+
+   Called by :class:`dict`\ .\ :meth:`__getitem__` to implement ``self[key]`` for dict subclasses
+   when key is not in the dictionary.
+
+
 .. method:: object.__setitem__(self, key, value)
 
    Called to implement assignment to ``self[key]``.  Same note as for
@@ -1905,8 +1950,7 @@ through the container; for mappings, :meth:`__iter__` should be the same as
 
    This method is called when an iterator is required for a container. This method
    should return a new iterator object that can iterate over all the objects in the
-   container.  For mappings, it should iterate over the keys of the container, and
-   should also be made available as the method :meth:`keys`.
+   container.  For mappings, it should iterate over the keys of the container.
 
    Iterator objects also need to implement this method; they are required to return
    themselves.  For more information on iterator objects, see :ref:`typeiter`.
@@ -1956,6 +2000,7 @@ left undefined.
 .. method:: object.__add__(self, other)
             object.__sub__(self, other)
             object.__mul__(self, other)
+            object.__matmul__(self, other)
             object.__truediv__(self, other)
             object.__floordiv__(self, other)
             object.__mod__(self, other)
@@ -1972,15 +2017,16 @@ left undefined.
       builtin: pow
       builtin: pow
 
-   These methods are called to implement the binary arithmetic operations (``+``,
-   ``-``, ``*``, ``/``, ``//``, ``%``, :func:`divmod`, :func:`pow`, ``**``, ``<<``,
-   ``>>``, ``&``, ``^``, ``|``).  For instance, to evaluate the expression
-   ``x + y``, where *x* is an instance of a class that has an :meth:`__add__`
-   method, ``x.__add__(y)`` is called.  The :meth:`__divmod__` method should be the
-   equivalent to using :meth:`__floordiv__` and :meth:`__mod__`; it should not be
-   related to :meth:`__truediv__`.  Note that :meth:`__pow__` should be defined
-   to accept an optional third argument if the ternary version of the built-in
-   :func:`pow` function is to be supported.
+   These methods are called to implement the binary arithmetic operations
+   (``+``, ``-``, ``*``, ``@``, ``/``, ``//``, ``%``, :func:`divmod`,
+   :func:`pow`, ``**``, ``<<``, ``>>``, ``&``, ``^``, ``|``).  For instance, to
+   evaluate the expression ``x + y``, where *x* is an instance of a class that
+   has an :meth:`__add__` method, ``x.__add__(y)`` is called.  The
+   :meth:`__divmod__` method should be the equivalent to using
+   :meth:`__floordiv__` and :meth:`__mod__`; it should not be related to
+   :meth:`__truediv__`.  Note that :meth:`__pow__` should be defined to accept
+   an optional third argument if the ternary version of the built-in :func:`pow`
+   function is to be supported.
 
    If one of those methods does not support the operation with the supplied
    arguments, it should return ``NotImplemented``.
@@ -1989,6 +2035,7 @@ left undefined.
 .. method:: object.__radd__(self, other)
             object.__rsub__(self, other)
             object.__rmul__(self, other)
+            object.__rmatmul__(self, other)
             object.__rtruediv__(self, other)
             object.__rfloordiv__(self, other)
             object.__rmod__(self, other)
@@ -2004,14 +2051,14 @@ left undefined.
       builtin: divmod
       builtin: pow
 
-   These methods are called to implement the binary arithmetic operations (``+``,
-   ``-``, ``*``, ``/``, ``//``, ``%``, :func:`divmod`, :func:`pow`, ``**``,
-   ``<<``, ``>>``, ``&``, ``^``, ``|``) with reflected (swapped) operands.
-   These functions are only called if the left operand does not support the
-   corresponding operation and the operands are of different types. [#]_  For
-   instance, to evaluate the expression ``x - y``, where *y* is an instance of
-   a class that has an :meth:`__rsub__` method, ``y.__rsub__(x)`` is called if
-   ``x.__sub__(y)`` returns *NotImplemented*.
+   These methods are called to implement the binary arithmetic operations
+   (``+``, ``-``, ``*``, ``@``, ``/``, ``//``, ``%``, :func:`divmod`,
+   :func:`pow`, ``**``, ``<<``, ``>>``, ``&``, ``^``, ``|``) with reflected
+   (swapped) operands.  These functions are only called if the left operand does
+   not support the corresponding operation and the operands are of different
+   types. [#]_ For instance, to evaluate the expression ``x - y``, where *y* is
+   an instance of a class that has an :meth:`__rsub__` method, ``y.__rsub__(x)``
+   is called if ``x.__sub__(y)`` returns *NotImplemented*.
 
    .. index:: builtin: pow
 
@@ -2029,6 +2076,7 @@ left undefined.
 .. method:: object.__iadd__(self, other)
             object.__isub__(self, other)
             object.__imul__(self, other)
+            object.__imatmul__(self, other)
             object.__itruediv__(self, other)
             object.__ifloordiv__(self, other)
             object.__imod__(self, other)
@@ -2040,15 +2088,17 @@ left undefined.
             object.__ior__(self, other)
 
    These methods are called to implement the augmented arithmetic assignments
-   (``+=``, ``-=``, ``*=``, ``/=``, ``//=``, ``%=``, ``**=``, ``<<=``, ``>>=``,
-   ``&=``, ``^=``, ``|=``).  These methods should attempt to do the operation
-   in-place (modifying *self*) and return the result (which could be, but does
-   not have to be, *self*).  If a specific method is not defined, the augmented
-   assignment falls back to the normal methods.  For instance, to execute the
-   statement ``x += y``, where *x* is an instance of a class that has an
-   :meth:`__iadd__` method, ``x.__iadd__(y)`` is called.  If *x* is an instance
-   of a class that does not define a :meth:`__iadd__` method, ``x.__add__(y)``
-   and ``y.__radd__(x)`` are considered, as with the evaluation of ``x + y``.
+   (``+=``, ``-=``, ``*=``, ``@=``, ``/=``, ``//=``, ``%=``, ``**=``, ``<<=``,
+   ``>>=``, ``&=``, ``^=``, ``|=``).  These methods should attempt to do the
+   operation in-place (modifying *self*) and return the result (which could be,
+   but does not have to be, *self*).  If a specific method is not defined, the
+   augmented assignment falls back to the normal methods.  For instance, if *x*
+   is an instance of a class with an :meth:`__iadd__` method, ``x += y`` is
+   equivalent to ``x = x.__iadd__(y)`` . Otherwise, ``x.__add__(y)`` and
+   ``y.__radd__(x)`` are considered, as with the evaluation of ``x + y``. In
+   certain situations, augmented assignment can result in unexpected errors (see
+   :ref:`faq-augmented-assignment-tuple-error`), but this behavior is in fact
+   part of the data model.
 
 
 .. method:: object.__neg__(self)
@@ -2080,9 +2130,17 @@ left undefined.
 
 .. method:: object.__index__(self)
 
-   Called to implement :func:`operator.index`.  Also called whenever Python needs
-   an integer object (such as in slicing, or in the built-in :func:`bin`,
-   :func:`hex` and :func:`oct` functions). Must return an integer.
+   Called to implement :func:`operator.index`, and whenever Python needs to
+   losslessly convert the numeric object to an integer object (such as in
+   slicing, or in the built-in :func:`bin`, :func:`hex` and :func:`oct`
+   functions). Presence of this method indicates that the numeric object is
+   an integer type.  Must return an integer.
+
+   .. note::
+
+      In order to have a coherent integer type class, when :meth:`__index__` is
+      defined :meth:`__int__` should also be defined, and both should return
+      the same value.
 
 
 .. _context-managers:
@@ -2182,9 +2240,9 @@ correctness, implicit special method lookup generally also bypasses the
 :meth:`__getattribute__` method even of the object's metaclass::
 
    >>> class Meta(type):
-   ...    def __getattribute__(*args):
-   ...       print("Metaclass getattribute invoked")
-   ...       return type.__getattribute__(*args)
+   ...     def __getattribute__(*args):
+   ...         print("Metaclass getattribute invoked")
+   ...         return type.__getattribute__(*args)
    ...
    >>> class C(object, metaclass=Meta):
    ...     def __len__(self):
@@ -2208,6 +2266,155 @@ provides significant scope for speed optimisations within the
 interpreter, at the cost of some flexibility in the handling of
 special methods (the special method *must* be set on the class
 object itself in order to be consistently invoked by the interpreter).
+
+
+.. index::
+   single: coroutine
+
+Coroutines
+==========
+
+
+Awaitable Objects
+-----------------
+
+An :term:`awaitable` object generally implements an :meth:`__await__` method.
+:term:`Coroutine` objects returned from :keyword:`async def` functions
+are awaitable.
+
+.. note::
+
+   The :term:`generator iterator` objects returned from generators
+   decorated with :func:`types.coroutine` or :func:`asyncio.coroutine`
+   are also awaitable, but they do not implement :meth:`__await__`.
+
+.. method:: object.__await__(self)
+
+   Must return an :term:`iterator`.  Should be used to implement
+   :term:`awaitable` objects.  For instance, :class:`asyncio.Future` implements
+   this method to be compatible with the :keyword:`await` expression.
+
+.. versionadded:: 3.5
+
+.. seealso:: :pep:`492` for additional information about awaitable objects.
+
+
+.. _coroutine-objects:
+
+Coroutine Objects
+-----------------
+
+:term:`Coroutine` objects are :term:`awaitable` objects.
+A coroutine's execution can be controlled by calling :meth:`__await__` and
+iterating over the result.  When the coroutine has finished executing and
+returns, the iterator raises :exc:`StopIteration`, and the exception's
+:attr:`~StopIteration.value` attribute holds the return value.  If the
+coroutine raises an exception, it is propagated by the iterator.  Coroutines
+should not directly raise unhandled :exc:`StopIteration` exceptions.
+
+Coroutines also have the methods listed below, which are analogous to
+those of generators (see :ref:`generator-methods`).  However, unlike
+generators, coroutines do not directly support iteration.
+
+.. method:: coroutine.send(value)
+
+   Starts or resumes execution of the coroutine.  If *value* is ``None``,
+   this is equivalent to advancing the iterator returned by
+   :meth:`__await__`.  If *value* is not ``None``, this method delegates
+   to the :meth:`~generator.send` method of the iterator that caused
+   the coroutine to suspend.  The result (return value,
+   :exc:`StopIteration`, or other exception) is the same as when
+   iterating over the :meth:`__await__` return value, described above.
+
+.. method:: coroutine.throw(type[, value[, traceback]])
+
+   Raises the specified exception in the coroutine.  This method delegates
+   to the :meth:`~generator.throw` method of the iterator that caused
+   the coroutine to suspend, if it has such a method.  Otherwise,
+   the exception is raised at the suspension point.  The result
+   (return value, :exc:`StopIteration`, or other exception) is the same as
+   when iterating over the :meth:`__await__` return value, described
+   above.  If the exception is not caught in the coroutine, it propagates
+   back to the caller.
+
+.. method:: coroutine.close()
+
+   Causes the coroutine to clean itself up and exit.  If the coroutine
+   is suspended, this method first delegates to the :meth:`~generator.close`
+   method of the iterator that caused the coroutine to suspend, if it
+   has such a method.  Then it raises :exc:`GeneratorExit` at the
+   suspension point, causing the coroutine to immediately clean itself up.
+   Finally, the coroutine is marked as having finished executing, even if
+   it was never started.
+
+   Coroutine objects are automatically closed using the above process when
+   they are about to be destroyed.
+
+
+Asynchronous Iterators
+----------------------
+
+An *asynchronous iterable* is able to call asynchronous code in its
+``__aiter__`` implementation, and an *asynchronous iterator* can call
+asynchronous code in its ``__anext__`` method.
+
+Asynchronous iterators can be used in an :keyword:`async for` statement.
+
+.. method:: object.__aiter__(self)
+
+   Must return an *awaitable* resulting in an *asynchronous iterator* object.
+
+.. method:: object.__anext__(self)
+
+   Must return an *awaitable* resulting in a next value of the iterator.  Should
+   raise a :exc:`StopAsyncIteration` error when the iteration is over.
+
+An example of an asynchronous iterable object::
+
+    class Reader:
+        async def readline(self):
+            ...
+
+        async def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            val = await self.readline()
+            if val == b'':
+                raise StopAsyncIteration
+            return val
+
+.. versionadded:: 3.5
+
+
+Asynchronous Context Managers
+-----------------------------
+
+An *asynchronous context manager* is a *context manager* that is able to
+suspend execution in its ``__aenter__`` and ``__aexit__`` methods.
+
+Asynchronous context managers can be used in an :keyword:`async with` statement.
+
+.. method:: object.__aenter__(self)
+
+   This method is semantically similar to the :meth:`__enter__`, with only
+   difference that it must return an *awaitable*.
+
+.. method:: object.__aexit__(self, exc_type, exc_value, traceback)
+
+   This method is semantically similar to the :meth:`__exit__`, with only
+   difference that it must return an *awaitable*.
+
+An example of an asynchronous context manager class::
+
+    class AsyncContextManager:
+        async def __aenter__(self):
+            await log('entering context')
+
+        async def __aexit__(self, exc_type, exc, tb):
+            await log('exiting context')
+
+.. versionadded:: 3.5
 
 
 .. rubric:: Footnotes

@@ -134,11 +134,13 @@ typedef chtype attr_t;           /* No attr_t type is available */
 #define STRICT_SYSV_CURSES
 #endif
 
-/*[clinic]
+/*[clinic input]
 module curses
-class curses.window
-[clinic]*/
-/*[clinic checksum: da39a3ee5e6b4b0d3255bfef95601890afd80709]*/
+class curses.window "PyCursesWindowObject *" "&PyCursesWindow_Type"
+[clinic start generated code]*/
+/*[clinic end generated code: output=da39a3ee5e6b4b0d input=88c860abdbb50e0c]*/
+
+#include "clinic/_cursesmodule.c.h"
 
 /* Definition of exception curses.error */
 
@@ -555,15 +557,15 @@ PyCursesWindow_Dealloc(PyCursesWindowObject *wo)
 
 /* Addch, Addstr, Addnstr */
 
-/*[clinic]
+/*[clinic input]
 
 curses.window.addch
 
     [
-    x: int
-      X-coordinate.
     y: int
       Y-coordinate.
+    x: int
+      X-coordinate.
     ]
 
     ch: object
@@ -581,76 +583,12 @@ Paint character ch at (y, x) with attributes attr,
 overwriting any character previously painted at that location.
 By default, the character position and attributes are the
 current settings for the window object.
-[clinic]*/
-
-PyDoc_STRVAR(curses_window_addch__doc__,
-"addch([x, y,] ch, [attr])\n"
-"Paint character ch at (y, x) with attributes attr.\n"
-"\n"
-"  x\n"
-"    X-coordinate.\n"
-"  y\n"
-"    Y-coordinate.\n"
-"  ch\n"
-"    Character to add.\n"
-"  attr\n"
-"    Attributes for the character.\n"
-"\n"
-"Paint character ch at (y, x) with attributes attr,\n"
-"overwriting any character previously painted at that location.\n"
-"By default, the character position and attributes are the\n"
-"current settings for the window object.");
-
-#define CURSES_WINDOW_ADDCH_METHODDEF    \
-    {"addch", (PyCFunction)curses_window_addch, METH_VARARGS, curses_window_addch__doc__},
+[clinic start generated code]*/
 
 static PyObject *
-curses_window_addch_impl(PyObject *self, int group_left_1, int x, int y, PyObject *ch, int group_right_1, long attr);
-
-static PyObject *
-curses_window_addch(PyObject *self, PyObject *args)
-{
-    PyObject *return_value = NULL;
-    int group_left_1 = 0;
-    int x = 0;
-    int y = 0;
-    PyObject *ch;
-    int group_right_1 = 0;
-    long attr = 0;
-
-    switch (PyTuple_Size(args)) {
-        case 1:
-            if (!PyArg_ParseTuple(args, "O:addch", &ch))
-                return NULL;
-            break;
-        case 2:
-            if (!PyArg_ParseTuple(args, "Ol:addch", &ch, &attr))
-                return NULL;
-            group_right_1 = 1;
-            break;
-        case 3:
-            if (!PyArg_ParseTuple(args, "iiO:addch", &x, &y, &ch))
-                return NULL;
-            group_left_1 = 1;
-            break;
-        case 4:
-            if (!PyArg_ParseTuple(args, "iiOl:addch", &x, &y, &ch, &attr))
-                return NULL;
-            group_right_1 = 1;
-            group_left_1 = 1;
-            break;
-        default:
-            PyErr_SetString(PyExc_TypeError, "curses.window.addch requires 1 to 4 arguments");
-            return NULL;
-    }
-    return_value = curses_window_addch_impl(self, group_left_1, x, y, ch, group_right_1, attr);
-
-    return return_value;
-}
-
-static PyObject *
-curses_window_addch_impl(PyObject *self, int group_left_1, int x, int y, PyObject *ch, int group_right_1, long attr)
-/*[clinic checksum: 44ed958b891cde91205e584c766e048f3999714f]*/
+curses_window_addch_impl(PyCursesWindowObject *self, int group_left_1, int y,
+                         int x, PyObject *ch, int group_right_1, long attr)
+/*[clinic end generated code: output=99f7f85078ec06c3 input=5a41efb34a2de338]*/
 {
     PyCursesWindowObject *cwself = (PyCursesWindowObject *)self;
     int coordinates_group = group_left_1;
@@ -1414,7 +1352,8 @@ PyCursesWindow_InsCh(PyCursesWindowObject *self, PyObject *args)
 static PyObject *
 PyCursesWindow_InCh(PyCursesWindowObject *self, PyObject *args)
 {
-    int x, y, rtn;
+    int x, y;
+    unsigned long rtn;
 
     switch (PyTuple_Size(args)) {
     case 0:
@@ -1429,7 +1368,7 @@ PyCursesWindow_InCh(PyCursesWindowObject *self, PyObject *args)
         PyErr_SetString(PyExc_TypeError, "inch requires 0 or 2 arguments");
         return NULL;
     }
-    return PyLong_FromLong((long) rtn);
+    return PyLong_FromUnsignedLong(rtn);
 }
 
 static PyObject *
@@ -2086,8 +2025,6 @@ static PyMethodDef PyCursesWindow_Methods[] = {
     {"nodelay",         (PyCFunction)PyCursesWindow_nodelay, METH_VARARGS},
     {"notimeout",       (PyCFunction)PyCursesWindow_notimeout, METH_VARARGS},
     {"noutrefresh",     (PyCFunction)PyCursesWindow_NoOutRefresh, METH_VARARGS},
-    /* Backward compatibility alias -- remove in Python 2.3 */
-    {"nooutrefresh",    (PyCFunction)PyCursesWindow_NoOutRefresh, METH_VARARGS},
     {"overlay",         (PyCFunction)PyCursesWindow_Overlay, METH_VARARGS},
     {"overwrite",       (PyCFunction)PyCursesWindow_Overwrite,
      METH_VARARGS},
@@ -2675,7 +2612,7 @@ PyCurses_KeyName(PyObject *self, PyObject *args)
     }
     knp = keyname(ch);
 
-    return PyBytes_FromString((knp == NULL) ? "" : (char *)knp);
+    return PyBytes_FromString((knp == NULL) ? "" : knp);
 }
 #endif
 
@@ -2929,6 +2866,13 @@ update_lines_cols(void)
     Py_DECREF(m);
     return 1;
 }
+
+static PyObject *
+PyCurses_update_lines_cols(PyObject *self)
+{
+  return PyLong_FromLong((long) update_lines_cols());
+}
+
 #endif
 
 #ifdef HAVE_CURSES_RESIZETERM
@@ -3331,6 +3275,9 @@ static PyMethodDef PyCurses_methods[] = {
     {"typeahead",           (PyCFunction)PyCurses_TypeAhead, METH_VARARGS},
     {"unctrl",              (PyCFunction)PyCurses_UnCtrl, METH_VARARGS},
     {"ungetch",             (PyCFunction)PyCurses_UngetCh, METH_VARARGS},
+#if defined(HAVE_CURSES_RESIZETERM) || defined(HAVE_CURSES_RESIZE_TERM)
+    {"update_lines_cols",   (PyCFunction)PyCurses_update_lines_cols, METH_NOARGS},
+#endif
 #ifdef HAVE_NCURSESW
     {"unget_wch",           (PyCFunction)PyCurses_Unget_Wch, METH_VARARGS},
 #endif

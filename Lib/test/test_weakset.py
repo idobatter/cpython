@@ -1,5 +1,4 @@
 import unittest
-from test import support
 from weakref import proxy, ref, WeakSet
 import operator
 import copy
@@ -370,10 +369,14 @@ class TestWeakSet(unittest.TestCase):
         def testcontext():
             try:
                 it = iter(s)
-                next(it)
-                del it
+                # Start iterator
+                yielded = ustr(str(next(it)))
                 # Schedule an item for removal and recreate it
                 u = ustr(str(items.pop()))
+                if yielded == u:
+                    # The iterator still has a reference to the removed item,
+                    # advance it (issue #20006).
+                    next(it)
                 gc.collect()      # just in case
                 yield u
             finally:
@@ -439,8 +442,5 @@ class TestWeakSet(unittest.TestCase):
             self.assertLessEqual(n2, n1)
 
 
-def test_main(verbose=None):
-    support.run_unittest(TestWeakSet)
-
 if __name__ == "__main__":
-    test_main(verbose=True)
+    unittest.main()

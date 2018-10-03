@@ -93,7 +93,8 @@ It defines the following constants and functions:
    Return the thread stack size used when creating new threads.  The optional
    *size* argument specifies the stack size to be used for subsequently created
    threads, and must be 0 (use platform or configured default) or a positive
-   integer value of at least 32,768 (32 KiB). If changing the thread stack size is
+   integer value of at least 32,768 (32 KiB). If *size* is not specified,
+   0 is used.  If changing the thread stack size is
    unsupported, a :exc:`RuntimeError` is raised.  If the specified stack size is
    invalid, a :exc:`ValueError` is raised and the stack size is unmodified.  32 KiB
    is currently the minimum supported stack size value to guarantee sufficient
@@ -175,10 +176,6 @@ In addition to these methods, lock objects can also be used via the
 
 * Calling :func:`sys.exit` or raising the :exc:`SystemExit` exception is
   equivalent to calling :func:`_thread.exit`.
-
-* Not all built-in functions that may block waiting for I/O allow other threads
-  to run.  (The most popular ones (:func:`time.sleep`, :meth:`io.FileIO.read`,
-  :func:`select.select`) work as expected.)
 
 * It is not possible to interrupt the :meth:`acquire` method on a lock --- the
   :exc:`KeyboardInterrupt` exception will happen after the lock has been acquired.

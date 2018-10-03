@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 #
 # test_codecencodings_cn.py
 #   Codec encoding tests for PRC encodings.
@@ -84,8 +83,5 @@ class Test_HZ(multibytecodec_support.TestBase, unittest.TestCase):
         (b"ab~{\x79\x79\x41\x44~}cd", "replace", "ab\ufffd\ufffd\u804acd"),
     )
 
-def test_main():
-    support.run_unittest(__name__)
-
 if __name__ == "__main__":
-    test_main()
+    unittest.main()

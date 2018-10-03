@@ -49,7 +49,7 @@ the standard audio interface for Linux and recent versions of FreeBSD.
       the official documentation for the OSS C API
 
    The module defines a large number of constants supplied by the OSS device
-   driver; see ``<sys/soundcard.h>`` on either Linux or FreeBSD for a listing .
+   driver; see ``<sys/soundcard.h>`` on either Linux or FreeBSD for a listing.
 
 :mod:`ossaudiodev` defines the following variables and functions:
 
@@ -148,24 +148,33 @@ and (read-only) attributes:
 
 .. method:: oss_audio_device.write(data)
 
-   Write the Python string *data* to the audio device and return the number of
-   bytes written.  If the audio device is in blocking mode (the default), the
-   entire string is always written (again, this is different from usual Unix device
-   semantics).  If the device is in non-blocking mode, some data may not be written
+   Write a :term:`bytes-like object` *data* to the audio device and return the
+   number of bytes written.  If the audio device is in blocking mode (the
+   default), the entire data is always written (again, this is different from
+   usual Unix device semantics).  If the device is in non-blocking mode, some
+   data may not be written
    ---see :meth:`writeall`.
+
+   .. versionchanged: 3.5
+      Writable :term:`bytes-like object` is now accepted.
 
 
 .. method:: oss_audio_device.writeall(data)
 
-   Write the entire Python string *data* to the audio device: waits until the audio
-   device is able to accept data, writes as much data as it will accept, and
-   repeats until *data* has been completely written. If the device is in blocking
-   mode (the default), this has the same effect as :meth:`write`; :meth:`writeall`
-   is only useful in non-blocking mode.  Has no return value, since the amount of
-   data written is always equal to the amount of data supplied.
+   Write a :term:`bytes-like object` *data* to the audio device: waits until
+   the audio device is able to accept data, writes as much data as it will
+   accept, and repeats until *data* has been completely written. If the device
+   is in blocking mode (the default), this has the same effect as
+   :meth:`write`; :meth:`writeall` is only useful in non-blocking mode.  Has
+   no return value, since the amount of data written is always equal to the
+   amount of data supplied.
+
+   .. versionchanged: 3.5
+      Writable :term:`bytes-like object` is now accepted.
+
 
 .. versionchanged:: 3.2
-   Audio device objects also support the context manager protocol, i.e. they can
+   Audio device objects also support the context management protocol, i.e. they can
    be used in a :keyword:`with` statement.
 
 
@@ -357,7 +366,7 @@ The mixer object provides two file-like methods:
    Returns the file handle number of the open mixer device file.
 
 .. versionchanged:: 3.2
-   Mixer objects also support the context manager protocol.
+   Mixer objects also support the context management protocol.
 
 
 The remaining methods are specific to audio mixing:
@@ -407,7 +416,7 @@ The remaining methods are specific to audio mixing:
    (silent) to 100 (full volume).  If the control is monophonic, a 2-tuple is still
    returned, but both volumes are the same.
 
-   Raises :exc:`OSSAudioError` if an invalid control was is specified, or
+   Raises :exc:`OSSAudioError` if an invalid control is specified, or
    :exc:`OSError` if an unsupported control is specified.
 
 

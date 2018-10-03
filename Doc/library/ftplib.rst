@@ -52,8 +52,7 @@ The module defines the following items:
    will be used). *source_address* is a 2-tuple ``(host, port)`` for the socket
    to bind to as its source address before connecting.
 
-   :class:`FTP` class supports the :keyword:`with` statement. Here is a sample
-   on how using it:
+   The :class:`FTP` class supports the :keyword:`with` statement, e.g.:
 
     >>> from ftplib import FTP
     >>> with FTP("ftp1.at.proftpd.org") as ftp:
@@ -80,14 +79,14 @@ The module defines the following items:
    :rfc:`4217`.
    Connect as usual to port 21 implicitly securing the FTP control connection
    before authenticating. Securing the data connection requires the user to
-   explicitly ask for it by calling the :meth:`prot_p` method.
-   *keyfile* and *certfile* are optional -- they can contain a PEM formatted
-   private key and certificate chain file name for the SSL connection.
-   *context* parameter is a :class:`ssl.SSLContext` object which allows
-   bundling SSL configuration options, certificates and private keys into a
-   single (potentially long-lived) structure. *source_address* is a 2-tuple
-   ``(host, port)`` for the socket to bind to as its source address before
-   connecting.
+   explicitly ask for it by calling the :meth:`prot_p` method.  *context*
+   is a :class:`ssl.SSLContext` object which allows bundling SSL configuration
+   options, certificates and private keys into a single (potentially
+   long-lived) structure.  Please read :ref:`ssl-security` for best practices.
+
+   *keyfile* and *certfile* are a legacy alternative to *context* -- they
+   can point to PEM-formatted private key and certificate chain files
+   (respectively) for the SSL connection.
 
    .. versionadded:: 3.2
 
@@ -96,29 +95,18 @@ The module defines the following items:
 
    .. versionchanged:: 3.4
       The class now supports hostname check with
-      :attr:`SSLContext.check_hostname` and *Server Name Indicator* (see
-      :data:`~ssl.HAS_SNI`).
+      :attr:`ssl.SSLContext.check_hostname` and *Server Name Indication* (see
+      :data:`ssl.HAS_SNI`).
 
-   Here's a sample session using the :class:`FTP_TLS` class:
+   Here's a sample session using the :class:`FTP_TLS` class::
 
-   >>> from ftplib import FTP_TLS
-   >>> ftps = FTP_TLS('ftp.python.org')
-   >>> ftps.login()           # login anonymously before securing control channel
-   >>> ftps.prot_p()          # switch to secure data connection
-   >>> ftps.retrlines('LIST') # list directory content securely
-   total 9
-   drwxr-xr-x   8 root     wheel        1024 Jan  3  1994 .
-   drwxr-xr-x   8 root     wheel        1024 Jan  3  1994 ..
-   drwxr-xr-x   2 root     wheel        1024 Jan  3  1994 bin
-   drwxr-xr-x   2 root     wheel        1024 Jan  3  1994 etc
-   d-wxrwxr-x   2 ftp      wheel        1024 Sep  5 13:43 incoming
-   drwxr-xr-x   2 root     wheel        1024 Nov 17  1993 lib
-   drwxr-xr-x   6 1094     wheel        1024 Sep 13 19:07 pub
-   drwxr-xr-x   3 root     wheel        1024 Jan  3  1994 usr
-   -rw-r--r--   1 root     root          312 Aug  1  1994 welcome.msg
-   '226 Transfer complete.'
-   >>> ftps.quit()
-   >>>
+      >>> ftps = FTP_TLS('ftp.pureftpd.org')
+      >>> ftps.login()
+      '230 Anonymous user logged in'
+      >>> ftps.prot_p()
+      '200 Data protection level set to "private"'
+      >>> ftps.nlst()
+      ['6jack', 'OpenBSD', 'antilink', 'blogbench', 'bsdcam', 'clockspeed', 'djbdns-jedi', 'docs', 'eaccelerator-jedi', 'favicon.ico', 'francotone', 'fugu', 'ignore', 'libpuzzle', 'metalog', 'minidentd', 'misc', 'mysql-udf-global-user-variables', 'php-jenkins-hash', 'php-skein-hash', 'php-webdav', 'phpaudit', 'phpbench', 'pincaster', 'ping', 'posto', 'pub', 'public', 'public_keys', 'pure-ftpd', 'qscan', 'qtc', 'sharedance', 'skycache', 'sound', 'tmp', 'ucarp']
 
 
 .. exception:: error_reply
@@ -273,10 +261,10 @@ followed by ``lines`` for the text version or ``binary`` for the binary version.
    Passive mode is on by default.
 
 
-.. method:: FTP.storbinary(cmd, file, blocksize=8192, callback=None, rest=None)
+.. method:: FTP.storbinary(cmd, fp, blocksize=8192, callback=None, rest=None)
 
    Store a file in binary transfer mode.  *cmd* should be an appropriate
-   ``STOR`` command: ``"STOR filename"``. *file* is a :term:`file object`
+   ``STOR`` command: ``"STOR filename"``. *fp* is a :term:`file object`
    (opened in binary mode) which is read until EOF using its :meth:`~io.IOBase.read`
    method in blocks of size *blocksize* to provide the data to be stored.
    The *blocksize* argument defaults to 8192.  *callback* is an optional single
@@ -287,20 +275,20 @@ followed by ``lines`` for the text version or ``binary`` for the binary version.
       *rest* parameter added.
 
 
-.. method:: FTP.storlines(cmd, file, callback=None)
+.. method:: FTP.storlines(cmd, fp, callback=None)
 
    Store a file in ASCII transfer mode.  *cmd* should be an appropriate
    ``STOR`` command (see :meth:`storbinary`).  Lines are read until EOF from the
-   :term:`file object` *file* (opened in binary mode) using its :meth:`~io.IOBase.readline`
+   :term:`file object` *fp* (opened in binary mode) using its :meth:`~io.IOBase.readline`
    method to provide the data to be stored.  *callback* is an optional single
    parameter callable that is called on each line after it is sent.
 
 
 .. method:: FTP.transfercmd(cmd, rest=None)
 
-   Initiate a transfer over the data connection.  If the transfer is active, send a
+   Initiate a transfer over the data connection.  If the transfer is active, send an
    ``EPRT`` or  ``PORT`` command and the transfer command specified by *cmd*, and
-   accept the connection.  If the server is passive, send a ``EPSV`` or ``PASV``
+   accept the connection.  If the server is passive, send an ``EPSV`` or ``PASV``
    command, connect to it, and start the transfer command.  Either way, return the
    socket for the connection.
 
@@ -326,7 +314,7 @@ followed by ``lines`` for the text version or ``binary`` for the binary version.
 
 .. method:: FTP.mlsd(path="", facts=[])
 
-   List a directory in a standardized format by using MLSD command
+   List a directory in a standardized format by using ``MLSD`` command
    (:rfc:`3659`).  If *path* is omitted the current directory is assumed.
    *facts* is a list of strings representing the type of information desired
    (e.g. ``["type", "size", "perm"]``).  Return a generator object yielding a
@@ -345,7 +333,7 @@ followed by ``lines`` for the text version or ``binary`` for the binary version.
    directory).  Multiple arguments can be used to pass non-standard options to
    the ``NLST`` command.
 
-   .. deprecated:: 3.3 use :meth:`mlsd` instead.
+   .. note:: If your server supports the command, :meth:`mlsd` offers a better API.
 
 
 .. method:: FTP.dir(argument[, ...])
@@ -357,7 +345,7 @@ followed by ``lines`` for the text version or ``binary`` for the binary version.
    as a *callback* function as for :meth:`retrlines`; the default prints to
    ``sys.stdout``.  This method returns ``None``.
 
-   .. deprecated:: 3.3 use :meth:`mlsd` instead.
+   .. note:: If your server supports the command, :meth:`mlsd` offers a better API.
 
 
 .. method:: FTP.rename(fromname, toname)
@@ -425,17 +413,17 @@ FTP_TLS Objects
 
 .. attribute:: FTP_TLS.ssl_version
 
-   The SSL version to use (defaults to *TLSv1*).
+   The SSL version to use (defaults to :attr:`ssl.PROTOCOL_SSLv23`).
 
 .. method:: FTP_TLS.auth()
 
-   Set up secure control connection by using TLS or SSL, depending on what
-   specified in :meth:`ssl_version` attribute.
+   Set up a secure control connection by using TLS or SSL, depending on what
+   is specified in the :attr:`ssl_version` attribute.
 
    .. versionchanged:: 3.4
       The method now supports hostname check with
-      :attr:`SSLContext.check_hostname` and *Server Name Indicator* (see
-      :data:`~ssl.HAS_SNI`).
+      :attr:`ssl.SSLContext.check_hostname` and *Server Name Indication* (see
+      :data:`ssl.HAS_SNI`).
 
 .. method:: FTP_TLS.ccc()
 

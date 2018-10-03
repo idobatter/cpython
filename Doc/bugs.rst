@@ -13,21 +13,24 @@ Documentation bugs
 ==================
 
 If you find a bug in this documentation or would like to propose an improvement,
-please send an e-mail to docs@python.org describing the bug and where you found
-it.  If you have a suggestion how to fix it, include that as well.
+please submit a bug report on the :ref:`tracker <using-the-tracker>`.  If you
+have a suggestion how to fix it, include that as well.
 
-docs@python.org is a mailing list run by volunteers; your request will be
-noticed, even if it takes a while to be processed.
+If you're short on time, you can also email documentation bug reports to
+docs@python.org (behavioral bugs can be sent to python-list@python.org).
+'docs@' is a mailing list run by volunteers; your request will be noticed,
+though it may take a while to be processed.
 
-Of course, if you want a more persistent record of your issue, you can use the
-issue tracker for documentation bugs as well.
+.. seealso::
+   `Documentation bugs`_ on the Python issue tracker
 
+.. _using-the-tracker:
 
 Using the Python issue tracker
 ==============================
 
 Bug reports for Python itself should be submitted via the Python Bug Tracker
-(http://bugs.python.org/).  The bug tracker offers a Web form which allows
+(https://bugs.python.org/).  The bug tracker offers a Web form which allows
 pertinent information to be entered and submitted to the developers.
 
 The first step in filing a report is to determine whether the problem has
@@ -62,14 +65,24 @@ taken on the bug.
 
 .. seealso::
 
-   `Python Developer's Guide <http://docs.python.org/devguide/>`_
-      Detailed description of the issue workflow and developers tools.
-
    `How to Report Bugs Effectively <http://www.chiark.greenend.org.uk/~sgtatham/bugs.html>`_
       Article which goes into some detail about how to create a useful bug report.
       This describes what kind of information is useful and why it is useful.
 
-   `Bug Writing Guidelines <http://developer.mozilla.org/en/docs/Bug_writing_guidelines>`_
+   `Bug Writing Guidelines <https://developer.mozilla.org/en-US/docs/Mozilla/QA/Bug_writing_guidelines>`_
       Information about writing a good bug report.  Some of this is specific to the
       Mozilla project, but describes general good practices.
 
+
+Getting started contributing to Python yourself
+===============================================
+
+Beyond just reporting bugs that you find, you are also welcome to submit
+patches to fix them.  You can find more information on how to get started
+patching Python in the `Python Developer's Guide`_.  If you have questions,
+the `core-mentorship mailing list`_ is a friendly place to get answers to
+any and all questions pertaining to the process of fixing issues in Python.
+
+.. _Documentation bugs: https://bugs.python.org/issue?@filter=status&@filter=components&components=4&status=1&@columns=id,activity,title,status&@sort=-activity
+.. _Python Developer's Guide: https://docs.python.org/devguide/
+.. _core-mentorship mailing list: https://mail.python.org/mailman/listinfo/core-mentorship/

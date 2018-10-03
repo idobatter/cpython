@@ -142,9 +142,11 @@ If a field represents an uploaded file, accessing the value via the
 method reads the entire file in memory as bytes.  This may not be what you
 want.  You can test for an uploaded file by testing either the
 :attr:`~FieldStorage.filename` attribute or the :attr:`~FieldStorage.file`
-attribute.  You can then read the data at leisure from the :attr:`!file`
-attribute (the :func:`~io.RawIOBase.read` and :func:`~io.IOBase.readline`
-methods will return bytes)::
+attribute.  You can then read the data from the :attr:`!file`
+attribute before it is automatically closed as part of the garbage collection of
+the :class:`FieldStorage` instance
+(the :func:`~io.RawIOBase.read` and :func:`~io.IOBase.readline` methods will
+return bytes)::
 
    fileitem = form["userfile"]
    if fileitem.file:
@@ -154,6 +156,9 @@ methods will return bytes)::
            line = fileitem.file.readline()
            if not line: break
            linecount = linecount + 1
+
+:class:`FieldStorage` objects also support being used in a :keyword:`with`
+statement, which will automatically close them when done.
 
 If an error is encountered when obtaining the contents of an uploaded file
 (for example, when the user interrupts the form submission by clicking on
@@ -175,6 +180,15 @@ actually be instances of the class :class:`MiniFieldStorage`.  In this case, the
 
 A form submitted via POST that also has a query string will contain both
 :class:`FieldStorage` and :class:`MiniFieldStorage` items.
+
+.. versionchanged:: 3.4
+   The :attr:`~FieldStorage.file` attribute is automatically closed upon the
+   garbage collection of the creating :class:`FieldStorage` instance.
+
+.. versionchanged:: 3.5
+   Added support for the context management protocol to the
+   :class:`FieldStorage` class.
+
 
 Higher Level Interface
 ----------------------
@@ -278,7 +292,7 @@ algorithms implemented in this module in other circumstances.
 
 .. function:: parse_qsl(qs, keep_blank_values=False, strict_parsing=False)
 
-   This function is deprecated in this module. Use :func:`urllib.parse.parse_qs`
+   This function is deprecated in this module. Use :func:`urllib.parse.parse_qsl`
    instead. It is maintained here only for backward compatibility.
 
 .. function:: parse_multipart(fp, pdict)

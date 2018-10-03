@@ -11,21 +11,26 @@ containing a copy of the ``python`` binary (or binaries, in the case of
 Windows).  It also creates an (initially empty) ``lib/pythonX.Y/site-packages``
 subdirectory (on Windows, this is ``Lib\site-packages``).
 
+.. seealso::
+
+   `Python Packaging User Guide: Creating and using virtual environments
+   <https://packaging.python.org/en/latest/installing.html#virtual-environments>`__
+
 .. highlight:: none
 
 On Windows, you may have to invoke the ``pyvenv`` script as follows, if you
 don't have the relevant PATH and PATHEXT settings::
 
-    c:\Temp>c:\Python33\python c:\Python33\Tools\Scripts\pyvenv.py myenv
+    c:\Temp>c:\Python35\python c:\Python35\Tools\Scripts\pyvenv.py myenv
 
 or equivalently::
 
-    c:\Temp>c:\Python33\python -m venv myenv
+    c:\Temp>c:\Python35\python -m venv myenv
 
 The command, if run with ``-h``, will show the available options::
 
-    usage: pyvenv [-h] [--system-site-packages] [--symlinks] [--clear]
-                  [--upgrade] [--without-pip] ENV_DIR [ENV_DIR ...]
+    usage: venv [-h] [--system-site-packages] [--symlinks] [--clear]
+                [--upgrade] [--without-pip] ENV_DIR [ENV_DIR ...]
 
     Creates virtual Python environments in one or more target directories.
 
@@ -38,6 +43,8 @@ The command, if run with ``-h``, will show the available options::
                              virtual environment.
       --symlinks             Try to use symlinks rather than copies, when symlinks
                              are not the default for the platform.
+      --copies               Try to use copies rather than symlinks, even when
+                             symlinks are the default for the platform.
       --clear                Delete the environment directory if it already exists.
                              If not specified and the directory exists, an error is
                              raised.
@@ -46,11 +53,18 @@ The command, if run with ``-h``, will show the available options::
       --without-pip          Skips installing or upgrading pip in the virtual
                              environment (pip is bootstrapped by default)
 
-.. versionchanged:: 3.4
-   Installs pip by default, added the ``--without-pip`` option
+Depending on how the ``venv`` functionality has been invoked, the usage message
+may vary slightly, e.g. referencing ``pyvenv`` rather than ``venv``.
 
-If the target directory already exists an error will be raised, unless
-the ``--clear`` or ``--upgrade`` option was provided.
+.. versionchanged:: 3.4
+   Installs pip by default, added the ``--without-pip``  and ``--copies``
+   options
+
+.. versionchanged:: 3.4
+   In earlier versions, if the target directory already existed, an error was
+   raised, unless the ``--clear`` or ``--upgrade`` option was provided. Now,
+   if an existing directory is specified, its contents are removed and
+   the directory is processed as if it had been newly created.
 
 The created ``pyvenv.cfg`` file also includes the
 ``include-system-site-packages`` key, set to ``true`` if ``venv`` is
@@ -92,3 +106,5 @@ a "deactivate" function, whereas on Windows there are separate scripts called
 ``deactivate.bat`` and ``Deactivate.ps1`` which are installed when the venv is
 created.
 
+.. versionadded:: 3.4
+   ``fish`` and ``csh`` activation scripts.

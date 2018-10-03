@@ -23,11 +23,11 @@ In May 2000, Guido and the Python core development team moved to BeOpen.com to
 form the BeOpen PythonLabs team.  In October of the same year, the PythonLabs
 team moved to Digital Creations (now Zope Corporation; see
 http://www.zope.com/).  In 2001, the Python Software Foundation (PSF, see
-http://www.python.org/psf/) was formed, a non-profit organization created
+https://www.python.org/psf/) was formed, a non-profit organization created
 specifically to own Python-related Intellectual Property.  Zope Corporation is a
 sponsoring member of the PSF.
 
-All Python releases are Open Source (see http://www.opensource.org/ for the Open
+All Python releases are Open Source (see http://opensource.org/ for the Open
 Source Definition). Historically, most, but not all, Python releases have also
 been GPL-compatible; the table below summarizes the various releases.
 
@@ -84,7 +84,7 @@ Terms and conditions for accessing or otherwise using Python
    analyze, test, perform and/or display publicly, prepare derivative works,
    distribute, and otherwise use Python |release| alone or in any derivative
    version, provided, however, that PSF's License Agreement and PSF's notice of
-   copyright, i.e., "Copyright © 2001-2013 Python Software Foundation; All Rights
+   copyright, i.e., "Copyright © 2001-2016 Python Software Foundation; All Rights
    Reserved" are retained in Python |release| alone or in any derivative version
    prepared by Licensee.
 
@@ -590,25 +590,6 @@ The :mod:`select` and contains the following notice for the kqueue interface::
   SUCH DAMAGE.
 
 
-SHA-3
------
-
-The module :mod:`_sha3` and :mod:`hashlib` are using the reference
-implementation of Keccak. The files at :file:`Modules/_sha3/keccak/` contain
-the following note::
-
-  The Keccak sponge function, designed by Guido Bertoni, Joan Daemen,
-  Michaël Peeters and Gilles Van Assche. For more information, feedback or
-  questions, please refer to our website: http://keccak.noekeon.org/
-
-  Implementation by the designers,
-  hereby denoted as "the implementer".
-
-  To the extent possible under law, the implementer has waived all copyright
-  and related or neighboring rights to the source code in this file.
-  http://creativecommons.org/publicdomain/zero/1.0/
-
-
 SipHash24
 ---------
 
@@ -673,9 +654,9 @@ OpenSSL
 
 The modules :mod:`hashlib`, :mod:`posix`, :mod:`ssl`, :mod:`crypt` use
 the OpenSSL library for added performance if made available by the
-operating system. Additionally, the Windows installers for Python
-include a copy of the OpenSSL libraries, so we include a copy of the
-OpenSSL license here::
+operating system. Additionally, the Windows and Mac OS X installers for
+Python may include a copy of the OpenSSL libraries, so we include a copy
+of the OpenSSL license here::
 
 
   LICENSE ISSUES
@@ -897,7 +878,7 @@ used for the build::
 cfuhash
 -------
 
-The implementtation of the hash table used by the :mod:`tracemalloc` is based
+The implementation of the hash table used by the :mod:`tracemalloc` is based
 on the cfuhash project::
 
    Copyright (c) 2005 Don Owens
@@ -933,4 +914,37 @@ on the cfuhash project::
    STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
    OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+libmpdec
+--------
+
+The :mod:`_decimal` Module is built using an included copy of the libmpdec
+library unless the build is configured ``--with-system-libmpdec``::
+
+   Copyright (c) 2008-2016 Stefan Krah. All rights reserved.
+
+   Redistribution and use in source and binary forms, with or without
+   modification, are permitted provided that the following conditions
+   are met:
+
+   1. Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+
+   2. Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+
+   THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS "AS IS" AND
+   ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+   ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+   FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+   DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+   OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+   HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+   LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+   OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+   SUCH DAMAGE.
+
 

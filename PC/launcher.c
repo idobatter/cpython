@@ -87,18 +87,18 @@ error(int rc, wchar_t * format, ... )
     if (rc == 0) {  /* a Windows error */
         winerror(GetLastError(), win_message, MSGSIZE);
         if (len >= 0) {
-            _snwprintf_s(&message[len], MSGSIZE - len, _TRUNCATE, L": %s",
+            _snwprintf_s(&message[len], MSGSIZE - len, _TRUNCATE, L": %ls",
                          win_message);
         }
     }
 
 #if !defined(_WINDOWS)
-    fwprintf(stderr, L"%s\n", message);
+    fwprintf(stderr, L"%ls\n", message);
 #else
     MessageBox(NULL, message, TEXT("Python Launcher is sorry to say ..."),
-               MB_OK); 
+               MB_OK);
 #endif
-    ExitProcess(rc);
+    exit(rc);
 }
 
 /*
@@ -114,7 +114,7 @@ static wchar_t * get_env(wchar_t * key)
     if (result >= BUFSIZE) {
         /* Large environment variable. Accept some leakage */
         wchar_t *buf2 = (wchar_t*)malloc(sizeof(wchar_t) * (result+1));
-        if (buf2 = NULL) {
+        if (buf2 == NULL) {
             error(RC_NO_MEMORY, L"Could not allocate environment buffer");
         }
         GetEnvironmentVariableW(key, buf2, result);
@@ -157,14 +157,19 @@ static INSTALLED_PYTHON installed_pythons[MAX_INSTALLED_PYTHONS];
 
 static size_t num_installed_pythons = 0;
 
-/* to hold SOFTWARE\Python\PythonCore\X.Y\InstallPath */
+/*
+ * To hold SOFTWARE\Python\PythonCore\X.Y...\InstallPath
+ * The version name can be longer than MAX_VERSION_SIZE, but will be
+ * truncated to just X.Y for comparisons.
+ */
 #define IP_BASE_SIZE 40
-#define IP_SIZE (IP_BASE_SIZE + MAX_VERSION_SIZE)
+#define IP_VERSION_SIZE 8
+#define IP_SIZE (IP_BASE_SIZE + IP_VERSION_SIZE)
 #define CORE_PATH L"SOFTWARE\\Python\\PythonCore"
 
 static wchar_t * location_checks[] = {
     L"\\",
-    L"\\PCBuild\\",
+    L"\\PCBuild\\win32\\",
     L"\\PCBuild\\amd64\\",
     NULL
 };
@@ -196,35 +201,38 @@ locate_pythons_for_key(HKEY root, REGSAM flags)
     BOOL ok;
     DWORD type, data_size, attrs;
     INSTALLED_PYTHON * ip, * pip;
+    wchar_t ip_version[IP_VERSION_SIZE];
     wchar_t ip_path[IP_SIZE];
     wchar_t * check;
     wchar_t ** checkp;
     wchar_t *key_name = (root == HKEY_LOCAL_MACHINE) ? L"HKLM" : L"HKCU";
 
     if (status != ERROR_SUCCESS)
-        debug(L"locate_pythons_for_key: unable to open PythonCore key in %s\n",
+        debug(L"locate_pythons_for_key: unable to open PythonCore key in %ls\n",
               key_name);
     else {
         ip = &installed_pythons[num_installed_pythons];
         for (i = 0; num_installed_pythons < MAX_INSTALLED_PYTHONS; i++) {
-            status = RegEnumKeyW(core_root, i, ip->version, MAX_VERSION_SIZE);
+            status = RegEnumKeyW(core_root, i, ip_version, IP_VERSION_SIZE);
             if (status != ERROR_SUCCESS) {
                 if (status != ERROR_NO_MORE_ITEMS) {
                     /* unexpected error */
                     winerror(status, message, MSGSIZE);
-                    debug(L"Can't enumerate registry key for version %s: %s\n",
-                          ip->version, message);
+                    debug(L"Can't enumerate registry key for version %ls: %ls\n",
+                          ip_version, message);
                 }
                 break;
             }
             else {
+                wcsncpy_s(ip->version, MAX_VERSION_SIZE, ip_version,
+                          MAX_VERSION_SIZE-1);
                 _snwprintf_s(ip_path, IP_SIZE, _TRUNCATE,
-                             L"%s\\%s\\InstallPath", CORE_PATH, ip->version);
+                             L"%ls\\%ls\\InstallPath", CORE_PATH, ip_version);
                 status = RegOpenKeyExW(root, ip_path, 0, flags, &ip_key);
                 if (status != ERROR_SUCCESS) {
                     winerror(status, message, MSGSIZE);
                     // Note: 'message' already has a trailing \n
-                    debug(L"%s\\%s: %s", key_name, ip_path, message);
+                    debug(L"%ls\\%ls: %ls", key_name, ip_path, message);
                     continue;
                 }
                 data_size = sizeof(ip->executable) - 1;
@@ -233,7 +241,7 @@ locate_pythons_for_key(HKEY root, REGSAM flags)
                 RegCloseKey(ip_key);
                 if (status != ERROR_SUCCESS) {
                     winerror(status, message, MSGSIZE);
-                    debug(L"%s\\%s: %s\n", key_name, ip_path, message);
+                    debug(L"%ls\\%ls: %ls\n", key_name, ip_path, message);
                     continue;
                 }
                 if (type == REG_SZ) {
@@ -246,27 +254,27 @@ locate_pythons_for_key(HKEY root, REGSAM flags)
                         _snwprintf_s(&ip->executable[data_size],
                                      MAX_PATH - data_size,
                                      MAX_PATH - data_size,
-                                     L"%s%s", check, PYTHON_EXECUTABLE);
+                                     L"%ls%ls", check, PYTHON_EXECUTABLE);
                         attrs = GetFileAttributesW(ip->executable);
                         if (attrs == INVALID_FILE_ATTRIBUTES) {
                             winerror(GetLastError(), message, MSGSIZE);
-                            debug(L"locate_pythons_for_key: %s: %s",
+                            debug(L"locate_pythons_for_key: %ls: %ls",
                                   ip->executable, message);
                         }
                         else if (attrs & FILE_ATTRIBUTE_DIRECTORY) {
-                            debug(L"locate_pythons_for_key: '%s' is a \
+                            debug(L"locate_pythons_for_key: '%ls' is a \
 directory\n",
                                   ip->executable, attrs);
                         }
                         else if (find_existing_python(ip->executable)) {
-                            debug(L"locate_pythons_for_key: %s: already \
-found: %s\n", ip->executable);
+                            debug(L"locate_pythons_for_key: %ls: already \
+found\n", ip->executable);
                         }
                         else {
                             /* check the executable type. */
                             ok = GetBinaryTypeW(ip->executable, &attrs);
                             if (!ok) {
-                                debug(L"Failure getting binary type: %s\n",
+                                debug(L"Failure getting binary type: %ls\n",
                                       ip->executable);
                             }
                             else {
@@ -277,7 +285,7 @@ found: %s\n", ip->executable);
                                 else
                                     ip->bits = 0;
                                 if (ip->bits == 0) {
-                                    debug(L"locate_pythons_for_key: %s: \
+                                    debug(L"locate_pythons_for_key: %ls: \
 invalid binary type: %X\n",
                                           ip->executable, attrs);
                                 }
@@ -291,7 +299,7 @@ invalid binary type: %X\n",
                                         ip->executable[n + 1] = L'\"';
                                         ip->executable[n + 2] = L'\0';
                                     }
-                                    debug(L"locate_pythons_for_key: %s \
+                                    debug(L"locate_pythons_for_key: %ls \
 is a %dbit executable\n",
                                         ip->executable, ip->bits);
                                     ++num_installed_pythons;
@@ -341,7 +349,7 @@ locate_all_pythons()
         locate_pythons_for_key(HKEY_CURRENT_USER, KEY_READ | KEY_WOW64_64KEY);
         locate_pythons_for_key(HKEY_LOCAL_MACHINE, KEY_READ | KEY_WOW64_64KEY);
     }
-#endif    
+#endif
     // now hit the "native" key for this process bittedness.
     debug(L"locating Pythons in native registry\n");
     locate_pythons_for_key(HKEY_CURRENT_USER, KEY_READ);
@@ -376,6 +384,31 @@ find_python_by_version(wchar_t const * wanted_ver)
 }
 
 
+static wchar_t *
+find_python_by_venv()
+{
+    static wchar_t venv_python[MAX_PATH];
+    wchar_t *virtual_env = get_env(L"VIRTUAL_ENV");
+    DWORD attrs;
+
+    /* Check for VIRTUAL_ENV environment variable */
+    if (virtual_env == NULL || virtual_env[0] == L'\0') {
+        return NULL;
+    }
+
+    /* Check for a python executable in the venv */
+    debug(L"Checking for Python executable in virtual env '%ls'\n", virtual_env);
+    _snwprintf_s(venv_python, MAX_PATH, _TRUNCATE,
+            L"%ls\\Scripts\\%ls", virtual_env, PYTHON_EXECUTABLE);
+    attrs = GetFileAttributesW(venv_python);
+    if (attrs == INVALID_FILE_ATTRIBUTES) {
+        debug(L"Python executable %ls missing from virtual env\n", venv_python);
+        return NULL;
+    }
+
+    return venv_python;
+}
+
 static wchar_t appdata_ini_path[MAX_PATH];
 static wchar_t launcher_ini_path[MAX_PATH];
 
@@ -397,7 +430,7 @@ get_configured_value(wchar_t * key)
     DWORD size;
 
     /* First, search the environment. */
-    _snwprintf_s(configured_value, MSGSIZE, _TRUNCATE, L"py_%s", key);
+    _snwprintf_s(configured_value, MSGSIZE, _TRUNCATE, L"py_%ls", key);
     result = get_env(configured_value);
     if (result == NULL && appdata_ini_path[0]) {
         /* Not in environment: check local configuration. */
@@ -420,10 +453,10 @@ get_configured_value(wchar_t * key)
         }
     }
     if (result) {
-        debug(L"found configured value '%s=%s' in %s\n",
+        debug(L"found configured value '%ls=%ls' in %ls\n",
               key, result, found_in ? found_in : L"(unknown)");
     } else {
-        debug(L"found no configured value for '%s'\n", key);
+        debug(L"found no configured value for '%ls'\n", key);
     }
     return result;
 }
@@ -449,9 +482,9 @@ locate_python(wchar_t * wanted_ver)
     }
     if (*wanted_ver) {
         result = find_python_by_version(wanted_ver);
-        debug(L"search for Python version '%s' found ", wanted_ver);
+        debug(L"search for Python version '%ls' found ", wanted_ver);
         if (result) {
-            debug(L"'%s'\n", result->executable);
+            debug(L"'%ls'\n", result->executable);
         } else {
             debug(L"no interpreter\n");
         }
@@ -467,7 +500,7 @@ locate_python(wchar_t * wanted_ver)
             result = find_python_by_version(L"3");
         debug(L"search for default Python found ");
         if (result) {
-            debug(L"version %s at '%s'\n",
+            debug(L"version %ls at '%ls'\n",
                   result->version, result->executable);
         } else {
             debug(L"no interpreter\n");
@@ -505,19 +538,19 @@ locate_wrapped_script()
     plen = GetModuleFileNameW(NULL, wrapped_script_path, MAX_PATH);
     p = wcsrchr(wrapped_script_path, L'.');
     if (p == NULL) {
-        debug(L"GetModuleFileNameW returned value has no extension: %s\n",
+        debug(L"GetModuleFileNameW returned value has no extension: %ls\n",
               wrapped_script_path);
-        error(RC_NO_SCRIPT, L"Wrapper name '%s' is not valid.", wrapped_script_path);
+        error(RC_NO_SCRIPT, L"Wrapper name '%ls' is not valid.", wrapped_script_path);
     }
 
     wcsncpy_s(p, MAX_PATH - (p - wrapped_script_path) + 1, SCRIPT_SUFFIX, _TRUNCATE);
     attrs = GetFileAttributesW(wrapped_script_path);
     if (attrs == INVALID_FILE_ATTRIBUTES) {
-        debug(L"File '%s' non-existent\n", wrapped_script_path);
-        error(RC_NO_SCRIPT, L"Script file '%s' is not present.", wrapped_script_path);
+        debug(L"File '%ls' non-existent\n", wrapped_script_path);
+        error(RC_NO_SCRIPT, L"Script file '%ls' is not present.", wrapped_script_path);
     }
 
-    debug(L"Using wrapped script file '%s'\n", wrapped_script_path);
+    debug(L"Using wrapped script file '%ls'\n", wrapped_script_path);
 }
 #endif
 
@@ -571,7 +604,7 @@ run_child(wchar_t * cmdline)
     // window, or fetching a message).  As this launcher doesn't do this
     // directly, that cursor remains even after the child process does these
     // things.  We avoid that by doing a simple post+get message.
-    // See http://bugs.python.org/issue17290 and 
+    // See http://bugs.python.org/issue17290 and
     // https://bitbucket.org/vinay.sajip/pylauncher/issue/20/busy-cursor-for-a-long-time-when-running
     MSG msg;
 
@@ -579,7 +612,7 @@ run_child(wchar_t * cmdline)
     GetMessage(&msg, 0, 0, 0);
 #endif
 
-    debug(L"run_child: about to run '%s'\n", cmdline);
+    debug(L"run_child: about to run '%ls'\n", cmdline);
     job = CreateJobObject(NULL, NULL);
     ok = QueryInformationJobObject(job, JobObjectExtendedLimitInformation,
                                   &info, sizeof(info), &rc);
@@ -611,7 +644,7 @@ run_child(wchar_t * cmdline)
     ok = CreateProcessW(NULL, cmdline, NULL, NULL, TRUE,
                         0, NULL, NULL, &si, &pi);
     if (!ok)
-        error(RC_CREATE_PROCESS, L"Unable to create process using '%s'", cmdline);
+        error(RC_CREATE_PROCESS, L"Unable to create process using '%ls'", cmdline);
     AssignProcessToJobObject(job, pi.hProcess);
     CloseHandle(pi.hThread);
     WaitForSingleObjectEx(pi.hProcess, INFINITE, FALSE);
@@ -619,7 +652,7 @@ run_child(wchar_t * cmdline)
     if (!ok)
         error(RC_CREATE_PROCESS, L"Failed to get exit code of process");
     debug(L"child process exit code: %d\n", rc);
-    ExitProcess(rc);
+    exit(rc);
 }
 
 static void
@@ -648,11 +681,11 @@ invoke_child(wchar_t * executable, wchar_t * suffix, wchar_t * cmdline)
                   child_command_size);
         if (no_suffix)
             _snwprintf_s(child_command, child_command_size,
-                         child_command_size - 1, L"%s %s",
+                         child_command_size - 1, L"%ls %ls",
                          executable, cmdline);
         else
             _snwprintf_s(child_command, child_command_size,
-                         child_command_size - 1, L"%s %s %s",
+                         child_command_size - 1, L"%ls %ls %ls",
                          executable, suffix, cmdline);
         run_child(child_command);
         free(child_command);
@@ -791,7 +824,7 @@ static void
 add_command(wchar_t * name, wchar_t * cmdline)
 {
     if (num_commands >= MAX_COMMANDS) {
-        debug(L"can't add %s = '%s': no room\n", name, cmdline);
+        debug(L"can't add %ls = '%ls': no room\n", name, cmdline);
     }
     else {
         COMMAND * cp = &commands[num_commands++];
@@ -813,14 +846,14 @@ read_config_file(wchar_t * config_path)
     read = GetPrivateProfileStringW(L"commands", NULL, NULL, keynames, MSGSIZE,
                                     config_path);
     if (read == MSGSIZE - 1) {
-        debug(L"read_commands: %s: not enough space for names\n", config_path);
+        debug(L"read_commands: %ls: not enough space for names\n", config_path);
     }
     key = keynames;
     while (*key) {
         read = GetPrivateProfileStringW(L"commands", key, NULL, value, MSGSIZE,
                                        config_path);
         if (read == MSGSIZE - 1) {
-            debug(L"read_commands: %s: not enough space for %s\n",
+            debug(L"read_commands: %ls: not enough space for %ls\n",
                   config_path, key);
         }
         cmdp = skip_whitespace(value);
@@ -932,10 +965,12 @@ typedef struct {
  */
 static BOM BOMs[] = {
     { 3, { 0xEF, 0xBB, 0xBF }, CP_UTF8 },           /* UTF-8 - keep first */
-    { 2, { 0xFF, 0xFE }, CP_UTF16LE },              /* UTF-16LE */
-    { 2, { 0xFE, 0xFF }, CP_UTF16BE },              /* UTF-16BE */
+    /* Test UTF-32LE before UTF-16LE since UTF-16LE BOM is a prefix
+     * of UTF-32LE BOM. */
     { 4, { 0xFF, 0xFE, 0x00, 0x00 }, CP_UTF32LE },  /* UTF-32LE */
     { 4, { 0x00, 0x00, 0xFE, 0xFF }, CP_UTF32BE },  /* UTF-32BE */
+    { 2, { 0xFF, 0xFE }, CP_UTF16LE },              /* UTF-16LE */
+    { 2, { 0xFE, 0xFF }, CP_UTF16BE },              /* UTF-16BE */
     { 0 }                                           /* sentinel */
 };
 
@@ -1073,7 +1108,7 @@ maybe_handle_shebang(wchar_t ** argv, wchar_t * cmdline)
  */
     FILE * fp;
     errno_t rc = _wfopen_s(&fp, *argv, L"rb");
-    unsigned char buffer[BUFSIZE];
+    char buffer[BUFSIZE];
     wchar_t shebang_line[BUFSIZE + 1];
     size_t read;
     char *p;
@@ -1095,9 +1130,10 @@ maybe_handle_shebang(wchar_t ** argv, wchar_t * cmdline)
         fclose(fp);
 
         if ((read >= 4) && (buffer[3] == '\n') && (buffer[2] == '\r')) {
-            ip = find_by_magic((buffer[1] << 8 | buffer[0]) & 0xFFFF);
+            ip = find_by_magic((((unsigned char)buffer[1]) << 8 |
+                                (unsigned char)buffer[0]) & 0xFFFF);
             if (ip != NULL) {
-                debug(L"script file is compiled against Python %s\n",
+                debug(L"script file is compiled against Python %ls\n",
                       ip->version);
                 invoke_child(ip->executable, NULL, cmdline);
             }
@@ -1200,7 +1236,7 @@ of bytes: %d\n", header_len);
                 is_virt = parse_shebang(shebang_line, nchars, &command,
                                         &suffix, &search);
                 if (command != NULL) {
-                    debug(L"parse_shebang: found command: %s\n", command);
+                    debug(L"parse_shebang: found command: %ls\n", command);
                     if (!is_virt) {
                         invoke_child(command, suffix, cmdline);
                     }
@@ -1212,17 +1248,17 @@ of bytes: %d\n", header_len);
                         }
                         if (wcsncmp(command, L"python", 6))
                             error(RC_BAD_VIRTUAL_PATH, L"Unknown virtual \
-path '%s'", command);
+path '%ls'", command);
                         command += 6;   /* skip past "python" */
                         if (search && ((*command == L'\0') || isspace(*command))) {
                             /* Command is eligible for path search, and there
                              * is no version specification.
                              */
                             debug(L"searching PATH for python executable\n");
-                            cmd = find_on_path(L"python");
-                            debug(L"Python on path: %s\n", cmd ? cmd->value : L"<not found>");
+                            cmd = find_on_path(PYTHON_EXECUTABLE);
+                            debug(L"Python on path: %ls\n", cmd ? cmd->value : L"<not found>");
                             if (cmd) {
-                                debug(L"located python on PATH: %s\n", cmd->value);
+                                debug(L"located python on PATH: %ls\n", cmd->value);
                                 invoke_child(cmd->value, suffix, cmdline);
                                 /* Exit here, as we have found the command */
                                 return;
@@ -1233,14 +1269,14 @@ path '%s'", command);
                         }
                         if (*command && !validate_version(command))
                             error(RC_BAD_VIRTUAL_PATH, L"Invalid version \
-specification: '%s'.\nIn the first line of the script, 'python' needs to be \
+specification: '%ls'.\nIn the first line of the script, 'python' needs to be \
 followed by a valid version specifier.\nPlease check the documentation.",
                                   command);
                         /* TODO could call validate_version(command) */
                         ip = locate_python(command);
                         if (ip == NULL) {
                             error(RC_NO_PYTHON, L"Requested Python version \
-(%s) is not installed", command);
+(%ls) is not installed", command);
                         }
                         else {
                             invoke_child(ip->executable, suffix, cmdline);
@@ -1301,6 +1337,7 @@ process(int argc, wchar_t ** argv)
 {
     wchar_t * wp;
     wchar_t * command;
+    wchar_t * executable;
     wchar_t * p;
     int rc = 0;
     size_t plen;
@@ -1320,6 +1357,7 @@ process(int argc, wchar_t ** argv)
     wchar_t * av[2];
 #endif
 
+    setvbuf(stderr, (char *)NULL, _IONBF, 0);
     wp = get_env(L"PYLAUNCH_DEBUG");
     if ((wp != NULL) && (*wp != L'\0'))
         log_fp = stderr;
@@ -1347,17 +1385,17 @@ process(int argc, wchar_t ** argv)
         wcsncpy_s(p, MAX_PATH - plen, L"\\py.ini", _TRUNCATE);
         attrs = GetFileAttributesW(appdata_ini_path);
         if (attrs == INVALID_FILE_ATTRIBUTES) {
-            debug(L"File '%s' non-existent\n", appdata_ini_path);
+            debug(L"File '%ls' non-existent\n", appdata_ini_path);
             appdata_ini_path[0] = L'\0';
         } else {
-            debug(L"Using local configuration file '%s'\n", appdata_ini_path);
+            debug(L"Using local configuration file '%ls'\n", appdata_ini_path);
         }
     }
     plen = GetModuleFileNameW(NULL, launcher_ini_path, MAX_PATH);
     size = GetFileVersionInfoSizeW(launcher_ini_path, &size);
     if (size == 0) {
         winerror(GetLastError(), message, MSGSIZE);
-        debug(L"GetFileVersionInfoSize failed: %s\n", message);
+        debug(L"GetFileVersionInfoSize failed: %ls\n", message);
     }
     else {
         version_data = malloc(size);
@@ -1381,7 +1419,7 @@ process(int argc, wchar_t ** argv)
     }
     p = wcsrchr(launcher_ini_path, L'\\');
     if (p == NULL) {
-        debug(L"GetModuleFileNameW returned value has no backslash: %s\n",
+        debug(L"GetModuleFileNameW returned value has no backslash: %ls\n",
               launcher_ini_path);
         launcher_ini_path[0] = L'\0';
     }
@@ -1390,15 +1428,15 @@ process(int argc, wchar_t ** argv)
                   _TRUNCATE);
         attrs = GetFileAttributesW(launcher_ini_path);
         if (attrs == INVALID_FILE_ATTRIBUTES) {
-            debug(L"File '%s' non-existent\n", launcher_ini_path);
+            debug(L"File '%ls' non-existent\n", launcher_ini_path);
             launcher_ini_path[0] = L'\0';
         } else {
-            debug(L"Using global configuration file '%s'\n", launcher_ini_path);
+            debug(L"Using global configuration file '%ls'\n", launcher_ini_path);
         }
     }
 
     command = skip_me(GetCommandLineW());
-    debug(L"Called with command line: %s\n", command);
+    debug(L"Called with command line: %ls\n", command);
 
 #if defined(SCRIPT_WRAPPER)
     /* The launcher is being used in "script wrapper" mode.
@@ -1422,7 +1460,7 @@ process(int argc, wchar_t ** argv)
         wcscpy_s(newcommand, newlen, wrapped_script_path);
         wcscat_s(newcommand, newlen, L" ");
         wcscat_s(newcommand, newlen, command);
-        debug(L"Running wrapped script with command line '%s'\n", newcommand);
+        debug(L"Running wrapped script with command line '%ls'\n", newcommand);
         read_commands();
         av[0] = wrapped_script_path;
         av[1] = NULL;
@@ -1443,8 +1481,9 @@ process(int argc, wchar_t ** argv)
         if (valid) {
             ip = locate_python(&p[1]);
             if (ip == NULL)
-                error(RC_NO_PYTHON, L"Requested Python version (%s) not \
+                error(RC_NO_PYTHON, L"Requested Python version (%ls) not \
 installed", &p[1]);
+            executable = ip->executable;
             command += wcslen(p);
             command = skip_whitespace(command);
         }
@@ -1462,9 +1501,16 @@ installed", &p[1]);
 #endif
 
     if (!valid) {
-        ip = locate_python(L"");
-        if (ip == NULL)
-            error(RC_NO_PYTHON, L"Can't find a default Python.");
+        /* Look for an active virtualenv */
+        executable = find_python_by_venv();
+
+        /* If we didn't find one, look for the default Python */
+        if (executable == NULL) {
+            ip = locate_python(L"");
+            if (ip == NULL)
+                error(RC_NO_PYTHON, L"Can't find a default Python.");
+            executable = ip->executable;
+        }
         if ((argc == 2) && (!_wcsicmp(p, L"-h") || !_wcsicmp(p, L"--help"))) {
 #if defined(_M_X64)
             BOOL canDo64bit = TRUE;
@@ -1476,9 +1522,9 @@ installed", &p[1]);
 
             get_version_info(version_text, MAX_PATH);
             fwprintf(stdout, L"\
-Python Launcher for Windows Version %s\n\n", version_text);
+Python Launcher for Windows Version %ls\n\n", version_text);
             fwprintf(stdout, L"\
-usage: %s [ launcher-arguments ] [ python-arguments ] script [ script-arguments ]\n\n", argv[0]);
+usage: %ls [ launcher-arguments ] [ python-arguments ] script [ script-arguments ]\n\n", argv[0]);
             fputws(L"\
 Launcher arguments:\n\n\
 -2     : Launch the latest Python 2.x version\n\
@@ -1492,7 +1538,7 @@ Launcher arguments:\n\n\
             fflush(stdout);
         }
     }
-    invoke_child(ip->executable, NULL, command);
+    invoke_child(executable, NULL, command);
     return rc;
 }
 

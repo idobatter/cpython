@@ -172,7 +172,7 @@ Some smaller changes made to the core Python language are:
   needed and is now deprecated.
 
   (Contributed by Georg Brandl and Mattias Brändström;
-  `appspot issue 53094 <http://codereview.appspot.com/53094>`_.)
+  `appspot issue 53094 <https://codereview.appspot.com/53094>`_.)
 
 * ``round(x, n)`` now returns an integer if *x* is an integer.
   Previously it returned a float::
@@ -238,7 +238,7 @@ New, Improved, and Deprecated Modules
   (Contributed by Guilherme Polo; :issue:`2983`.)
 
 * The :class:`gzip.GzipFile` and :class:`bz2.BZ2File` classes now support
-  the context manager protocol::
+  the context management protocol::
 
         >>> # Automatically close file after writing
         >>> with gzip.GzipFile(filename, "wb") as f:
@@ -336,7 +336,7 @@ New, Improved, and Deprecated Modules
   (Contributed by David Laban; :issue:`4739`.)
 
 * The :mod:`unittest` module now supports skipping individual tests or classes
-  of tests. And it supports marking a test as a expected failure, a test that
+  of tests. And it supports marking a test as an expected failure, a test that
   is known to be broken, but shouldn't be counted as a failure on a
   TestResult::
 

@@ -162,11 +162,19 @@ for this value.
    first call to :meth:`emit`.  By default, the file grows indefinitely.
 
 
+   .. method:: reopenIfNeeded()
+
+      Checks to see if the file has changed.  If it has, the existing stream is
+      flushed and closed and the file opened again, typically as a precursor to
+      outputting the record to the file.
+
+      .. versionadded:: 3.6
+
+
    .. method:: emit(record)
 
-      Outputs the record to the file, but first checks to see if the file has
-      changed.  If it has, the existing stream is flushed and closed and the
-      file opened again, before outputting the record to the file.
+      Outputs the record to the file, but first calls :meth:`reopenIfNeeded` to
+      reopen the file if it has changed.
 
 .. _base-rotating-handler:
 
@@ -230,7 +238,7 @@ need to override.
       renamed to the destination.
 
       :param source: The source filename. This is normally the base
-                     filename, e.g. 'test.log'
+                     filename, e.g. 'test.log'.
       :param dest:   The destination filename. This is normally
                      what the source is rotated to, e.g. 'test.log.1'.
 
@@ -269,15 +277,16 @@ module, supports rotation of disk log files.
    You can use the *maxBytes* and *backupCount* values to allow the file to
    :dfn:`rollover` at a predetermined size. When the size is about to be exceeded,
    the file is closed and a new file is silently opened for output. Rollover occurs
-   whenever the current log file is nearly *maxBytes* in length; if *maxBytes* is
-   zero, rollover never occurs.  If *backupCount* is non-zero, the system will save
-   old log files by appending the extensions '.1', '.2' etc., to the filename. For
-   example, with a *backupCount* of 5 and a base file name of :file:`app.log`, you
-   would get :file:`app.log`, :file:`app.log.1`, :file:`app.log.2`, up to
-   :file:`app.log.5`. The file being written to is always :file:`app.log`.  When
-   this file is filled, it is closed and renamed to :file:`app.log.1`, and if files
-   :file:`app.log.1`, :file:`app.log.2`, etc.  exist, then they are renamed to
-   :file:`app.log.2`, :file:`app.log.3` etc.  respectively.
+   whenever the current log file is nearly *maxBytes* in length; if either of
+   *maxBytes* or *backupCount* is zero, rollover never occurs.  If *backupCount*
+   is non-zero, the system will save old log files by appending the extensions
+   '.1', '.2' etc., to the filename. For example, with a *backupCount* of 5 and
+   a base file name of :file:`app.log`, you would get :file:`app.log`,
+   :file:`app.log.1`, :file:`app.log.2`, up to :file:`app.log.5`. The file being
+   written to is always :file:`app.log`.  When this file is filled, it is closed
+   and renamed to :file:`app.log.1`, and if files :file:`app.log.1`,
+   :file:`app.log.2`, etc.  exist, then they are renamed to :file:`app.log.2`,
+   :file:`app.log.3` etc.  respectively.
 
 
    .. method:: doRollover()
@@ -435,7 +444,7 @@ sends logging output to a network socket. The base class uses a TCP socket.
    .. method:: createSocket()
 
       Tries to create a socket; on failure, uses an exponential back-off
-      algorithm.  On intial failure, the handler will drop the message it was
+      algorithm.  On initial failure, the handler will drop the message it was
       trying to send.  When subsequent messages are handled by the same
       instance, it will not try connecting until some time has passed.  The
       default parameters are such that the initial delay is one second, and if
@@ -839,21 +848,43 @@ supports sending logging messages to a Web server, using either ``GET`` or
 ``POST`` semantics.
 
 
-.. class:: HTTPHandler(host, url, method='GET', secure=False, credentials=None)
+.. class:: HTTPHandler(host, url, method='GET', secure=False, credentials=None, context=None)
 
    Returns a new instance of the :class:`HTTPHandler` class. The *host* can be
-   of the form ``host:port``, should you need to use a specific port number.
-   If no *method* is specified, ``GET`` is used. If *secure* is true, an HTTPS
-   connection will be used. If *credentials* is specified, it should be a
-   2-tuple consisting of userid and password, which will be placed in an HTTP
+   of the form ``host:port``, should you need to use a specific port number.  If
+   no *method* is specified, ``GET`` is used. If *secure* is true, a HTTPS
+   connection will be used. The *context* parameter may be set to a
+   :class:`ssl.SSLContext` instance to configure the SSL settings used for the
+   HTTPS connection. If *credentials* is specified, it should be a 2-tuple
+   consisting of userid and password, which will be placed in a HTTP
    'Authorization' header using Basic authentication. If you specify
    credentials, you should also specify secure=True so that your userid and
    password are not passed in cleartext across the wire.
 
+   .. versionchanged:: 3.5
+      The *context* parameter was added.
+
+   .. method:: mapLogRecord(record)
+
+      Provides a dictionary, based on ``record``, which is to be URL-encoded
+      and sent to the web server. The default implementation just returns
+      ``record.__dict__``. This method can be overridden if e.g. only a
+      subset of :class:`~logging.LogRecord` is to be sent to the web server, or
+      if more specific customization of what's sent to the server is required.
 
    .. method:: emit(record)
 
-      Sends the record to the Web server as a percent-encoded dictionary.
+      Sends the record to the Web server as an URL-encoded dictionary. The
+      :meth:`mapLogRecord` method is used to convert the record to the
+      dictionary to be sent.
+
+   .. note:: Since preparing a record for sending it to a Web server is not
+      the same as a generic formatting operation, using
+      :meth:`~logging.Handler.setFormatter` to specify a
+      :class:`~logging.Formatter` for a :class:`HTTPHandler` has no effect.
+      Instead of calling :meth:`~logging.Handler.format`, this handler calls
+      :meth:`mapLogRecord` and then :func:`urllib.parse.urlencode` to encode the
+      dictionary in a form suitable for sending to a Web server.
 
 
 .. _queue-handler:
@@ -930,13 +961,20 @@ applications where threads servicing clients need to respond as quickly as
 possible, while any potentially slow operations (such as sending an email via
 :class:`SMTPHandler`) are done on a separate thread.
 
-.. class:: QueueListener(queue, *handlers)
+.. class:: QueueListener(queue, *handlers, respect_handler_level=False)
 
    Returns a new instance of the :class:`QueueListener` class. The instance is
    initialized with the queue to send messages to and a list of handlers which
    will handle entries placed on the queue. The queue can be any queue-
    like object; it's passed as-is to the :meth:`dequeue` method, which needs
-   to know how to get messages from it.
+   to know how to get messages from it. If ``respect_handler_level`` is ``True``,
+   a handler's level is respected (compared with the level for the message) when
+   deciding whether to pass messages to that handler; otherwise, the behaviour
+   is as in previous Python versions - to always pass each message to each
+   handler.
+
+   .. versionchanged:: 3.5
+      The ``respect_handler_levels`` argument was added.
 
    .. method:: dequeue(block)
 

@@ -19,7 +19,8 @@ higher-level functions in :ref:`shutil <archiving-operations>`.
 
 Some facts and figures:
 
-* reads and writes :mod:`gzip`, :mod:`bz2` and :mod:`lzma` compressed archives.
+* reads and writes :mod:`gzip`, :mod:`bz2` and :mod:`lzma` compressed archives
+  if the respective modules are available.
 
 * read/write support for the POSIX.1-1988 (ustar) format.
 
@@ -61,6 +62,23 @@ Some facts and figures:
    +------------------+---------------------------------------------+
    | ``'r:xz'``       | Open for reading with lzma compression.     |
    +------------------+---------------------------------------------+
+   | ``'x'`` or       | Create a tarfile exclusively without        |
+   | ``'x:'``         | compression.                                |
+   |                  | Raise an :exc:`FileExistsError` exception   |
+   |                  | if it is already exists.                    |
+   +------------------+---------------------------------------------+
+   | ``'x:gz'``       | Create a tarfile with gzip compression.     |
+   |                  | Raise an :exc:`FileExistsError` exception   |
+   |                  | if it is already exists.                    |
+   +------------------+---------------------------------------------+
+   | ``'x:bz2'``      | Create a tarfile with bzip2 compression.    |
+   |                  | Raise an :exc:`FileExistsError` exception   |
+   |                  | if it is already exists.                    |
+   +------------------+---------------------------------------------+
+   | ``'x:xz'``       | Create a tarfile with lzma compression.     |
+   |                  | Raise an :exc:`FileExistsError` exception   |
+   |                  | if it is already exists.                    |
+   +------------------+---------------------------------------------+
    | ``'a' or 'a:'``  | Open for appending with no compression. The |
    |                  | file is created if it does not exist.       |
    +------------------+---------------------------------------------+
@@ -80,6 +98,10 @@ Some facts and figures:
 
    If *fileobj* is specified, it is used as an alternative to a :term:`file object`
    opened in binary mode for *name*. It is supposed to be at position 0.
+
+   For modes ``'w:gz'``, ``'r:gz'``, ``'w:bz2'``, ``'r:bz2'``, ``'x:gz'``,
+   ``'x:bz2'``, :func:`tarfile.open` accepts the keyword argument
+   *compresslevel* to specify the compression level of the file.
 
    For special purposes, there is a second format for *mode*:
    ``'filemode|[compression]'``.  :func:`tarfile.open` will return a :class:`TarFile`
@@ -122,6 +144,8 @@ Some facts and figures:
    |             | writing.                                   |
    +-------------+--------------------------------------------+
 
+   .. versionchanged:: 3.5
+      The ``'x'`` (exclusive creation) mode was added.
 
 .. class:: TarFile
 
@@ -172,6 +196,13 @@ The :mod:`tarfile` module defines the following exceptions:
    Is raised by :meth:`TarInfo.frombuf` if the buffer it gets is invalid.
 
 
+The following constants are available at the module level:
+
+.. data:: ENCODING
+
+   The default character encoding: ``'utf-8'`` on Windows, the value returned by
+   :func:`sys.getfilesystemencoding` otherwise.
+
 
 Each of the following constants defines a tar archive format that the
 :mod:`tarfile` module is able to create. See section :ref:`tar-formats` for
@@ -198,19 +229,14 @@ details.
    The default format for creating archives. This is currently :const:`GNU_FORMAT`.
 
 
-The following variables are available on module level:
-
-
-.. data:: ENCODING
-
-   The default character encoding: ``'utf-8'`` on Windows,
-   :func:`sys.getfilesystemencoding` otherwise.
-
-
 .. seealso::
 
    Module :mod:`zipfile`
       Documentation of the :mod:`zipfile` standard module.
+
+   :ref:`archiving-operations`
+      Documentation of the higher-level archiving facilities provided by the
+      standard :mod:`shutil` module.
 
    `GNU tar manual, Basic Tar Format <http://www.gnu.org/software/tar/manual/html_node/Standard.html>`_
       Documentation for tar archive files, including GNU tar extensions.
@@ -234,7 +260,7 @@ be finalized; only the internally used file object will be closed. See the
 :ref:`tar-examples` section for a use case.
 
 .. versionadded:: 3.2
-   Added support for the context manager protocol.
+   Added support for the context management protocol.
 
 .. class:: TarFile(name=None, mode='r', fileobj=None, format=DEFAULT_FORMAT, tarinfo=TarInfo, dereference=False, ignore_zeros=False, encoding=ENCODING, errors='surrogateescape', pax_headers=None, debug=0, errorlevel=0)
 
@@ -245,8 +271,8 @@ be finalized; only the internally used file object will be closed. See the
    In this case, the file object's :attr:`name` attribute is used if it exists.
 
    *mode* is either ``'r'`` to read from an existing archive, ``'a'`` to append
-   data to an existing file or ``'w'`` to create a new file overwriting an existing
-   one.
+   data to an existing file, ``'w'`` to create a new file overwriting an existing
+   one or ``'x'`` to create a new file only if it's not exists.
 
    If *fileobj* is given, it is used for reading or writing data. If it can be
    determined, *mode* is overridden by *fileobj*'s mode. *fileobj* will be used
@@ -285,14 +311,16 @@ be finalized; only the internally used file object will be closed. See the
    to be handled. The default settings will work for most users.
    See section :ref:`tar-unicode` for in-depth information.
 
-   .. versionchanged:: 3.2
-      Use ``'surrogateescape'`` as the default for the *errors* argument.
-
    The *pax_headers* argument is an optional dictionary of strings which
    will be added as a pax global header if *format* is :const:`PAX_FORMAT`.
 
+   .. versionchanged:: 3.2
+      Use ``'surrogateescape'`` as the default for the *errors* argument.
 
-.. method:: TarFile.open(...)
+   .. versionchanged:: 3.5
+      The ``'x'`` (exclusive creation) mode was added.
+
+.. classmethod:: TarFile.open(...)
 
    Alternative constructor. The :func:`tarfile.open` function is actually a
    shortcut to this classmethod.
@@ -321,11 +349,15 @@ be finalized; only the internally used file object will be closed. See the
    returned by :meth:`getmembers`.
 
 
-.. method:: TarFile.list(verbose=True)
+.. method:: TarFile.list(verbose=True, *, members=None)
 
    Print a table of contents to ``sys.stdout``. If *verbose* is :const:`False`,
    only the names of the members are printed. If it is :const:`True`, output
-   similar to that of :program:`ls -l` is produced.
+   similar to that of :program:`ls -l` is produced. If optional *members* is
+   given, it must be a subset of the list returned by :meth:`getmembers`.
+
+   .. versionchanged:: 3.5
+      Added the *members* parameter.
 
 
 .. method:: TarFile.next()
@@ -335,7 +367,7 @@ be finalized; only the internally used file object will be closed. See the
    available.
 
 
-.. method:: TarFile.extractall(path=".", members=None)
+.. method:: TarFile.extractall(path=".", members=None, *, numeric_owner=False)
 
    Extract all members from the archive to the current working directory or
    directory *path*. If optional *members* is given, it must be a subset of the
@@ -345,6 +377,10 @@ be finalized; only the internally used file object will be closed. See the
    reset each time a file is created in it. And, if a directory's permissions do
    not allow writing, extracting files to it will fail.
 
+   If *numeric_owner* is :const:`True`, the uid and gid numbers from the tarfile
+   are used to set the owner/group for the extracted files. Otherwise, the named
+   values from the tarfile are used.
+
    .. warning::
 
       Never extract archives from untrusted sources without prior inspection.
@@ -352,14 +388,21 @@ be finalized; only the internally used file object will be closed. See the
       that have absolute filenames starting with ``"/"`` or filenames with two
       dots ``".."``.
 
+   .. versionchanged:: 3.5
+      Added the *numeric_only* parameter.
 
-.. method:: TarFile.extract(member, path="", set_attrs=True)
+
+.. method:: TarFile.extract(member, path="", set_attrs=True, *, numeric_owner=False)
 
    Extract a member from the archive to the current working directory, using its
    full name. Its file information is extracted as accurately as possible. *member*
    may be a filename or a :class:`TarInfo` object. You can specify a different
    directory using *path*. File attributes (owner, mtime, mode) are set unless
    *set_attrs* is false.
+
+   If *numeric_owner* is :const:`True`, the uid and gid numbers from the tarfile
+   are used to set the owner/group for the extracted files. Otherwise, the named
+   values from the tarfile are used.
 
    .. note::
 
@@ -372,6 +415,9 @@ be finalized; only the internally used file object will be closed. See the
 
    .. versionchanged:: 3.2
       Added the *set_attrs* parameter.
+
+   .. versionchanged:: 3.5
+      Added the *numeric_only* parameter.
 
 .. method:: TarFile.extractfile(member)
 
@@ -458,14 +504,14 @@ It does *not* contain the file's data itself.
    Create a :class:`TarInfo` object.
 
 
-.. method:: TarInfo.frombuf(buf)
+.. classmethod:: TarInfo.frombuf(buf, encoding, errors)
 
    Create and return a :class:`TarInfo` object from string buffer *buf*.
 
-   Raises :exc:`HeaderError` if the buffer is invalid..
+   Raises :exc:`HeaderError` if the buffer is invalid.
 
 
-.. method:: TarInfo.fromtarfile(tarfile)
+.. classmethod:: TarInfo.fromtarfile(tarfile)
 
    Read the next member from the :class:`TarFile` object *tarfile* and return it as
    a :class:`TarInfo` object.
@@ -509,7 +555,7 @@ A ``TarInfo`` object has the following public data attributes:
    :const:`AREGTYPE`, :const:`LNKTYPE`, :const:`SYMTYPE`, :const:`DIRTYPE`,
    :const:`FIFOTYPE`, :const:`CONTTYPE`, :const:`CHRTYPE`, :const:`BLKTYPE`,
    :const:`GNUTYPE_SPARSE`.  To determine the type of a :class:`TarInfo` object
-   more conveniently, use the ``is_*()`` methods below.
+   more conveniently, use the ``is*()`` methods below.
 
 
 .. attribute:: TarInfo.linkname
@@ -787,7 +833,7 @@ metadata must be either decoded or encoded. If *encoding* is not set
 appropriately, this conversion may fail.
 
 The *errors* argument defines how characters are treated that cannot be
-converted. Possible values are listed in section :ref:`codec-base-classes`.
+converted. Possible values are listed in section :ref:`error-handlers`.
 The default scheme is ``'surrogateescape'`` which Python also uses for its
 file system calls, see :ref:`os-filenames`.
 
@@ -795,4 +841,3 @@ In case of :const:`PAX_FORMAT` archives, *encoding* is generally not needed
 because all the metadata is stored using *UTF-8*. *encoding* is only used in
 the rare cases when binary pax headers are decoded or when strings with
 surrogate characters are stored.
-

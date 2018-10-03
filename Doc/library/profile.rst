@@ -33,7 +33,7 @@ profiling interface:
 2. :mod:`profile`, a pure Python module whose interface is imitated by
    :mod:`cProfile`, but which adds significant overhead to profiled programs.
    If you're trying to extend the profiler in some way, the task might be easier
-   with this module.
+   with this module.  Originally designed and written by Jim Roskind.
 
 .. note::
 
@@ -172,7 +172,7 @@ This will sort all the statistics by file name, and then print out statistics
 for only the class init methods (since they are spelled with ``__init__`` in
 them).  As one final example, you could try::
 
-   p.sort_stats('time', 'cum').print_stats(.5, 'init')
+   p.sort_stats('time', 'cumulative').print_stats(.5, 'init')
 
 This line sorts statistics with a primary key of time, and a secondary key of
 cumulative time, and then prints out some of the statistics. To be specific, the
@@ -638,7 +638,7 @@ you are using :class:`profile.Profile` or :class:`cProfile.Profile`,
 
       pr = cProfile.Profile(your_integer_time_func, 0.001)
 
-   As the :mod:`cProfile.Profile` class cannot be calibrated, custom timer
+   As the :class:`cProfile.Profile` class cannot be calibrated, custom timer
    functions should be used with care and should be as fast as possible.  For
    the best results with a custom timer, it might be necessary to hard-code it
    in the C source of the internal :mod:`_lsprof` module.

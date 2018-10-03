@@ -1,5 +1,4 @@
 from .. import util
-from . import util as import_util
 import sys
 import unittest
 import importlib
@@ -11,13 +10,13 @@ class ParentModuleTests:
     """Importing a submodule should import the parent modules."""
 
     def test_import_parent(self):
-        with util.mock_modules('pkg.__init__', 'pkg.module') as mock:
+        with util.mock_spec('pkg.__init__', 'pkg.module') as mock:
             with util.import_state(meta_path=[mock]):
                 module = self.__import__('pkg.module')
                 self.assertIn('pkg', sys.modules)
 
     def test_bad_parent(self):
-        with util.mock_modules('pkg.module') as mock:
+        with util.mock_spec('pkg.module') as mock:
             with util.import_state(meta_path=[mock]):
                 with self.assertRaises(ImportError) as cm:
                     self.__import__('pkg.module')
@@ -27,7 +26,7 @@ class ParentModuleTests:
         def __init__():
             import pkg.module
             1/0
-        mock = util.mock_modules('pkg.__init__', 'pkg.module',
+        mock = util.mock_spec('pkg.__init__', 'pkg.module',
                                  module_code={'pkg': __init__})
         with mock:
             with util.import_state(meta_path=[mock]):
@@ -44,7 +43,7 @@ class ParentModuleTests:
         def __init__():
             from . import module
             1/0
-        mock = util.mock_modules('pkg.__init__', 'pkg.module',
+        mock = util.mock_spec('pkg.__init__', 'pkg.module',
                                  module_code={'pkg': __init__})
         with mock:
             with util.import_state(meta_path=[mock]):
@@ -63,7 +62,7 @@ class ParentModuleTests:
         def __init__():
             from ..subpkg import module
             1/0
-        mock = util.mock_modules('pkg.__init__', 'pkg.subpkg.__init__',
+        mock = util.mock_spec('pkg.__init__', 'pkg.subpkg.__init__',
                                  'pkg.subpkg.module',
                                  module_code={'pkg.subpkg': __init__})
         with mock:
@@ -93,17 +92,19 @@ class ParentModuleTests:
         subname = name + '.b'
         def module_injection():
             sys.modules[subname] = 'total bunk'
-        mock_modules = util.mock_modules('mod',
+        mock_spec = util.mock_spec('mod',
                                          module_code={'mod': module_injection})
-        with mock_modules as mock:
+        with mock_spec as mock:
             with util.import_state(meta_path=[mock]):
                 try:
                     submodule = self.__import__(subname)
                 finally:
                     support.unload(subname)
 
-Frozen_ParentTests, Source_ParentTests = util.test_both(
-        ParentModuleTests, __import__=import_util.__import__)
+
+(Frozen_ParentTests,
+ Source_ParentTests
+ ) = util.test_both(ParentModuleTests, __import__=util.__import__)
 
 
 if __name__ == '__main__':

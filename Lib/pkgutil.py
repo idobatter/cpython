@@ -16,6 +16,21 @@ __all__ = [
     'ImpImporter', 'ImpLoader', 'read_code', 'extend_path',
 ]
 
+
+def _get_spec(finder, name):
+    """Return the finder-specific module spec."""
+    # Works with legacy finders.
+    try:
+        find_spec = finder.find_spec
+    except AttributeError:
+        loader = finder.find_module(name)
+        if loader is None:
+            return None
+        return importlib.util.spec_from_loader(name, loader)
+    else:
+        return find_spec(name)
+
+
 def read_code(stream):
     # This helper is needed in order for the PEP 302 emulation to
     # correctly handle compiled files
@@ -165,7 +180,7 @@ iter_importer_modules.register(
 def _import_imp():
     global imp
     with warnings.catch_warnings():
-        warnings.simplefilter('ignore', PendingDeprecationWarning)
+        warnings.simplefilter('ignore', DeprecationWarning)
         imp = importlib.import_module('imp')
 
 class ImpImporter:
@@ -326,9 +341,10 @@ class ImpLoader:
                 self.source = self._get_delegate().get_source()
         return self.source
 
-
     def _get_delegate(self):
-        return ImpImporter(self.filename).find_module('__init__')
+        finder = ImpImporter(self.filename)
+        spec = _get_spec(finder, '__init__')
+        return spec.loader
 
     def get_filename(self, fullname=None):
         fullname = self._fix_name(fullname)
@@ -440,11 +456,15 @@ def get_loader(module_or_name):
     """
     if module_or_name in sys.modules:
         module_or_name = sys.modules[module_or_name]
+        if module_or_name is None:
+            return None
     if isinstance(module_or_name, ModuleType):
         module = module_or_name
         loader = getattr(module, '__loader__', None)
         if loader is not None:
             return loader
+        if getattr(module, '__spec__', None) is None:
+            return None
         fullname = module.__name__
     else:
         fullname = module_or_name
@@ -454,29 +474,22 @@ def get_loader(module_or_name):
 def find_loader(fullname):
     """Find a PEP 302 "loader" object for fullname
 
-    This is s convenience wrapper around :func:`importlib.find_loader` that
-    sets the *path* argument correctly when searching for submodules, and
-    also ensures parent packages (if any) are imported before searching for
-    submodules.
+    This is a backwards compatibility wrapper around
+    importlib.util.find_spec that converts most failures to ImportError
+    and only returns the loader rather than the full spec
     """
     if fullname.startswith('.'):
         msg = "Relative module name {!r} not supported".format(fullname)
         raise ImportError(msg)
-    path = None
-    pkg_name = fullname.rpartition(".")[0]
-    if pkg_name:
-        pkg = importlib.import_module(pkg_name)
-        path = getattr(pkg, "__path__", None)
-        if path is None:
-            return None
     try:
-        return importlib.find_loader(fullname, path)
+        spec = importlib.util.find_spec(fullname)
     except (ImportError, AttributeError, TypeError, ValueError) as ex:
         # This hack fixes an impedance mismatch between pkgutil and
         # importlib, where the latter raises other errors for cases where
         # pkgutil previously raised ImportError
         msg = "Error while finding loader for {!r} ({}: {})"
         raise ImportError(msg.format(fullname, type(ex), ex)) from ex
+    return spec.loader if spec is not None else None
 
 
 def extend_path(path, name):
@@ -538,13 +551,14 @@ def extend_path(path, name):
 
         finder = get_importer(dir)
         if finder is not None:
+            portions = []
+            if hasattr(finder, 'find_spec'):
+                spec = finder.find_spec(final_name)
+                if spec is not None:
+                    portions = spec.submodule_search_locations or []
             # Is this finder PEP 420 compliant?
-            if hasattr(finder, 'find_loader'):
-                loader, portions = finder.find_loader(final_name)
-            else:
-                # No, no need to call it
-                loader = None
-                portions = []
+            elif hasattr(finder, 'find_loader'):
+                _, portions = finder.find_loader(final_name)
 
             for portion in portions:
                 # XXX This may still add duplicate entries to path on
@@ -594,7 +608,7 @@ def get_data(package, resource):
     which does not support get_data(), then None is returned.
     """
 
-    spec = importlib.find_spec(package)
+    spec = importlib.util.find_spec(package)
     if spec is None:
         return None
     loader = spec.loader
@@ -602,7 +616,7 @@ def get_data(package, resource):
         return None
     # XXX needs test
     mod = (sys.modules.get(package) or
-           importlib._bootstrap._SpecMethods(spec).load())
+           importlib._bootstrap._load(spec))
     if mod is None or not hasattr(mod, '__file__'):
         return None
 

@@ -222,6 +222,9 @@ supported.
       When the database has been opened in fast mode, this method forces any
       unwritten data to be written to the disk.
 
+   .. method:: gdbm.close()
+
+      Close the ``gdbm`` database.
 
 :mod:`dbm.ndbm` --- Interface based on ndbm
 -------------------------------------------
@@ -253,7 +256,7 @@ to locate the appropriate header file to simplify building this module.
 
 .. function:: open(filename[, flag[, mode]])
 
-   Open a dbm database and return a ``dbm`` object.  The *filename* argument is the
+   Open a dbm database and return a ``ndbm`` object.  The *filename* argument is the
    name of the database file (without the :file:`.dir` or :file:`.pag` extensions).
 
    The optional *flag* argument must be one of these values:
@@ -278,6 +281,12 @@ to locate the appropriate header file to simplify building this module.
    database has to be created.  It defaults to octal ``0o666`` (and will be
    modified by the prevailing umask).
 
+   In addition to the dictionary-like methods, ``ndbm`` objects
+   provide the following method:
+
+   .. method:: ndbm.close()
+
+      Close the ``ndbm`` database.
 
 
 :mod:`dbm.dumb` --- Portable DBM implementation
@@ -316,18 +325,28 @@ The module defines the following:
    dumbdbm database is created, files with :file:`.dat` and :file:`.dir` extensions
    are created.
 
-   The optional *flag* argument is currently ignored; the database is always opened
-   for update, and will be created if it does not exist.
+   The optional *flag* argument supports only the semantics of ``'c'``
+   and ``'n'`` values.  Other values will default to database being always
+   opened for update, and will be created if it does not exist.
 
    The optional *mode* argument is the Unix mode of the file, used only when the
    database has to be created.  It defaults to octal ``0o666`` (and will be modified
    by the prevailing umask).
 
+   .. versionchanged:: 3.5
+      :func:`.open` always creates a new database when the flag has the value
+      ``'n'``.
+
    In addition to the methods provided by the
    :class:`collections.abc.MutableMapping` class, :class:`dumbdbm` objects
-   provide the following method:
+   provide the following methods:
 
    .. method:: dumbdbm.sync()
 
       Synchronize the on-disk directory and data files.  This method is called
       by the :meth:`Shelve.sync` method.
+
+   .. method:: dumbdbm.close()
+
+      Close the ``dumbdbm`` database.
+

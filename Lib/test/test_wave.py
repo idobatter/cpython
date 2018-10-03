@@ -1,15 +1,18 @@
 from test.support import TESTFN
 import unittest
 from test import audiotests
+from test import support
 from audioop import byteswap
 import sys
 import wave
 
 
-class WavePCM8Test(audiotests.AudioWriteTests,
-        audiotests.AudioTestsWithSourceFile,
-        unittest.TestCase):
+class WaveTest(audiotests.AudioWriteTests,
+               audiotests.AudioTestsWithSourceFile):
     module = wave
+
+
+class WavePCM8Test(WaveTest, unittest.TestCase):
     sndfilename = 'pluck-pcm8.wav'
     sndfilenframes = 3307
     nchannels = 2
@@ -26,10 +29,7 @@ class WavePCM8Test(audiotests.AudioWriteTests,
       """)
 
 
-class WavePCM16Test(audiotests.AudioWriteTests,
-        audiotests.AudioTestsWithSourceFile,
-        unittest.TestCase):
-    module = wave
+class WavePCM16Test(WaveTest, unittest.TestCase):
     sndfilename = 'pluck-pcm16.wav'
     sndfilenframes = 3307
     nchannels = 2
@@ -50,10 +50,7 @@ class WavePCM16Test(audiotests.AudioWriteTests,
         frames = byteswap(frames, 2)
 
 
-class WavePCM24Test(audiotests.AudioWriteTests,
-        audiotests.AudioTestsWithSourceFile,
-        unittest.TestCase):
-    module = wave
+class WavePCM24Test(WaveTest, unittest.TestCase):
     sndfilename = 'pluck-pcm24.wav'
     sndfilenframes = 3307
     nchannels = 2
@@ -80,10 +77,7 @@ class WavePCM24Test(audiotests.AudioWriteTests,
         frames = byteswap(frames, 3)
 
 
-class WavePCM32Test(audiotests.AudioWriteTests,
-        audiotests.AudioTestsWithSourceFile,
-        unittest.TestCase):
-    module = wave
+class WavePCM32Test(WaveTest, unittest.TestCase):
     sndfilename = 'pluck-pcm32.wav'
     sndfilenframes = 3307
     nchannels = 2
@@ -108,6 +102,12 @@ class WavePCM32Test(audiotests.AudioWriteTests,
       """)
     if sys.byteorder != 'big':
         frames = byteswap(frames, 4)
+
+
+class MiscTestCase(unittest.TestCase):
+    def test__all__(self):
+        blacklist = {'WAVE_FORMAT_PCM'}
+        support.check__all__(self, wave, blacklist=blacklist)
 
 
 if __name__ == '__main__':

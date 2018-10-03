@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 #
 # test_codecencodings_jp.py
 #   Codec encoding tests for Japanese encodings.
@@ -124,8 +123,5 @@ class Test_SJISX0213(multibytecodec_support.TestBase, unittest.TestCase):
         b"\x85G&real;\x85Q = &lang;&#4660;&rang;"
     )
 
-def test_main():
-    support.run_unittest(__name__)
-
 if __name__ == "__main__":
-    test_main()
+    unittest.main()

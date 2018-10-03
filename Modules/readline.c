@@ -237,6 +237,43 @@ Save a readline history file.\n\
 The default filename is ~/.history.");
 
 
+#ifdef HAVE_RL_APPEND_HISTORY
+/* Exported function to save part of a readline history file */
+
+static PyObject *
+append_history_file(PyObject *self, PyObject *args)
+{
+    int nelements;
+    PyObject *filename_obj = Py_None, *filename_bytes;
+    char *filename;
+    int err;
+    if (!PyArg_ParseTuple(args, "i|O:append_history_file", &nelements, &filename_obj))
+        return NULL;
+    if (filename_obj != Py_None) {
+        if (!PyUnicode_FSConverter(filename_obj, &filename_bytes))
+            return NULL;
+        filename = PyBytes_AsString(filename_bytes);
+    } else {
+        filename_bytes = NULL;
+        filename = NULL;
+    }
+    errno = err = append_history(nelements, filename);
+    if (!err && _history_length >= 0)
+        history_truncate_file(filename, _history_length);
+    Py_XDECREF(filename_bytes);
+    errno = err;
+    if (errno)
+        return PyErr_SetFromErrno(PyExc_IOError);
+    Py_RETURN_NONE;
+}
+
+PyDoc_STRVAR(doc_append_history_file,
+"append_history_file(nelements[, filename]) -> None\n\
+Append the last nelements of the history list to file.\n\
+The default filename is ~/.history.");
+#endif
+
+
 /* Set history length */
 
 static PyObject*
@@ -281,8 +318,7 @@ set_hook(const char *funcname, PyObject **hook_var, PyObject *args)
     if (!PyArg_ParseTuple(args, buf, &function))
         return NULL;
     if (function == Py_None) {
-        Py_XDECREF(*hook_var);
-        *hook_var = NULL;
+        Py_CLEAR(*hook_var);
     }
     else if (PyCallable_Check(function)) {
         PyObject *tmp = *hook_var;
@@ -428,10 +464,11 @@ set_completer_delims(PyObject *self, PyObject *args)
     /* Keep a reference to the allocated memory in the module state in case
        some other module modifies rl_completer_word_break_characters
        (see issue #17289). */
-    free(completer_word_break_characters);
-    completer_word_break_characters = strdup(break_chars);
-    if (completer_word_break_characters) {
-        rl_completer_word_break_characters = completer_word_break_characters;
+    break_chars = strdup(break_chars);
+    if (break_chars) {
+        free(completer_word_break_characters);
+        completer_word_break_characters = break_chars;
+        rl_completer_word_break_characters = break_chars;
         Py_RETURN_NONE;
     }
     else
@@ -748,6 +785,10 @@ static struct PyMethodDef readline_methods[] =
      METH_VARARGS, doc_read_history_file},
     {"write_history_file", write_history_file,
      METH_VARARGS, doc_write_history_file},
+#ifdef HAVE_RL_APPEND_HISTORY
+    {"append_history_file", append_history_file,
+     METH_VARARGS, doc_append_history_file},
+#endif
     {"get_history_item", get_history_item,
      METH_VARARGS, doc_get_history_item},
     {"get_current_history_length", (PyCFunction)get_current_history_length,
@@ -800,7 +841,7 @@ on_hook(PyObject *func)
         if (r == Py_None)
             result = 0;
         else {
-            result = PyLong_AsLong(r);
+            result = _PyLong_AsInt(r);
             if (result == -1 && PyErr_Occurred())
                 goto error;
         }
@@ -816,7 +857,11 @@ on_hook(PyObject *func)
 }
 
 static int
+#if defined(_RL_FUNCTION_TYPEDEF)
 on_startup_hook(void)
+#else
+on_startup_hook()
+#endif
 {
     int r;
 #ifdef WITH_THREAD
@@ -831,7 +876,11 @@ on_startup_hook(void)
 
 #ifdef HAVE_RL_PRE_INPUT_HOOK
 static int
+#if defined(_RL_FUNCTION_TYPEDEF)
 on_pre_input_hook(void)
+#else
+on_pre_input_hook()
+#endif
 {
     int r;
 #ifdef WITH_THREAD
@@ -877,7 +926,7 @@ on_completion_display_matches_hook(char **matches,
         (r != Py_None && PyLong_AsLong(r) == -1 && PyErr_Occurred())) {
         goto error;
     }
-    Py_XDECREF(r); r=NULL;
+    Py_CLEAR(r);
 
     if (0) {
     error:
@@ -935,7 +984,7 @@ on_completion(const char *text, int state)
  * before calling the normal completer */
 
 static char **
-flex_complete(char *text, int start, int end)
+flex_complete(const char *text, int start, int end)
 {
     char **result;
 #ifdef WITH_THREAD
@@ -998,12 +1047,12 @@ setup_readline(readlinestate *mod_state)
     rl_bind_key_in_map ('\t', rl_complete, emacs_meta_keymap);
     rl_bind_key_in_map ('\033', rl_complete, emacs_meta_keymap);
     /* Set our hook functions */
-    rl_startup_hook = (Function *)on_startup_hook;
+    rl_startup_hook = on_startup_hook;
 #ifdef HAVE_RL_PRE_INPUT_HOOK
-    rl_pre_input_hook = (Function *)on_pre_input_hook;
+    rl_pre_input_hook = on_pre_input_hook;
 #endif
     /* Set our completion function */
-    rl_attempted_completion_function = (CPPFunction *)flex_complete;
+    rl_attempted_completion_function = flex_complete;
     /* Set Python word break characters */
     completer_word_break_characters =
         rl_completer_word_break_characters =
@@ -1012,6 +1061,21 @@ setup_readline(readlinestate *mod_state)
 
     mod_state->begidx = PyLong_FromLong(0L);
     mod_state->endidx = PyLong_FromLong(0L);
+
+#ifndef __APPLE__
+    if (!isatty(STDOUT_FILENO)) {
+        /* Issue #19884: stdout is no a terminal. Disable meta modifier
+           keys to not write the ANSI sequence "\033[1034h" into stdout. On
+           terminals supporting 8 bit characters like TERM=xterm-256color
+           (which is now the default Fedora since Fedora 18), the meta key is
+           used to enable support of 8 bit characters (ANSI sequence
+           "\033[1034h").
+
+           With libedit, this call makes readline() crash. */
+        rl_variable_bind ("enable-meta-key", "off");
+    }
+#endif
+
     /* Initialize (allows .inputrc to override)
      *
      * XXX: A bug in the readline-2.2 library causes a memory leak
@@ -1039,8 +1103,6 @@ rlhandler(char *text)
     completed_input_string = text;
     rl_callback_handler_remove();
 }
-
-extern PyThreadState* _PyOS_ReadlineTState;
 
 static char *
 readline_until_enter_or_signal(const char *prompt, int *signal)
@@ -1118,7 +1180,7 @@ onintr(int sig)
 
 
 static char *
-readline_until_enter_or_signal(char *prompt, int *signal)
+readline_until_enter_or_signal(const char *prompt, int *signal)
 {
     PyOS_sighandler_t old_inthandler;
     char *p;
@@ -1174,7 +1236,7 @@ call_readline(FILE *sys_stdin, FILE *sys_stdout, const char *prompt)
         return NULL;
     }
 
-    /* We got an EOF, return a empty string. */
+    /* We got an EOF, return an empty string. */
     if (p == NULL) {
         p = PyMem_RawMalloc(1);
         if (p != NULL)
@@ -1263,5 +1325,9 @@ PyInit_readline(void)
     mod_state = (readlinestate *) PyModule_GetState(m);
     PyOS_ReadlineFunctionPointer = call_readline;
     setup_readline(mod_state);
+
+    PyModule_AddIntConstant(m, "_READLINE_VERSION", RL_READLINE_VERSION);
+    PyModule_AddIntConstant(m, "_READLINE_RUNTIME_VERSION", rl_readline_version);
+
     return m;
 }

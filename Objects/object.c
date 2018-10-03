@@ -33,6 +33,22 @@ _Py_GetRefTotal(void)
         total -= o->ob_refcnt;
     return total;
 }
+
+void
+_PyDebug_PrintTotalRefs(void) {
+    PyObject *xoptions, *value;
+    _Py_IDENTIFIER(showrefcount);
+
+    xoptions = PySys_GetXOptions();
+    if (xoptions == NULL)
+        return;
+    value = _PyDict_GetItemId(xoptions, &PyId_showrefcount);
+    if (value == Py_True)
+        fprintf(stderr,
+                "[%" PY_FORMAT_SIZE_T "d refs, "
+                "%" PY_FORMAT_SIZE_T "d blocks]\n",
+                _Py_GetRefTotal(), _Py_GetAllocatedBlocks());
+}
 #endif /* Py_REF_DEBUG */
 
 /* Object allocation routines used by NEWOBJ and NEWVAROBJ macros.
@@ -459,7 +475,7 @@ PyObject_Repr(PyObject *v)
 #ifdef Py_DEBUG
     /* PyObject_Repr() must not be called with an exception set,
        because it may clear it (directly or indirectly) and so the
-       caller looses its exception */
+       caller loses its exception */
     assert(!PyErr_Occurred());
 #endif
 
@@ -508,7 +524,7 @@ PyObject_Str(PyObject *v)
 #ifdef Py_DEBUG
     /* PyObject_Str() must not be called with an exception set,
        because it may clear it (directly or indirectly) and so the
-       caller looses its exception */
+       caller loses its exception */
     assert(!PyErr_Occurred());
 #endif
 
@@ -628,7 +644,7 @@ PyObject_Bytes(PyObject *v)
 /* Map rich comparison operators to their swapped version, e.g. LT <--> GT */
 int _Py_SwappedOp[] = {Py_GT, Py_GE, Py_EQ, Py_NE, Py_LT, Py_LE};
 
-static char *opstrings[] = {"<", "<=", "==", "!=", ">", ">="};
+static const char * const opstrings[] = {"<", "<=", "==", "!=", ">", ">="};
 
 /* Perform a rich comparison, raising TypeError when the requested comparison
    operator is not supported. */
@@ -670,11 +686,10 @@ do_richcompare(PyObject *v, PyObject *w, int op)
         res = (v != w) ? Py_True : Py_False;
         break;
     default:
-        /* XXX Special-case None so it doesn't show as NoneType() */
         PyErr_Format(PyExc_TypeError,
-                     "unorderable types: %.100s() %s %.100s()",
-                     v->ob_type->tp_name,
+                     "'%s' not supported between instances of '%.100s' and '%.100s'",
                      opstrings[op],
+                     v->ob_type->tp_name,
                      w->ob_type->tp_name);
         return NULL;
     }
@@ -1543,6 +1558,9 @@ PyObject _Py_NotImplementedStruct = {
 void
 _Py_ReadyTypes(void)
 {
+    if (PyType_Ready(&PyBaseObject_Type) < 0)
+        Py_FatalError("Can't initialize object type");
+
     if (PyType_Ready(&PyType_Type) < 0)
         Py_FatalError("Can't initialize type type");
 
@@ -1554,6 +1572,9 @@ _Py_ReadyTypes(void)
 
     if (PyType_Ready(&_PyWeakref_ProxyType) < 0)
         Py_FatalError("Can't initialize weakref proxy type");
+
+    if (PyType_Ready(&PyLong_Type) < 0)
+        Py_FatalError("Can't initialize int type");
 
     if (PyType_Ready(&PyBool_Type) < 0)
         Py_FatalError("Can't initialize bool type");
@@ -1579,14 +1600,26 @@ _Py_ReadyTypes(void)
     if (PyType_Ready(&PySuper_Type) < 0)
         Py_FatalError("Can't initialize super type");
 
-    if (PyType_Ready(&PyBaseObject_Type) < 0)
-        Py_FatalError("Can't initialize object type");
-
     if (PyType_Ready(&PyRange_Type) < 0)
         Py_FatalError("Can't initialize range type");
 
     if (PyType_Ready(&PyDict_Type) < 0)
         Py_FatalError("Can't initialize dict type");
+
+    if (PyType_Ready(&PyODict_Type) < 0)
+        Py_FatalError("Can't initialize OrderedDict type");
+
+    if (PyType_Ready(&PyODictKeys_Type) < 0)
+        Py_FatalError("Can't initialize odict_keys type");
+
+    if (PyType_Ready(&PyODictItems_Type) < 0)
+        Py_FatalError("Can't initialize odict_items type");
+
+    if (PyType_Ready(&PyODictValues_Type) < 0)
+        Py_FatalError("Can't initialize odict_values type");
+
+    if (PyType_Ready(&PyODictIter_Type) < 0)
+        Py_FatalError("Can't initialize odict_keyiterator type");
 
     if (PyType_Ready(&PySet_Type) < 0)
         Py_FatalError("Can't initialize set type");
@@ -1605,9 +1638,6 @@ _Py_ReadyTypes(void)
 
     if (PyType_Ready(&PyFloat_Type) < 0)
         Py_FatalError("Can't initialize float type");
-
-    if (PyType_Ready(&PyLong_Type) < 0)
-        Py_FatalError("Can't initialize int type");
 
     if (PyType_Ready(&PyFrozenSet_Type) < 0)
         Py_FatalError("Can't initialize frozenset type");
@@ -1695,6 +1725,12 @@ _Py_ReadyTypes(void)
 
     if (PyType_Ready(&PySeqIter_Type) < 0)
         Py_FatalError("Can't initialize sequence iterator type");
+
+    if (PyType_Ready(&PyCoro_Type) < 0)
+        Py_FatalError("Can't initialize coroutine type");
+
+    if (PyType_Ready(&_PyCoroWrapper_Type) < 0)
+        Py_FatalError("Can't initialize coroutine wrapper type");
 }
 
 
@@ -1809,9 +1845,6 @@ _Py_GetObjects(PyObject *self, PyObject *args)
 
 #endif
 
-/* Hack to force loading of pycapsule.o */
-PyTypeObject *_PyCapsule_hack = &PyCapsule_Type;
-
 
 /* Hack to force loading of abstract.o */
 Py_ssize_t (*_Py_abstract_hack)(PyObject *) = PyObject_Size;
@@ -1849,6 +1882,8 @@ Py_ReprEnter(PyObject *obj)
     Py_ssize_t i;
 
     dict = PyThreadState_GetDict();
+    /* Ignore a missing thread-state, so that this function can be called
+       early on startup. */
     if (dict == NULL)
         return 0;
     list = _PyDict_GetItemId(dict, &PyId_Py_Repr);

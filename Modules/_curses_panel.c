@@ -6,7 +6,7 @@
 
 /* Release Number */
 
-static char *PyCursesVersion = "2.1";
+static const char PyCursesVersion[] = "2.1";
 
 /* Includes */
 
@@ -56,7 +56,7 @@ static struct PyModuleDef _curses_panelmodule;
  */
 
 static PyObject *
-PyCursesCheckERR(int code, char *fname)
+PyCursesCheckERR(int code, const char *fname)
 {
     if (code != ERR) {
         Py_INCREF(Py_None);
@@ -312,9 +312,8 @@ PyCursesPanel_replace_panel(PyCursesPanelObject *self, PyObject *args)
         PyErr_SetString(_curses_panelstate_global->PyCursesError, "replace_panel() returned ERR");
         return NULL;
     }
-    Py_DECREF(po->wo);
-    po->wo = temp;
-    Py_INCREF(po->wo);
+    Py_INCREF(temp);
+    Py_SETREF(po->wo, temp);
     Py_INCREF(Py_None);
     return Py_None;
 }

@@ -35,20 +35,27 @@ try:
     import threading
 except ImportError:
     import dummy_threading as threading
-try:
-    from time import monotonic as _time
-except ImportError:
-    from time import time as _time
+from time import monotonic as _time
 
 __all__ = ["scheduler"]
 
 class Event(namedtuple('Event', 'time, priority, action, argument, kwargs')):
     def __eq__(s, o): return (s.time, s.priority) == (o.time, o.priority)
-    def __ne__(s, o): return (s.time, s.priority) != (o.time, o.priority)
     def __lt__(s, o): return (s.time, s.priority) <  (o.time, o.priority)
     def __le__(s, o): return (s.time, s.priority) <= (o.time, o.priority)
     def __gt__(s, o): return (s.time, s.priority) >  (o.time, o.priority)
     def __ge__(s, o): return (s.time, s.priority) >= (o.time, o.priority)
+
+Event.time.__doc__ = ('''Numeric type compatible with the return value of the
+timefunc function passed to the constructor.''')
+Event.priority.__doc__ = ('''Events scheduled for the same time will be executed
+in the order of their priority.''')
+Event.action.__doc__ = ('''Executing the event means executing
+action(*argument, **kwargs)''')
+Event.argument.__doc__ = ('''argument is a sequence holding the positional
+arguments for the action.''')
+Event.kwargs.__doc__ = ('''kwargs is a dictionary holding the keyword
+arguments for the action.''')
 
 _sentinel = object()
 

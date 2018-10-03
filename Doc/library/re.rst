@@ -38,13 +38,6 @@ module-level functions and methods on
 that don't require you to compile a regex object first, but miss some
 fine-tuning parameters.
 
-.. seealso::
-
-   Mastering Regular Expressions
-      Book on regular expressions by Jeffrey Friedl, published by O'Reilly.  The
-      second edition of the book no longer covers Python at all, but the first
-      edition covered writing good regular expression patterns in great detail.
-
 
 .. _re-syntax:
 
@@ -304,6 +297,9 @@ The special characters are:
       >>> m.group(0)
       'egg'
 
+   .. versionchanged: 3.5
+      Added support for group references of fixed length.
+
 ``(?<!...)``
    Matches if the current position in the string is not preceded by a match for
    ``...``.  This is called a :dfn:`negative lookbehind assertion`.  Similar to
@@ -317,7 +313,7 @@ The special characters are:
    optional and can be omitted. For example,
    ``(<)?(\w+@\w+(?:\.\w+)+)(?(1)>|$)`` is a poor email matching pattern, which
    will match with ``'<user@host.com>'`` as well as ``'user@host.com'``, but
-   not with ``'<user@host.com'`` nor ``'user@host.com>'`` .
+   not with ``'<user@host.com'`` nor ``'user@host.com>'``.
 
 
 The special sequences consist of ``'\'`` and a character from the list below.
@@ -442,6 +438,18 @@ three digits in length.
 .. versionchanged:: 3.3
    The ``'\u'`` and ``'\U'`` escape sequences have been added.
 
+.. deprecated-removed:: 3.5 3.6
+   Unknown escapes consist of ``'\'`` and ASCII letter now raise a
+   deprecation warning and will be forbidden in Python 3.6.
+
+
+.. seealso::
+
+   Mastering Regular Expressions
+      Book on regular expressions by Jeffrey Friedl, published by O'Reilly.  The
+      second edition of the book no longer covers Python at all, but the first
+      edition covered writing good regular expression patterns in great detail.
+
 
 
 .. _contents-of-module-re:
@@ -458,8 +466,8 @@ form.
 .. function:: compile(pattern, flags=0)
 
    Compile a regular expression pattern into a regular expression object, which
-   can be used for matching using its :func:`match` and :func:`search` methods,
-   described below.
+   can be used for matching using its :func:`~regex.match` and
+   :func:`~regex.search` methods, described below.
 
    The expression's behaviour can be modified by specifying a *flags* value.
    Values can be any of the following variables, combined using bitwise OR (the
@@ -520,7 +528,11 @@ form.
    current locale. The use of this flag is discouraged as the locale mechanism
    is very unreliable, and it only handles one "culture" at a time anyway;
    you should use Unicode matching instead, which is the default in Python 3
-   for Unicode (str) patterns.
+   for Unicode (str) patterns. This flag makes sense only with bytes patterns.
+
+   .. deprecated-removed:: 3.5 3.6
+      Deprecated the use of  :const:`re.LOCALE` with string patterns or
+      :const:`re.ASCII`.
 
 
 .. data:: M
@@ -544,13 +556,15 @@ form.
 .. data:: X
           VERBOSE
 
-   This flag allows you to write regular expressions that look nicer. Whitespace
-   within the pattern is ignored, except when in a character class or preceded by
-   an unescaped backslash, and, when a line contains a ``'#'`` neither in a
-   character class or preceded by an unescaped backslash, all characters from the
-   leftmost such ``'#'`` through the end of the line are ignored.
+   This flag allows you to write regular expressions that look nicer and are
+   more readable by allowing you to visually separate logical sections of the
+   pattern and add comments. Whitespace within the pattern is ignored, except
+   when in a character class or when preceded by an unescaped backslash.
+   When a line contains a ``#`` that is not in a character class and is not
+   preceded by an unescaped backslash, all characters from the leftmost such
+   ``#`` through the end of the line are ignored.
 
-   That means that the two following regular expression objects that match a
+   This means that the two following regular expression objects that match a
    decimal number are functionally equal::
 
       a = re.compile(r"""\d +  # the integral part
@@ -563,7 +577,7 @@ form.
 
 .. function:: search(pattern, string, flags=0)
 
-   Scan through *string* looking for a location where the regular expression
+   Scan through *string* looking for the first location where the regular expression
    *pattern* produces a match, and return a corresponding :ref:`match object
    <match-objects>`.  Return ``None`` if no position in the string matches the
    pattern; note that this is different from finding a zero-length match at some
@@ -621,17 +635,37 @@ form.
    That way, separator components are always found at the same relative
    indices within the result list.
 
-   Note that *split* will never split a string on an empty pattern match.
-   For example:
+   .. note::
 
-      >>> re.split('x*', 'foo')
-      ['foo']
-      >>> re.split("(?m)^$", "foo\n\nbar\n")
-      ['foo\n\nbar\n']
+      :func:`split` doesn't currently split a string on an empty pattern match.
+      For example:
+
+         >>> re.split('x*', 'axbc')
+         ['a', 'bc']
+
+      Even though ``'x*'`` also matches 0 'x' before 'a', between 'b' and 'c',
+      and after 'c', currently these matches are ignored.  The correct behavior
+      (i.e. splitting on empty matches too and returning ``['', 'a', 'b', 'c',
+      '']``) will be implemented in future versions of Python, but since this
+      is a backward incompatible change, a :exc:`FutureWarning` will be raised
+      in the meanwhile.
+
+      Patterns that can only match empty strings currently never split the
+      string.  Since this doesn't match the expected behavior, a
+      :exc:`ValueError` will be raised starting from Python 3.5::
+
+         >>> re.split("^$", "foo\n\nbar\n", flags=re.M)
+         Traceback (most recent call last):
+           File "<stdin>", line 1, in <module>
+           ...
+         ValueError: split() requires a non-empty pattern match.
 
    .. versionchanged:: 3.1
       Added the optional flags argument.
 
+   .. versionchanged:: 3.5
+      Splitting on a pattern that could match an empty string now raises
+      a warning.  Patterns that can only match empty strings are now rejected.
 
 .. function:: findall(pattern, string, flags=0)
 
@@ -659,7 +693,7 @@ form.
    *string* is returned unchanged.  *repl* can be a string or a function; if it is
    a string, any backslash escapes in it are processed.  That is, ``\n`` is
    converted to a single newline character, ``\r`` is converted to a carriage return, and
-   so forth.  Unknown escapes such as ``\j`` are left alone.  Backreferences, such
+   so forth.  Unknown escapes such as ``\&`` are left alone.  Backreferences, such
    as ``\6``, are replaced with the substring matched by group 6 in the pattern.
    For example:
 
@@ -701,6 +735,13 @@ form.
    .. versionchanged:: 3.1
       Added the optional flags argument.
 
+   .. versionchanged:: 3.5
+      Unmatched groups are replaced with an empty string.
+
+   .. deprecated-removed:: 3.5 3.6
+      Unknown escapes consist of ``'\'`` and ASCII letter now raise a
+      deprecation warning and will be forbidden in Python 3.6.
+
 
 .. function:: subn(pattern, repl, string, count=0, flags=0)
 
@@ -709,6 +750,9 @@ form.
 
    .. versionchanged:: 3.1
       Added the optional flags argument.
+
+   .. versionchanged:: 3.5
+      Unmatched groups are replaced with an empty string.
 
 
 .. function:: escape(string)
@@ -726,13 +770,36 @@ form.
    Clear the regular expression cache.
 
 
-.. exception:: error
+.. exception:: error(msg, pattern=None, pos=None)
 
    Exception raised when a string passed to one of the functions here is not a
    valid regular expression (for example, it might contain unmatched parentheses)
    or when some other error occurs during compilation or matching.  It is never an
-   error if a string contains no match for a pattern.
+   error if a string contains no match for a pattern.  The error instance has
+   the following additional attributes:
 
+   .. attribute:: msg
+
+      The unformatted error message.
+
+   .. attribute:: pattern
+
+      The regular expression pattern.
+
+   .. attribute:: pos
+
+      The index of *pattern* where compilation failed.
+
+   .. attribute:: lineno
+
+      The line corresponding to *pos*.
+
+   .. attribute:: colno
+
+      The column corresponding to *pos*.
+
+   .. versionchanged:: 3.5
+      Added additional attributes.
 
 .. _re-objects:
 
@@ -801,7 +868,7 @@ attributes:
    >>> pattern.fullmatch("dog")      # No match as "o" is not at the start of "dog".
    >>> pattern.fullmatch("ogre")     # No match as not the full string matches.
    >>> pattern.fullmatch("doggie", 1, 3)   # Matches within given limits.
-   <_sre.SRE_Match object at ...>
+   <_sre.SRE_Match object; span=(1, 3), match='og'>
 
    .. versionadded:: 3.4
 
@@ -885,6 +952,8 @@ Match objects support the following methods and attributes:
    (``\g<1>``, ``\g<name>``) are replaced by the contents of the
    corresponding group.
 
+   .. versionchanged:: 3.5
+      Unmatched groups are replaced with an empty string.
 
 .. method:: match.group([group1, ...])
 
@@ -1333,36 +1402,36 @@ successive matches::
 
     Token = collections.namedtuple('Token', ['typ', 'value', 'line', 'column'])
 
-    def tokenize(s):
+    def tokenize(code):
         keywords = {'IF', 'THEN', 'ENDIF', 'FOR', 'NEXT', 'GOSUB', 'RETURN'}
         token_specification = [
             ('NUMBER',  r'\d+(\.\d*)?'), # Integer or decimal number
             ('ASSIGN',  r':='),          # Assignment operator
             ('END',     r';'),           # Statement terminator
             ('ID',      r'[A-Za-z]+'),   # Identifiers
-            ('OP',      r'[+*\/\-]'),    # Arithmetic operators
+            ('OP',      r'[+\-*/]'),     # Arithmetic operators
             ('NEWLINE', r'\n'),          # Line endings
-            ('SKIP',    r'[ \t]'),       # Skip over spaces and tabs
+            ('SKIP',    r'[ \t]+'),      # Skip over spaces and tabs
+            ('MISMATCH',r'.'),           # Any other character
         ]
         tok_regex = '|'.join('(?P<%s>%s)' % pair for pair in token_specification)
-        get_token = re.compile(tok_regex).match
-        line = 1
-        pos = line_start = 0
-        mo = get_token(s)
-        while mo is not None:
-            typ = mo.lastgroup
-            if typ == 'NEWLINE':
-                line_start = pos
-                line += 1
-            elif typ != 'SKIP':
-                val = mo.group(typ)
-                if typ == 'ID' and val in keywords:
-                    typ = val
-                yield Token(typ, val, line, mo.start()-line_start)
-            pos = mo.end()
-            mo = get_token(s, pos)
-        if pos != len(s):
-            raise RuntimeError('Unexpected character %r on line %d' %(s[pos], line))
+        line_num = 1
+        line_start = 0
+        for mo in re.finditer(tok_regex, code):
+            kind = mo.lastgroup
+            value = mo.group(kind)
+            if kind == 'NEWLINE':
+                line_start = mo.end()
+                line_num += 1
+            elif kind == 'SKIP':
+                pass
+            elif kind == 'MISMATCH':
+                raise RuntimeError('%r unexpected on line %d' % (value, line_num))
+            else:
+                if kind == 'ID' and value in keywords:
+                    kind = value
+                column = mo.start() - line_start
+                yield Token(kind, value, line_num, column)
 
     statements = '''
         IF quantity THEN
@@ -1376,22 +1445,22 @@ successive matches::
 
 The tokenizer produces the following output::
 
-    Token(typ='IF', value='IF', line=2, column=5)
-    Token(typ='ID', value='quantity', line=2, column=8)
-    Token(typ='THEN', value='THEN', line=2, column=17)
-    Token(typ='ID', value='total', line=3, column=9)
-    Token(typ='ASSIGN', value=':=', line=3, column=15)
-    Token(typ='ID', value='total', line=3, column=18)
-    Token(typ='OP', value='+', line=3, column=24)
-    Token(typ='ID', value='price', line=3, column=26)
-    Token(typ='OP', value='*', line=3, column=32)
-    Token(typ='ID', value='quantity', line=3, column=34)
-    Token(typ='END', value=';', line=3, column=42)
-    Token(typ='ID', value='tax', line=4, column=9)
-    Token(typ='ASSIGN', value=':=', line=4, column=13)
-    Token(typ='ID', value='price', line=4, column=16)
-    Token(typ='OP', value='*', line=4, column=22)
-    Token(typ='NUMBER', value='0.05', line=4, column=24)
-    Token(typ='END', value=';', line=4, column=28)
-    Token(typ='ENDIF', value='ENDIF', line=5, column=5)
-    Token(typ='END', value=';', line=5, column=10)
+    Token(typ='IF', value='IF', line=2, column=4)
+    Token(typ='ID', value='quantity', line=2, column=7)
+    Token(typ='THEN', value='THEN', line=2, column=16)
+    Token(typ='ID', value='total', line=3, column=8)
+    Token(typ='ASSIGN', value=':=', line=3, column=14)
+    Token(typ='ID', value='total', line=3, column=17)
+    Token(typ='OP', value='+', line=3, column=23)
+    Token(typ='ID', value='price', line=3, column=25)
+    Token(typ='OP', value='*', line=3, column=31)
+    Token(typ='ID', value='quantity', line=3, column=33)
+    Token(typ='END', value=';', line=3, column=41)
+    Token(typ='ID', value='tax', line=4, column=8)
+    Token(typ='ASSIGN', value=':=', line=4, column=12)
+    Token(typ='ID', value='price', line=4, column=15)
+    Token(typ='OP', value='*', line=4, column=21)
+    Token(typ='NUMBER', value='0.05', line=4, column=23)
+    Token(typ='END', value=';', line=4, column=27)
+    Token(typ='ENDIF', value='ENDIF', line=5, column=4)
+    Token(typ='END', value=';', line=5, column=9)

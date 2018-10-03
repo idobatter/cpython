@@ -216,7 +216,6 @@ int
 PyList_SetItem(PyObject *op, Py_ssize_t i,
                PyObject *newitem)
 {
-    PyObject *olditem;
     PyObject **p;
     if (!PyList_Check(op)) {
         Py_XDECREF(newitem);
@@ -230,9 +229,7 @@ PyList_SetItem(PyObject *op, Py_ssize_t i,
         return -1;
     }
     p = ((PyListObject *)op) -> ob_item + i;
-    olditem = *p;
-    *p = newitem;
-    Py_XDECREF(olditem);
+    Py_SETREF(*p, newitem);
     return 0;
 }
 
@@ -730,7 +727,6 @@ list_inplace_repeat(PyListObject *self, Py_ssize_t n)
 static int
 list_ass_item(PyListObject *a, Py_ssize_t i, PyObject *v)
 {
-    PyObject *old_value;
     if (i < 0 || i >= Py_SIZE(a)) {
         PyErr_SetString(PyExc_IndexError,
                         "list assignment index out of range");
@@ -739,9 +735,7 @@ list_ass_item(PyListObject *a, Py_ssize_t i, PyObject *v)
     if (v == NULL)
         return list_ass_slice(a, i, i+1, v);
     Py_INCREF(v);
-    old_value = a->ob_item[i];
-    a->ob_item[i] = v;
-    Py_DECREF(old_value);
+    Py_SETREF(a->ob_item[i], v);
     return 0;
 }
 
@@ -1832,7 +1826,8 @@ merge_collapse(MergeState *ms)
     assert(ms);
     while (ms->n > 1) {
         Py_ssize_t n = ms->n - 2;
-        if (n > 0 && p[n-1].len <= p[n].len + p[n+1].len) {
+        if ((n > 0 && p[n-1].len <= p[n].len + p[n+1].len) ||
+            (n > 1 && p[n-2].len <= p[n-1].len + p[n].len)) {
             if (p[n-1].len < p[n+1].len)
                 --n;
             if (merge_at(ms, n) < 0)
@@ -1960,8 +1955,10 @@ listsort(PyListObject *self, PyObject *args, PyObject *kwds)
             keys = &ms.temparray[saved_ob_size+1];
         else {
             keys = PyMem_MALLOC(sizeof(PyObject *) * saved_ob_size);
-            if (keys == NULL)
-                return NULL;
+            if (keys == NULL) {
+                PyErr_NoMemory();
+                goto keyfunc_fail;
+            }
         }
 
         for (i = 0; i < saved_ob_size ; i++) {
@@ -1970,7 +1967,7 @@ listsort(PyListObject *self, PyObject *args, PyObject *kwds)
             if (keys[i] == NULL) {
                 for (i=i-1 ; i>=0 ; i--)
                     Py_DECREF(keys[i]);
-                if (keys != &ms.temparray[saved_ob_size+1])
+                if (saved_ob_size >= MERGESTATE_TEMP_SIZE/2)
                     PyMem_FREE(keys);
                 goto keyfunc_fail;
             }
@@ -2043,7 +2040,7 @@ fail:
     if (keys != NULL) {
         for (i = 0; i < saved_ob_size; i++)
             Py_DECREF(keys[i]);
-        if (keys != &ms.temparray[saved_ob_size+1])
+        if (saved_ob_size >= MERGESTATE_TEMP_SIZE/2)
             PyMem_FREE(keys);
     }
 
@@ -2321,7 +2318,7 @@ list_sizeof(PyListObject *self)
 {
     Py_ssize_t res;
 
-    res = sizeof(PyListObject) + self->allocated * sizeof(void*);
+    res = _PyObject_SIZE(Py_TYPE(self)) + self->allocated * sizeof(void*);
     return PyLong_FromSsize_t(res);
 }
 
@@ -2444,7 +2441,7 @@ list_subscript(PyListObject* self, PyObject* item)
     }
     else {
         PyErr_Format(PyExc_TypeError,
-                     "list indices must be integers, not %.200s",
+                     "list indices must be integers or slices, not %.200s",
                      item->ob_type->tp_name);
         return NULL;
     }
@@ -2608,7 +2605,7 @@ list_ass_subscript(PyListObject* self, PyObject* item, PyObject* value)
     }
     else {
         PyErr_Format(PyExc_TypeError,
-                     "list indices must be integers, not %.200s",
+                     "list indices must be integers or slices, not %.200s",
                      item->ob_type->tp_name);
         return -1;
     }
@@ -2811,6 +2808,8 @@ listiter_setstate(listiterobject *it, PyObject *state)
     if (it->it_seq != NULL) {
         if (index < 0)
             index = 0;
+        else if (index > PyList_GET_SIZE(it->it_seq))
+            index = PyList_GET_SIZE(it->it_seq); /* iterator exhausted */
         it->it_index = index;
     }
     Py_RETURN_NONE;

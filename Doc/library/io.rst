@@ -289,7 +289,7 @@ I/O Base Classes
       most *size* bytes will be read.
 
       The line terminator is always ``b'\n'`` for binary files; for text files,
-      the *newlines* argument to :func:`open` can be used to select the line
+      the *newline* argument to :func:`open` can be used to select the line
       terminator(s) recognized.
 
    .. method:: readlines(hint=-1)
@@ -301,11 +301,11 @@ I/O Base Classes
       Note that it's already possible to iterate on file objects using ``for
       line in file: ...`` without calling ``file.readlines()``.
 
-   .. method:: seek(offset, whence=SEEK_SET)
+   .. method:: seek(offset[, whence])
 
       Change the stream position to the given byte *offset*.  *offset* is
-      interpreted relative to the position indicated by *whence*.  Values for
-      *whence* are:
+      interpreted relative to the position indicated by *whence*.  The default
+      value for *whence* is :data:`SEEK_SET`.  Values for *whence* are:
 
       * :data:`SEEK_SET` or ``0`` -- start of the stream (the default);
         *offset* should be zero or positive
@@ -339,8 +339,11 @@ I/O Base Classes
       if *size* is not specified).  The current stream position isn't changed.
       This resizing can extend or reduce the current file size.  In case of
       extension, the contents of the new file area depend on the platform
-      (on most systems, additional bytes are zero-filled, on Windows they're
-      undetermined).  The new file size is returned.
+      (on most systems, additional bytes are zero-filled).  The new file size
+      is returned.
+
+   .. versionchanged:: 3.5
+      Windows will now zero-fill files when extending.
 
    .. method:: writable()
 
@@ -352,6 +355,12 @@ I/O Base Classes
       Write a list of lines to the stream.  Line separators are not added, so it
       is usual for each of the lines provided to have a line separator at the
       end.
+
+   .. method:: __del__()
+
+      Prepare for object destruction. :class:`IOBase` provides a default
+      implementation of this method that calls the instance's
+      :meth:`~IOBase.close` method.
 
 
 .. class:: RawIOBase
@@ -385,8 +394,8 @@ I/O Base Classes
    .. method:: readinto(b)
 
       Read up to ``len(b)`` bytes into :class:`bytearray` *b* and return the
-      number of bytes read.  If the object is in non-blocking mode and no
-      bytes are available, ``None`` is returned.
+      number of bytes read.  If the object is in non-blocking mode and no bytes
+      are available, ``None`` is returned.
 
    .. method:: write(b)
 
@@ -459,9 +468,10 @@ I/O Base Classes
 
    .. method:: read1(size=-1)
 
-      Read and return up to *size* bytes, with at most one call to the underlying
-      raw stream's :meth:`~RawIOBase.read` method.  This can be useful if you
-      are implementing your own buffering on top of a :class:`BufferedIOBase`
+      Read and return up to *size* bytes, with at most one call to the
+      underlying raw stream's :meth:`~RawIOBase.read` (or
+      :meth:`~RawIOBase.readinto`) method.  This can be useful if you are
+      implementing your own buffering on top of a :class:`BufferedIOBase`
       object.
 
    .. method:: readinto(b)
@@ -472,8 +482,19 @@ I/O Base Classes
       Like :meth:`read`, multiple reads may be issued to the underlying raw
       stream, unless the latter is interactive.
 
-      A :exc:`BlockingIOError` is raised if the underlying raw stream is in
-      non blocking-mode, and has no data available at the moment.
+      A :exc:`BlockingIOError` is raised if the underlying raw stream is in non
+      blocking-mode, and has no data available at the moment.
+
+   .. method:: readinto1(b)
+
+      Read up to ``len(b)`` bytes into bytearray *b*, using at most one call to
+      the underlying raw stream's :meth:`~RawIOBase.read` (or
+      :meth:`~RawIOBase.readinto`) method. Return the number of bytes read.
+
+      A :exc:`BlockingIOError` is raised if the underlying raw stream is in non
+      blocking-mode, and has no data available at the moment.
+
+      .. versionadded:: 3.5
 
    .. method:: write(b)
 
@@ -501,9 +522,12 @@ Raw File I/O
    The *name* can be one of two things:
 
    * a character string or :class:`bytes` object representing the path to the
-     file which will be opened;
+     file which will be opened. In this case closefd must be True (the default)
+     otherwise an error will be raised.
    * an integer representing the number of an existing OS-level file descriptor
-     to which the resulting :class:`FileIO` object will give access.
+     to which the resulting :class:`FileIO` object will give access. When the
+     FileIO object is closed this fd will be closed as well, unless *closefd*
+     is set to ``False``.
 
    The *mode* can be ``'r'``, ``'w'``, ``'x'`` or ``'a'`` for reading
    (default), writing, exclusive creation or appending. The file will be
@@ -557,7 +581,8 @@ than raw I/O does.
 .. class:: BytesIO([initial_bytes])
 
    A stream implementation using an in-memory bytes buffer.  It inherits
-   :class:`BufferedIOBase`.
+   :class:`BufferedIOBase`.  The buffer is discarded when the
+   :meth:`~IOBase.close` method is called.
 
    The argument *initial_bytes* contains optional initial :class:`bytes` data.
 
@@ -578,7 +603,7 @@ than raw I/O does.
 
       .. note::
          As long as the view exists, the :class:`BytesIO` object cannot be
-         resized.
+         resized or closed.
 
       .. versionadded:: 3.2
 
@@ -586,10 +611,16 @@ than raw I/O does.
 
       Return :class:`bytes` containing the entire contents of the buffer.
 
+
    .. method:: read1()
 
       In :class:`BytesIO`, this is the same as :meth:`read`.
 
+   .. method:: readinto1()
+
+      In :class:`BytesIO`, this is the same as :meth:`readinto`.
+
+      .. versionadded:: 3.5
 
 .. class:: BufferedReader(raw, buffer_size=DEFAULT_BUFFER_SIZE)
 
@@ -686,6 +717,7 @@ than raw I/O does.
    :exc:`UnsupportedOperation`.
 
    .. warning::
+
       :class:`BufferedRWPair` does not attempt to synchronize accesses to
       its underlying raw streams.  You should not pass it the same object
       as reader and writer; use :class:`BufferedRandom` instead.
@@ -751,10 +783,11 @@ Text I/O
 
       If *size* is specified, at most *size* characters will be read.
 
-   .. method:: seek(offset, whence=SEEK_SET)
+   .. method:: seek(offset[, whence])
 
-      Change the stream position to the given *offset*.  Behaviour depends
-      on the *whence* parameter:
+      Change the stream position to the given *offset*.  Behaviour depends on
+      the *whence* parameter.  The default value for *whence* is
+      :data:`SEEK_SET`.
 
       * :data:`SEEK_SET` or ``0``: seek from the start of the stream
         (the default); *offset* must either be a number returned by
@@ -798,11 +831,13 @@ Text I/O
    exception if there is an encoding error (the default of ``None`` has the same
    effect), or pass ``'ignore'`` to ignore errors.  (Note that ignoring encoding
    errors can lead to data loss.)  ``'replace'`` causes a replacement marker
-   (such as ``'?'``) to be inserted where there is malformed data.  When
-   writing, ``'xmlcharrefreplace'`` (replace with the appropriate XML character
-   reference) or ``'backslashreplace'`` (replace with backslashed escape
-   sequences) can be used.  Any other error handling name that has been
-   registered with :func:`codecs.register_error` is also valid.
+   (such as ``'?'``) to be inserted where there is malformed data.
+   ``'backslashreplace'`` causes malformed data to be replaced by a
+   backslashed escape sequence.  When writing, ``'xmlcharrefreplace'``
+   (replace with the appropriate XML character reference)  or ``'namereplace'``
+   (replace with ``\N{...}`` escape sequences) can be used.  Any other error
+   handling name that has been registered with
+   :func:`codecs.register_error` is also valid.
 
    .. index::
       single: universal newlines; io.TextIOWrapper class
@@ -849,22 +884,30 @@ Text I/O
       Whether line buffering is enabled.
 
 
-.. class:: StringIO(initial_value='', newline=None)
+.. class:: StringIO(initial_value='', newline='\\n')
 
-   An in-memory stream for text I/O.
+   An in-memory stream for text I/O.  The text buffer is discarded when the
+   :meth:`~IOBase.close` method is called.
 
-   The initial value of the buffer (an empty string by default) can be set by
-   providing *initial_value*.  The *newline* argument works like that of
-   :class:`TextIOWrapper`.  The default is to do no newline translation.
+   The initial value of the buffer can be set by providing *initial_value*.
+   If newline translation is enabled, newlines will be encoded as if by
+   :meth:`~TextIOBase.write`.  The stream is positioned at the start of
+   the buffer.
+
+   The *newline* argument works like that of :class:`TextIOWrapper`.
+   The default is to consider only ``\n`` characters as ends of lines and
+   to do no newline translation.  If *newline* is set to ``None``,
+   newlines are written as ``\n`` on all platforms, but universal
+   newline decoding is still performed when reading.
 
    :class:`StringIO` provides this method in addition to those from
    :class:`TextIOBase` and its parents:
 
    .. method:: getvalue()
 
-      Return a ``str`` containing the entire contents of the buffer at any
-      time before the :class:`StringIO` object's :meth:`close` method is
-      called.
+      Return a ``str`` containing the entire contents of the buffer.
+      Newlines are decoded as if by :meth:`~TextIOBase.read`, although
+      the stream position is not changed.
 
    Example usage::
 

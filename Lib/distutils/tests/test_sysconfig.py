@@ -1,6 +1,9 @@
 """Tests for distutils.sysconfig."""
 import os
 import shutil
+import subprocess
+import sys
+import textwrap
 import unittest
 
 from distutils import sysconfig
@@ -80,12 +83,9 @@ class SysconfigTestCase(support.EnvironGuard, unittest.TestCase):
             os.chdir(cwd)
         self.assertEqual(srcdir, srcdir2)
 
+    @unittest.skipUnless(get_default_compiler() == 'unix',
+                         'not testing if default compiler is not unix')
     def test_customize_compiler(self):
-
-        # not testing if default compiler is not unix
-        if get_default_compiler() != 'unix':
-            return
-
         os.environ['AR'] = 'my_ar'
         os.environ['ARFLAGS'] = '-arflags'
 
@@ -151,7 +151,7 @@ class SysconfigTestCase(support.EnvironGuard, unittest.TestCase):
 
         import sysconfig as global_sysconfig
         if sysconfig.get_config_var('CUSTOMIZED_OSX_COMPILER'):
-            return
+            self.skipTest('compiler flags customized')
         self.assertEqual(global_sysconfig.get_config_var('LDSHARED'),
                          sysconfig.get_config_var('LDSHARED'))
         self.assertEqual(global_sysconfig.get_config_var('CC'),
@@ -176,6 +176,25 @@ class SysconfigTestCase(support.EnvironGuard, unittest.TestCase):
         vars = sysconfig.get_config_vars()
         self.assertIsNotNone(vars['SO'])
         self.assertEqual(vars['SO'], vars['EXT_SUFFIX'])
+
+    def test_customize_compiler_before_get_config_vars(self):
+        # Issue #21923: test that a Distribution compiler
+        # instance can be called without an explicit call to
+        # get_config_vars().
+        with open(TESTFN, 'w') as f:
+            f.writelines(textwrap.dedent('''\
+                from distutils.core import Distribution
+                config = Distribution().get_command_obj('config')
+                # try_compile may pass or it may fail if no compiler
+                # is found but it should not raise an exception.
+                rc = config.try_compile('int x;')
+                '''))
+        p = subprocess.Popen([str(sys.executable), TESTFN],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True)
+        outs, errs = p.communicate()
+        self.assertEqual(0, p.returncode, "Subprocess failed: " + outs)
 
 
 def test_suite():

@@ -969,113 +969,107 @@ class StackObject(object):
         return self.name
 
 
-pyint = StackObject(
-            name='int',
-            obtype=int,
-            doc="A short (as opposed to long) Python integer object.")
-
-pylong = StackObject(
-             name='long',
-             obtype=int,
-             doc="A long (as opposed to short) Python integer object.")
+pyint = pylong = StackObject(
+    name='int',
+    obtype=int,
+    doc="A Python integer object.")
 
 pyinteger_or_bool = StackObject(
-                        name='int_or_bool',
-                        obtype=(int, bool),
-                        doc="A Python integer object (short or long), or "
-                            "a Python bool.")
+    name='int_or_bool',
+    obtype=(int, bool),
+    doc="A Python integer or boolean object.")
 
 pybool = StackObject(
-             name='bool',
-             obtype=(bool,),
-             doc="A Python bool object.")
+    name='bool',
+    obtype=bool,
+    doc="A Python boolean object.")
 
 pyfloat = StackObject(
-              name='float',
-              obtype=float,
-              doc="A Python float object.")
+    name='float',
+    obtype=float,
+    doc="A Python float object.")
 
-pystring = StackObject(
-               name='string',
-               obtype=bytes,
-               doc="A Python (8-bit) string object.")
+pybytes_or_str = pystring = StackObject(
+    name='bytes_or_str',
+    obtype=(bytes, str),
+    doc="A Python bytes or (Unicode) string object.")
 
 pybytes = StackObject(
-               name='bytes',
-               obtype=bytes,
-               doc="A Python bytes object.")
+    name='bytes',
+    obtype=bytes,
+    doc="A Python bytes object.")
 
 pyunicode = StackObject(
-                name='str',
-                obtype=str,
-                doc="A Python (Unicode) string object.")
+    name='str',
+    obtype=str,
+    doc="A Python (Unicode) string object.")
 
 pynone = StackObject(
-             name="None",
-             obtype=type(None),
-             doc="The Python None object.")
+    name="None",
+    obtype=type(None),
+    doc="The Python None object.")
 
 pytuple = StackObject(
-              name="tuple",
-              obtype=tuple,
-              doc="A Python tuple object.")
+    name="tuple",
+    obtype=tuple,
+    doc="A Python tuple object.")
 
 pylist = StackObject(
-             name="list",
-             obtype=list,
-             doc="A Python list object.")
+    name="list",
+    obtype=list,
+    doc="A Python list object.")
 
 pydict = StackObject(
-             name="dict",
-             obtype=dict,
-             doc="A Python dict object.")
+    name="dict",
+    obtype=dict,
+    doc="A Python dict object.")
 
 pyset = StackObject(
-            name="set",
-            obtype=set,
-            doc="A Python set object.")
+    name="set",
+    obtype=set,
+    doc="A Python set object.")
 
 pyfrozenset = StackObject(
-                  name="frozenset",
-                  obtype=set,
-                  doc="A Python frozenset object.")
+    name="frozenset",
+    obtype=set,
+    doc="A Python frozenset object.")
 
 anyobject = StackObject(
-                name='any',
-                obtype=object,
-                doc="Any kind of object whatsoever.")
+    name='any',
+    obtype=object,
+    doc="Any kind of object whatsoever.")
 
 markobject = StackObject(
-                 name="mark",
-                 obtype=StackObject,
-                 doc="""'The mark' is a unique object.
+    name="mark",
+    obtype=StackObject,
+    doc="""'The mark' is a unique object.
 
-                 Opcodes that operate on a variable number of objects
-                 generally don't embed the count of objects in the opcode,
-                 or pull it off the stack.  Instead the MARK opcode is used
-                 to push a special marker object on the stack, and then
-                 some other opcodes grab all the objects from the top of
-                 the stack down to (but not including) the topmost marker
-                 object.
-                 """)
+Opcodes that operate on a variable number of objects
+generally don't embed the count of objects in the opcode,
+or pull it off the stack.  Instead the MARK opcode is used
+to push a special marker object on the stack, and then
+some other opcodes grab all the objects from the top of
+the stack down to (but not including) the topmost marker
+object.
+""")
 
 stackslice = StackObject(
-                 name="stackslice",
-                 obtype=StackObject,
-                 doc="""An object representing a contiguous slice of the stack.
+    name="stackslice",
+    obtype=StackObject,
+    doc="""An object representing a contiguous slice of the stack.
 
-                 This is used in conjunction with markobject, to represent all
-                 of the stack following the topmost markobject.  For example,
-                 the POP_MARK opcode changes the stack from
+This is used in conjunction with markobject, to represent all
+of the stack following the topmost markobject.  For example,
+the POP_MARK opcode changes the stack from
 
-                     [..., markobject, stackslice]
-                 to
-                     [...]
+    [..., markobject, stackslice]
+to
+    [...]
 
-                 No matter how many object are on the stack after the topmost
-                 markobject, POP_MARK gets rid of all of them (including the
-                 topmost markobject too).
-                 """)
+No matter how many object are on the stack after the topmost
+markobject, POP_MARK gets rid of all of them (including the
+topmost markobject too).
+""")
 
 ##############################################################################
 # Descriptors for pickle opcodes.
@@ -1212,7 +1206,7 @@ opcodes = [
       code='L',
       arg=decimalnl_long,
       stack_before=[],
-      stack_after=[pylong],
+      stack_after=[pyint],
       proto=0,
       doc="""Push a long integer.
 
@@ -1230,7 +1224,7 @@ opcodes = [
       code='\x8a',
       arg=long1,
       stack_before=[],
-      stack_after=[pylong],
+      stack_after=[pyint],
       proto=2,
       doc="""Long integer using one-byte length.
 
@@ -1241,7 +1235,7 @@ opcodes = [
       code='\x8b',
       arg=long4,
       stack_before=[],
-      stack_after=[pylong],
+      stack_after=[pyint],
       proto=2,
       doc="""Long integer using found-byte length.
 
@@ -1254,45 +1248,50 @@ opcodes = [
       code='S',
       arg=stringnl,
       stack_before=[],
-      stack_after=[pystring],
+      stack_after=[pybytes_or_str],
       proto=0,
       doc="""Push a Python string object.
 
       The argument is a repr-style string, with bracketing quote characters,
       and perhaps embedded escapes.  The argument extends until the next
-      newline character.  (Actually, they are decoded into a str instance
+      newline character.  These are usually decoded into a str instance
       using the encoding given to the Unpickler constructor. or the default,
-      'ASCII'.)
+      'ASCII'.  If the encoding given was 'bytes' however, they will be
+      decoded as bytes object instead.
       """),
 
     I(name='BINSTRING',
       code='T',
       arg=string4,
       stack_before=[],
-      stack_after=[pystring],
+      stack_after=[pybytes_or_str],
       proto=1,
       doc="""Push a Python string object.
 
-      There are two arguments:  the first is a 4-byte little-endian signed int
-      giving the number of bytes in the string, and the second is that many
-      bytes, which are taken literally as the string content.  (Actually,
-      they are decoded into a str instance using the encoding given to the
-      Unpickler constructor. or the default, 'ASCII'.)
+      There are two arguments: the first is a 4-byte little-endian
+      signed int giving the number of bytes in the string, and the
+      second is that many bytes, which are taken literally as the string
+      content.  These are usually decoded into a str instance using the
+      encoding given to the Unpickler constructor. or the default,
+      'ASCII'.  If the encoding given was 'bytes' however, they will be
+      decoded as bytes object instead.
       """),
 
     I(name='SHORT_BINSTRING',
       code='U',
       arg=string1,
       stack_before=[],
-      stack_after=[pystring],
+      stack_after=[pybytes_or_str],
       proto=1,
       doc="""Push a Python string object.
 
-      There are two arguments:  the first is a 1-byte unsigned int giving
-      the number of bytes in the string, and the second is that many bytes,
-      which are taken literally as the string content.  (Actually, they
-      are decoded into a str instance using the encoding given to the
-      Unpickler constructor. or the default, 'ASCII'.)
+      There are two arguments: the first is a 1-byte unsigned int giving
+      the number of bytes in the string, and the second is that many
+      bytes, which are taken literally as the string content.  These are
+      usually decoded into a str instance using the encoding given to
+      the Unpickler constructor. or the default, 'ASCII'.  If the
+      encoding given was 'bytes' however, they will be decoded as bytes
+      object instead.
       """),
 
     # Bytes (protocol 3 only; older protocols don't support bytes at all)
@@ -1899,7 +1898,7 @@ opcodes = [
       arg=None,
       stack_before=[pyunicode, pyunicode],
       stack_after=[anyobject],
-      proto=0,
+      proto=4,
       doc="""Push a global object (module.attr) on the stack.
       """),
 
@@ -2283,40 +2282,61 @@ def genops(pickle):
 
 def optimize(p):
     'Optimize a pickle string by removing unused PUT opcodes'
-    not_a_put = object()
-    gets = { not_a_put }    # set of args used by a GET opcode
-    opcodes = []            # (startpos, stoppos, putid)
+    put = 'PUT'
+    get = 'GET'
+    oldids = set()          # set of all PUT ids
+    newids = {}             # set of ids used by a GET opcode
+    opcodes = []            # (op, idx) or (pos, end_pos)
     proto = 0
+    protoheader = b''
     for opcode, arg, pos, end_pos in _genops(p, yield_end_pos=True):
         if 'PUT' in opcode.name:
-            opcodes.append((pos, end_pos, arg))
+            oldids.add(arg)
+            opcodes.append((put, arg))
+        elif opcode.name == 'MEMOIZE':
+            idx = len(oldids)
+            oldids.add(idx)
+            opcodes.append((put, idx))
         elif 'FRAME' in opcode.name:
             pass
-        else:
-            if 'GET' in opcode.name:
-                gets.add(arg)
-            elif opcode.name == 'PROTO':
-                assert pos == 0, pos
+        elif 'GET' in opcode.name:
+            if opcode.proto > proto:
+                proto = opcode.proto
+            newids[arg] = None
+            opcodes.append((get, arg))
+        elif opcode.name == 'PROTO':
+            if arg > proto:
                 proto = arg
-            opcodes.append((pos, end_pos, not_a_put))
-            prevpos, prevarg = pos, None
+            if pos == 0:
+                protoheader = p[pos: end_pos]
+            else:
+                opcodes.append((pos, end_pos))
+        else:
+            opcodes.append((pos, end_pos))
+    del oldids
 
     # Copy the opcodes except for PUTS without a corresponding GET
     out = io.BytesIO()
-    opcodes = iter(opcodes)
-    if proto >= 2:
-        # Write the PROTO header before any framing
-        start, stop, _ = next(opcodes)
-        out.write(p[start:stop])
-    buf = pickle._Framer(out.write)
+    # Write the PROTO header before any framing
+    out.write(protoheader)
+    pickler = pickle._Pickler(out, proto)
     if proto >= 4:
-        buf.start_framing()
-    for start, stop, putid in opcodes:
-        if putid in gets:
-            buf.commit_frame()
-            buf.write(p[start:stop])
-    if proto >= 4:
-        buf.end_framing()
+        pickler.framer.start_framing()
+    idx = 0
+    for op, arg in opcodes:
+        if op is put:
+            if arg not in newids:
+                continue
+            data = pickler.put(idx)
+            newids[arg] = idx
+            idx += 1
+        elif op is get:
+            data = pickler.get(newids[arg])
+        else:
+            data = p[op:arg]
+        pickler.framer.commit_frame()
+        pickler.write(data)
+    pickler.framer.end_framing()
     return out.getvalue()
 
 ##############################################################################
@@ -2420,6 +2440,7 @@ def dis(pickle, out=None, memo=None, indentlevel=4, annotate=0):
         if opcode.name in ("PUT", "BINPUT", "LONG_BINPUT", "MEMOIZE"):
             if opcode.name == "MEMOIZE":
                 memo_idx = len(memo)
+                markmsg = "(as %d)" % memo_idx
             else:
                 assert arg is not None
                 memo_idx = arg
@@ -2773,7 +2794,7 @@ def _test():
     return doctest.testmod()
 
 if __name__ == "__main__":
-    import sys, argparse
+    import argparse
     parser = argparse.ArgumentParser(
         description='disassemble one or more pickle files')
     parser.add_argument(

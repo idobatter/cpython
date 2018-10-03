@@ -2,7 +2,6 @@ import sys
 import unittest
 import io
 import atexit
-import _testcapi
 from test import support
 
 ### helpers
@@ -178,9 +177,5 @@ class SubinterpreterTest(unittest.TestCase):
         self.assertEqual(atexit._ncallbacks(), n)
 
 
-def test_main():
-    support.run_unittest(__name__)
-
-
 if __name__ == "__main__":
-    test_main()
+    unittest.main()

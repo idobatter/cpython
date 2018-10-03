@@ -304,7 +304,7 @@ All of the components of an XML document are subclasses of :class:`Node`.
 .. attribute:: Node.prefix
 
    The part of the :attr:`tagName` preceding the colon if there is one, else the
-   empty string.  The value is a string, or ``None``
+   empty string.  The value is a string, or ``None``.
 
 
 .. attribute:: Node.namespaceURI
@@ -412,7 +412,7 @@ objects:
 .. method:: NodeList.item(i)
 
    Return the *i*'th item from the sequence, if there is one, or ``None``.  The
-   index *i* is not allowed to be less then zero or greater than or equal to the
+   index *i* is not allowed to be less than zero or greater than or equal to the
    length of the sequence.
 
 

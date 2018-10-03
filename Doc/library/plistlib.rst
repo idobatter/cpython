@@ -32,9 +32,12 @@ Values can be strings, integers, floats, booleans, tuples, lists, dictionaries
 (but only with string keys), :class:`Data`, :class:`bytes`, :class:`bytesarray`
 or :class:`datetime.datetime` objects.
 
+.. versionchanged:: 3.4
+   New API, old API deprecated.  Support for binary format plists added.
+
 .. seealso::
 
-   `PList manual page <http://developer.apple.com/documentation/Darwin/Reference/ManPages/man5/plist.5.html>`_
+   `PList manual page <https://developer.apple.com/library/mac/documentation/Darwin/Reference/ManPages/man5/plist.5.html>`_
       Apple's documentation of the file format.
 
 
@@ -79,6 +82,8 @@ This module defines the following functions:
    Load a plist from a bytes object. See :func:`load` for an explanation of
    the keyword arguments.
 
+   .. versionadded:: 3.4
+
 
 .. function:: dump(value, fp, \*, fmt=FMT_XML, sort_keys=True, skipkeys=False)
 
@@ -102,8 +107,10 @@ This module defines the following functions:
    A :exc:`TypeError` will be raised if the object is of an unsupported type or
    a container that contains objects of unsupported types.
 
-   .. versionchanged:: 3.4
-      Added the *fmt*, *sort_keys* and *skipkeys* arguments.
+   An :exc:`OverflowError` will be raised for integer values that cannot
+   be represented in (binary) plist files.
+
+   .. versionadded:: 3.4
 
 
 .. function:: dumps(value, \*, fmt=FMT_XML, sort_keys=True, skipkeys=False)
@@ -112,6 +119,7 @@ This module defines the following functions:
    the documentation for :func:`dump` for an explanation of the keyword
    arguments of this function.
 
+   .. versionadded:: 3.4
 
 The following functions are deprecated:
 
@@ -121,7 +129,7 @@ The following functions are deprecated:
    and binary) file object. Returns the unpacked root object (which usually
    is a dictionary).
 
-   This function calls :func:`load` to do the actual work, the the documentation
+   This function calls :func:`load` to do the actual work, see the documentation
    of :func:`that function <load>` for an explanation of the keyword arguments.
 
    .. note::
@@ -130,7 +138,7 @@ The following functions are deprecated:
       to ``__getitem_``. This means that you can use attribute access to
       access items of these dictionaries.
 
-   .. deprecated: 3.4 Use :func:`load` instead.
+   .. deprecated:: 3.4 Use :func:`load` instead.
 
 
 .. function:: writePlist(rootObject, pathOrFile)
@@ -138,7 +146,7 @@ The following functions are deprecated:
    Write *rootObject* to an XML plist file. *pathOrFile* may be either a file name
    or a (writable and binary) file object
 
-   .. deprecated: 3.4 Use :func:`dump` instead.
+   .. deprecated:: 3.4 Use :func:`dump` instead.
 
 
 .. function:: readPlistFromBytes(data)
@@ -161,9 +169,6 @@ The following functions are deprecated:
    Return *rootObject* as an XML plist-formatted bytes object.
 
    .. deprecated:: 3.4 Use :func:`dumps` instead.
-
-   .. versionchanged:: 3.4
-      Added the *fmt*, *sort_keys* and *skipkeys* arguments.
 
 
 The following classes are available:
@@ -189,10 +194,10 @@ The following classes are available:
    It has one attribute, :attr:`data`, that can be used to retrieve the Python
    bytes object stored in it.
 
-   .. deprecated:: 3.4 Use a :class:`bytes` object instead
+   .. deprecated:: 3.4 Use a :class:`bytes` object instead.
 
 
-The following constants are avaiable:
+The following constants are available:
 
 .. data:: FMT_XML
 

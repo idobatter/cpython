@@ -7,6 +7,8 @@
 .. sectionauthor:: Tim Peters <tim@zope.com>
 .. sectionauthor:: A.M. Kuchling <amk@amk.ca>
 
+**Source code:** :source:`Lib/datetime.py`
+
 .. XXX what order should the types be discussed in?
 
 The :mod:`datetime` module supplies classes for manipulating dates and times in
@@ -558,7 +560,7 @@ Instance methods:
    Return a 3-tuple, (ISO year, ISO week number, ISO weekday).
 
    The ISO calendar is a widely used variant of the Gregorian calendar. See
-   http://www.phys.uu.nl/~vgent/calendar/isocalendar.htm for a good
+   http://www.staff.science.uu.nl/~gent0113/calendar/isocalendar.htm for a good
    explanation.
 
    The ISO year consists of 52 or 53 full weeks, and where a week starts on a
@@ -664,8 +666,8 @@ Example of working with :class:`date`:
 
 .. _datetime-datetime:
 
-:class:`datetime` Objects
--------------------------
+:class:`.datetime` Objects
+--------------------------
 
 A :class:`.datetime` object is a single object containing all the information
 from a :class:`date` object and a :class:`.time` object.  Like a :class:`date`
@@ -757,13 +759,19 @@ Other constructors, all class methods:
    :attr:`tzinfo` ``None``. This may raise :exc:`OverflowError`, if the timestamp is
    out of the range of values supported by the platform C :c:func:`gmtime` function,
    and :exc:`OSError` on :c:func:`gmtime` failure.
-   It's common for this to be restricted to years in 1970 through 2038. See also
-   :meth:`fromtimestamp`.
+   It's common for this to be restricted to years in 1970 through 2038.
 
-   On the POSIX compliant platforms, ``utcfromtimestamp(timestamp)``
-   is equivalent to the following expression::
+   To get an aware :class:`.datetime` object, call :meth:`fromtimestamp`::
 
-     datetime(1970, 1, 1) + timedelta(seconds=timestamp)
+     datetime.fromtimestamp(timestamp, timezone.utc)
+
+   On the POSIX compliant platforms, it is equivalent to the following
+   expression::
+
+     datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=timestamp)
+
+   except the latter formula always supports the full years range: between
+   :const:`MINYEAR` and :const:`MAXYEAR` inclusive.
 
    .. versionchanged:: 3.3
       Raise :exc:`OverflowError` instead of :exc:`ValueError` if the timestamp
@@ -1376,10 +1384,13 @@ Supported operations:
 
 * efficient pickling
 
-* in Boolean contexts, a :class:`.time` object is considered to be true if and
-  only if, after converting it to minutes and subtracting :meth:`utcoffset` (or
-  ``0`` if that's ``None``), the result is non-zero.
+In boolean contexts, a :class:`.time` object is always considered to be true.
 
+.. versionchanged:: 3.5
+   Before Python 3.5, a :class:`.time` object was considered to be false if it
+   represented midnight in UTC.  This behavior was considered obscure and
+   error-prone and has been removed in Python 3.5.  See :issue:`13936` for full
+   details.
 
 Instance methods:
 
@@ -1686,12 +1697,12 @@ only EST (fixed offset -5 hours), or only EDT (fixed offset -4 hours)).
 
 .. seealso::
 
-   `pytz <http://pypi.python.org/pypi/pytz/>`_
-      The standard library has no :class:`tzinfo` instances except for UTC, but
-      there exists a third-party library which brings the *IANA timezone
-      database* (also known as the Olson database) to Python: *pytz*.
+   `pytz <https://pypi.python.org/pypi/pytz/>`_
+      The standard library has :class:`timezone` class for handling arbitrary
+      fixed offsets from UTC and :attr:`timezone.utc` as UTC timezone instance.
 
-      *pytz* contains up-to-date information and its usage is recommended.
+      *pytz* library brings the *IANA timezone database* (also known as the
+      Olson database) to Python and its usage is recommended.
 
    `IANA timezone database <http://www.iana.org/time-zones>`_
       The Time Zone Database (often called tz or zoneinfo) contains code and
@@ -1723,10 +1734,9 @@ made to civil time.
   otherwise :exc:`ValueError` is raised.
 
   The *name* argument is optional.  If specified it must be a string that
-  is used as the value returned by the ``tzname(dt)`` method.  Otherwise,
-  ``tzname(dt)`` returns a string 'UTCsHH:MM', where s is the sign of
-  *offset*, HH and MM are two digits of ``offset.hours`` and
-  ``offset.minutes`` respectively.
+  will be used as the value returned by the :meth:`datetime.tzname` method.
+
+  .. versionadded:: 3.2
 
 .. method:: timezone.utcoffset(dt)
 
@@ -1737,10 +1747,18 @@ made to civil time.
 
 .. method:: timezone.tzname(dt)
 
-  Return the fixed value specified when the :class:`timezone` instance is
-  constructed or a string 'UTCsHH:MM', where s is the sign of
-  *offset*, HH and MM are two digits of ``offset.hours`` and
+  Return the fixed value specified when the :class:`timezone` instance
+  is constructed.  If *name* is not provided in the constructor, the
+  name returned by ``tzname(dt)`` is generated from the value of the
+  ``offset`` as follows.  If *offset* is ``timedelta(0)``, the name
+  is "UTC", otherwise it is a string 'UTC±HH:MM', where ± is the sign
+  of ``offset``, HH and MM are two digits of ``offset.hours`` and
   ``offset.minutes`` respectively.
+
+  .. versionchanged:: 3.6
+     Name generated from ``offset=timedelta(0)`` is now plain 'UTC', not
+     'UTC+00:00'.
+
 
 .. method:: timezone.dst(dt)
 
@@ -1891,6 +1909,34 @@ format codes.
 | ``%%``    | A literal ``'%'`` character.   | %                      |       |
 +-----------+--------------------------------+------------------------+-------+
 
+Several additional directives not required by the C89 standard are included for
+convenience. These parameters all correspond to ISO 8601 date values. These
+may not be available on all platforms when used with the :meth:`strftime`
+method. The ISO 8601 year and ISO 8601 week directives are not interchangeable
+with the year and week number directives above. Calling :meth:`strptime` with
+incomplete or ambiguous ISO 8601 directives will raise a :exc:`ValueError`.
+
++-----------+--------------------------------+------------------------+-------+
+| Directive | Meaning                        | Example                | Notes |
++===========+================================+========================+=======+
+| ``%G``    | ISO 8601 year with century     | 0001, 0002, ..., 2013, | \(8)  |
+|           | representing the year that     | 2014, ..., 9998, 9999  |       |
+|           | contains the greater part of   |                        |       |
+|           | the ISO week (``%V``).         |                        |       |
++-----------+--------------------------------+------------------------+-------+
+| ``%u``    | ISO 8601 weekday as a decimal  | 1, 2, ..., 7           |       |
+|           | number where 1 is Monday.      |                        |       |
++-----------+--------------------------------+------------------------+-------+
+| ``%V``    | ISO 8601 week as a decimal     | 01, 02, ..., 53        | \(8)  |
+|           | number with Monday as          |                        |       |
+|           | the first day of the week.     |                        |       |
+|           | Week 01 is the week containing |                        |       |
+|           | Jan 4.                         |                        |       |
++-----------+--------------------------------+------------------------+-------+
+
+.. versionadded:: 3.6
+   ``%G``, ``%u`` and ``%V`` were added.
+
 Notes:
 
 (1)
@@ -1955,7 +2001,14 @@ Notes:
 
 (7)
    When used with the :meth:`strptime` method, ``%U`` and ``%W`` are only used
-   in calculations when the day of the week and the year are specified.
+   in calculations when the day of the week and the calendar year (``%Y``)
+   are specified.
+
+(8)
+   Similar to ``%U`` and ``%W``, ``%V`` is only used in calculations when the
+   day of the week and the ISO year (``%G``) are specified in a
+   :meth:`strptime` format string. Also note that ``%G`` and ``%Y`` are not
+   interchangable.
 
 .. rubric:: Footnotes
 

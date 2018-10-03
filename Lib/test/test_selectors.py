@@ -1,16 +1,15 @@
 import errno
+import os
 import random
 import selectors
 import signal
 import socket
+import sys
 from test import support
 from time import sleep
 import unittest
 import unittest.mock
-try:
-    from time import monotonic as time
-except ImportError:
-    from time import time as time
+from time import monotonic as time
 try:
     import resource
 except ImportError:
@@ -23,7 +22,7 @@ else:
     def socketpair(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=0):
         with socket.socket(family, type, proto) as l:
             l.bind((support.HOST, 0))
-            l.listen(3)
+            l.listen()
             c = socket.socket(family, type, proto)
             try:
                 c.connect(l.getsockname())
@@ -49,13 +48,17 @@ def find_ready_matching(ready, flag):
 
 class BaseSelectorTestCase(unittest.TestCase):
 
+    def make_socketpair(self):
+        rd, wr = socketpair()
+        self.addCleanup(rd.close)
+        self.addCleanup(wr.close)
+        return rd, wr
+
     def test_register(self):
         s = self.SELECTOR()
         self.addCleanup(s.close)
 
-        rd, wr = socketpair()
-        self.addCleanup(rd.close)
-        self.addCleanup(wr.close)
+        rd, wr = self.make_socketpair()
 
         key = s.register(rd, selectors.EVENT_READ, "data")
         self.assertIsInstance(key, selectors.SelectorKey)
@@ -81,9 +84,7 @@ class BaseSelectorTestCase(unittest.TestCase):
         s = self.SELECTOR()
         self.addCleanup(s.close)
 
-        rd, wr = socketpair()
-        self.addCleanup(rd.close)
-        self.addCleanup(wr.close)
+        rd, wr = self.make_socketpair()
 
         s.register(rd, selectors.EVENT_READ)
         s.unregister(rd)
@@ -94,13 +95,52 @@ class BaseSelectorTestCase(unittest.TestCase):
         # unregister twice
         self.assertRaises(KeyError, s.unregister, rd)
 
+    def test_unregister_after_fd_close(self):
+        s = self.SELECTOR()
+        self.addCleanup(s.close)
+        rd, wr = self.make_socketpair()
+        r, w = rd.fileno(), wr.fileno()
+        s.register(r, selectors.EVENT_READ)
+        s.register(w, selectors.EVENT_WRITE)
+        rd.close()
+        wr.close()
+        s.unregister(r)
+        s.unregister(w)
+
+    @unittest.skipUnless(os.name == 'posix', "requires posix")
+    def test_unregister_after_fd_close_and_reuse(self):
+        s = self.SELECTOR()
+        self.addCleanup(s.close)
+        rd, wr = self.make_socketpair()
+        r, w = rd.fileno(), wr.fileno()
+        s.register(r, selectors.EVENT_READ)
+        s.register(w, selectors.EVENT_WRITE)
+        rd2, wr2 = self.make_socketpair()
+        rd.close()
+        wr.close()
+        os.dup2(rd2.fileno(), r)
+        os.dup2(wr2.fileno(), w)
+        self.addCleanup(os.close, r)
+        self.addCleanup(os.close, w)
+        s.unregister(r)
+        s.unregister(w)
+
+    def test_unregister_after_socket_close(self):
+        s = self.SELECTOR()
+        self.addCleanup(s.close)
+        rd, wr = self.make_socketpair()
+        s.register(rd, selectors.EVENT_READ)
+        s.register(wr, selectors.EVENT_WRITE)
+        rd.close()
+        wr.close()
+        s.unregister(rd)
+        s.unregister(wr)
+
     def test_modify(self):
         s = self.SELECTOR()
         self.addCleanup(s.close)
 
-        rd, wr = socketpair()
-        self.addCleanup(rd.close)
-        self.addCleanup(wr.close)
+        rd, wr = self.make_socketpair()
 
         key = s.register(rd, selectors.EVENT_READ)
 
@@ -138,24 +178,23 @@ class BaseSelectorTestCase(unittest.TestCase):
         s = self.SELECTOR()
         self.addCleanup(s.close)
 
-        rd, wr = socketpair()
-        self.addCleanup(rd.close)
-        self.addCleanup(wr.close)
+        mapping = s.get_map()
+        rd, wr = self.make_socketpair()
 
         s.register(rd, selectors.EVENT_READ)
         s.register(wr, selectors.EVENT_WRITE)
 
         s.close()
-        self.assertRaises(KeyError, s.get_key, rd)
-        self.assertRaises(KeyError, s.get_key, wr)
+        self.assertRaises(RuntimeError, s.get_key, rd)
+        self.assertRaises(RuntimeError, s.get_key, wr)
+        self.assertRaises(KeyError, mapping.__getitem__, rd)
+        self.assertRaises(KeyError, mapping.__getitem__, wr)
 
     def test_get_key(self):
         s = self.SELECTOR()
         self.addCleanup(s.close)
 
-        rd, wr = socketpair()
-        self.addCleanup(rd.close)
-        self.addCleanup(wr.close)
+        rd, wr = self.make_socketpair()
 
         key = s.register(rd, selectors.EVENT_READ, "data")
         self.assertEqual(key, s.get_key(rd))
@@ -167,9 +206,7 @@ class BaseSelectorTestCase(unittest.TestCase):
         s = self.SELECTOR()
         self.addCleanup(s.close)
 
-        rd, wr = socketpair()
-        self.addCleanup(rd.close)
-        self.addCleanup(wr.close)
+        rd, wr = self.make_socketpair()
 
         keys = s.get_map()
         self.assertFalse(keys)
@@ -194,9 +231,7 @@ class BaseSelectorTestCase(unittest.TestCase):
         s = self.SELECTOR()
         self.addCleanup(s.close)
 
-        rd, wr = socketpair()
-        self.addCleanup(rd.close)
-        self.addCleanup(wr.close)
+        rd, wr = self.make_socketpair()
 
         s.register(rd, selectors.EVENT_READ)
         wr_key = s.register(wr, selectors.EVENT_WRITE)
@@ -214,16 +249,14 @@ class BaseSelectorTestCase(unittest.TestCase):
         s = self.SELECTOR()
         self.addCleanup(s.close)
 
-        rd, wr = socketpair()
-        self.addCleanup(rd.close)
-        self.addCleanup(wr.close)
+        rd, wr = self.make_socketpair()
 
         with s as sel:
             sel.register(rd, selectors.EVENT_READ)
             sel.register(wr, selectors.EVENT_WRITE)
 
-        self.assertRaises(KeyError, s.get_key, rd)
-        self.assertRaises(KeyError, s.get_key, wr)
+        self.assertRaises(RuntimeError, s.get_key, rd)
+        self.assertRaises(RuntimeError, s.get_key, wr)
 
     def test_fileno(self):
         s = self.SELECTOR()
@@ -247,9 +280,7 @@ class BaseSelectorTestCase(unittest.TestCase):
         w2r = {}
 
         for i in range(NUM_SOCKETS):
-            rd, wr = socketpair()
-            self.addCleanup(rd.close)
-            self.addCleanup(wr.close)
+            rd, wr = self.make_socketpair()
             s.register(rd, selectors.EVENT_READ)
             s.register(wr, selectors.EVENT_WRITE)
             readers.append(rd)
@@ -289,13 +320,20 @@ class BaseSelectorTestCase(unittest.TestCase):
 
         self.assertEqual(bufs, [MSG] * NUM_SOCKETS)
 
+    @unittest.skipIf(sys.platform == 'win32',
+                     'select.select() cannot be used with empty fd sets')
+    def test_empty_select(self):
+        # Issue #23009: Make sure EpollSelector.select() works when no FD is
+        # registered.
+        s = self.SELECTOR()
+        self.addCleanup(s.close)
+        self.assertEqual(s.select(timeout=0), [])
+
     def test_timeout(self):
         s = self.SELECTOR()
         self.addCleanup(s.close)
 
-        rd, wr = socketpair()
-        self.addCleanup(rd.close)
-        self.addCleanup(wr.close)
+        rd, wr = self.make_socketpair()
 
         s.register(wr, selectors.EVENT_WRITE)
         t = time()
@@ -314,17 +352,44 @@ class BaseSelectorTestCase(unittest.TestCase):
         self.assertFalse(s.select(1))
         t1 = time()
         dt = t1 - t0
-        self.assertTrue(0.8 <= dt <= 1.6, dt)
+        # Tolerate 2.0 seconds for very slow buildbots
+        self.assertTrue(0.8 <= dt <= 2.0, dt)
 
     @unittest.skipUnless(hasattr(signal, "alarm"),
                          "signal.alarm() required for this test")
-    def test_select_interrupt(self):
+    def test_select_interrupt_exc(self):
         s = self.SELECTOR()
         self.addCleanup(s.close)
 
-        rd, wr = socketpair()
-        self.addCleanup(rd.close)
-        self.addCleanup(wr.close)
+        rd, wr = self.make_socketpair()
+
+        class InterruptSelect(Exception):
+            pass
+
+        def handler(*args):
+            raise InterruptSelect
+
+        orig_alrm_handler = signal.signal(signal.SIGALRM, handler)
+        self.addCleanup(signal.signal, signal.SIGALRM, orig_alrm_handler)
+        self.addCleanup(signal.alarm, 0)
+
+        signal.alarm(1)
+
+        s.register(rd, selectors.EVENT_READ)
+        t = time()
+        # select() is interrupted by a signal which raises an exception
+        with self.assertRaises(InterruptSelect):
+            s.select(30)
+        # select() was interrupted before the timeout of 30 seconds
+        self.assertLess(time() - t, 5.0)
+
+    @unittest.skipUnless(hasattr(signal, "alarm"),
+                         "signal.alarm() required for this test")
+    def test_select_interrupt_noraise(self):
+        s = self.SELECTOR()
+        self.addCleanup(s.close)
+
+        rd, wr = self.make_socketpair()
 
         orig_alrm_handler = signal.signal(signal.SIGALRM, lambda *args: None)
         self.addCleanup(signal.signal, signal.SIGALRM, orig_alrm_handler)
@@ -334,8 +399,11 @@ class BaseSelectorTestCase(unittest.TestCase):
 
         s.register(rd, selectors.EVENT_READ)
         t = time()
-        self.assertFalse(s.select(2))
-        self.assertLess(time() - t, 2.5)
+        # select() is interrupted by a signal, but the signal handler doesn't
+        # raise an exception, so select() should by retries with a recomputed
+        # timeout
+        self.assertFalse(s.select(1.5))
+        self.assertGreaterEqual(time() - t, 1.0)
 
 
 class ScalableSelectorMixIn:
@@ -352,7 +420,7 @@ class ScalableSelectorMixIn:
             resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
             self.addCleanup(resource.setrlimit, resource.RLIMIT_NOFILE,
                             (soft, hard))
-            NUM_FDS = hard
+            NUM_FDS = min(hard, 2**16)
         except (OSError, ValueError):
             NUM_FDS = soft
 
@@ -364,15 +432,12 @@ class ScalableSelectorMixIn:
 
         for i in range(NUM_FDS // 2):
             try:
-                rd, wr = socketpair()
+                rd, wr = self.make_socketpair()
             except OSError:
                 # too many FDs, skip - note that we should only catch EMFILE
                 # here, but apparently *BSD and Solaris can fail upon connect()
                 # or bind() with EADDRNOTAVAIL, so let's be safe
                 self.skipTest("FD limit reached")
-
-            self.addCleanup(rd.close)
-            self.addCleanup(wr.close)
 
             try:
                 s.register(rd, selectors.EVENT_READ)
@@ -418,10 +483,18 @@ class KqueueSelectorTestCase(BaseSelectorTestCase, ScalableSelectorMixIn):
     SELECTOR = getattr(selectors, 'KqueueSelector', None)
 
 
+@unittest.skipUnless(hasattr(selectors, 'DevpollSelector'),
+                     "Test needs selectors.DevpollSelector")
+class DevpollSelectorTestCase(BaseSelectorTestCase, ScalableSelectorMixIn):
+
+    SELECTOR = getattr(selectors, 'DevpollSelector', None)
+
+
+
 def test_main():
     tests = [DefaultSelectorTestCase, SelectSelectorTestCase,
              PollSelectorTestCase, EpollSelectorTestCase,
-             KqueueSelectorTestCase]
+             KqueueSelectorTestCase, DevpollSelectorTestCase]
     support.run_unittest(*tests)
     support.reap_children()
 

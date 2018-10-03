@@ -54,6 +54,7 @@ this module.
    documented in this module because of the provisional nature of the code, the
    implementation lives in the :mod:`email.message` module.
 
+.. currentmodule:: email.message
 
 .. class:: EmailMessage(policy=default)
 
@@ -69,10 +70,14 @@ this module.
    the following methods:
 
 
-   .. attribute:: is_attachment
+   .. method:: is_attachment
 
-      Set to ``True`` if there is a :mailheader:`Content-Disposition` header
+      Return ``True`` if there is a :mailheader:`Content-Disposition` header
       and its (case insensitive) value is ``attachment``, ``False`` otherwise.
+
+      .. versionchanged:: 3.4.2
+         is_attachment is now a method instead of a property, for consistency
+         with :meth:`~email.message.Message.is_multipart`.
 
 
    .. method:: get_body(preferencelist=('related', 'html', 'plain'))
@@ -235,6 +240,16 @@ this module.
       all other headers intact and in their original order.
 
 
+.. class:: MIMEPart(policy=default)
+
+    This class represents a subpart of a MIME message.  It is identical to
+    :class:`EmailMessage`, except that no :mailheader:`MIME-Version` headers are
+    added when :meth:`~EmailMessage.set_content` is called, since sub-parts do
+    not need their own :mailheader:`MIME-Version` headers.
+
+
+.. currentmodule:: email.contentmanager
+
 .. class:: ContentManager()
 
    Base class for content managers.  Provides the standard registry mechanisms
@@ -303,14 +318,6 @@ this module.
       Record *handler* as the function to call when an object of a type
       matching *typekey* is passed to :meth:`set_content`.  For the possible
       values of *typekey*, see :meth:`set_content`.
-
-
-.. class:: MIMEPart(policy=default)
-
-    This class represents a subpart of a MIME message.  It is identical to
-    :class:`EmailMessage`, except that no :mailheader:`MIME-Version` headers are
-    added when :meth:`~EmailMessage.set_content` is called, since sub-parts do
-    not need their own :mailheader:`MIME-Version` headers.
 
 
 Content Manager Instances
@@ -418,7 +425,7 @@ Currently the email package provides only one concrete content manager,
        *cid* as its value.
 
        If *params* is specified, iterate its ``items`` method and use the
-       resulting ``(key, value)`` pairs to set additional paramters on the
+       resulting ``(key, value)`` pairs to set additional parameters on the
        :mailheader:`Content-Type` header.
 
        If *headers* is specified and is a list of strings of the form

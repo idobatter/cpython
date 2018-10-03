@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from Cocoa import NSMutableDictionary, NSMutableArray, NSString, NSDate
+from Cocoa import NSMutableDictionary, NSMutableArray, NSString, NSDate, NSNumber
 from Cocoa import NSPropertyListSerialization, NSPropertyListOpenStepFormat
 from Cocoa import NSPropertyListXMLFormat_v1_0, NSPropertyListBinaryFormat_v1_0
 from Cocoa import CFUUIDCreateFromString, NSNull, NSUUID, CFPropertyListCreateData
@@ -23,7 +23,14 @@ def nsstr(value):
 def main():
     pl = OrderedDict()
 
+    # Note: pl is an OrderedDict to control the order
+    # of keys, and hence have some control on the structure
+    # of the output file.
+    # New keys should be added in alphabetical order.
+
     seconds = datetime.datetime(2004, 10, 26, 10, 33, 33, tzinfo=datetime.timezone(datetime.timedelta(0))).timestamp()
+    pl[nsstr('aBigInt')] = 2 ** 63 - 44
+    pl[nsstr('aBigInt2')] = NSNumber.numberWithUnsignedLongLong_(2 ** 63 + 44)
     pl[nsstr('aDate')] = NSDate.dateWithTimeIntervalSince1970_(seconds)
 
     pl[nsstr('aDict')] = d = OrderedDict()
@@ -52,6 +59,8 @@ def main():
     aa.append(2)
     aa.append(3)
 
+    pl[nsstr('aNegativeBigInt')] = -80000000000
+    pl[nsstr('aNegativeInt')] = -5
     pl[nsstr('aString')] = nsstr('Doodah')
 
     pl[nsstr('anEmptyDict')] = NSMutableDictionary.alloc().init()

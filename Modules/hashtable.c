@@ -233,11 +233,12 @@ _Py_hashtable_print_stats(_Py_hashtable_t *ht)
             nchains++;
         }
     }
-    printf("hash table %p: entries=%zu/%zu (%.0f%%), ",
+    printf("hash table %p: entries=%"
+           PY_FORMAT_SIZE_T "u/%" PY_FORMAT_SIZE_T "u (%.0f%%), ",
            ht, ht->entries, ht->num_buckets, load * 100.0);
     if (nchains)
         printf("avg_chain_len=%.1f, ", (double)total_chain_len / nchains);
-    printf("max_chain_len=%zu, %zu kB\n",
+    printf("max_chain_len=%" PY_FORMAT_SIZE_T "u, %" PY_FORMAT_SIZE_T "u kB\n",
            max_chain_len, size / 1024);
 }
 #endif
@@ -326,7 +327,7 @@ _Py_hashtable_set(_Py_hashtable_t *ht, const void *key,
     entry->key_hash = key_hash;
 
     assert(data_size == ht->data_size);
-    memcpy(_PY_HASHTABLE_ENTRY_DATA(entry), data, data_size);
+    memcpy(_Py_HASHTABLE_ENTRY_DATA(entry), data, data_size);
 
     _Py_slist_prepend(&ht->buckets[index], (_Py_slist_item_t*)entry);
     ht->entries++;
@@ -504,7 +505,7 @@ _Py_hashtable_copy(_Py_hashtable_t *src)
                     err = 1;
             }
             else {
-                data = _PY_HASHTABLE_ENTRY_DATA(entry);
+                data = _Py_HASHTABLE_ENTRY_DATA(entry);
                 err = _Py_hashtable_set(dst, entry->key, data, src->data_size);
             }
             if (err) {

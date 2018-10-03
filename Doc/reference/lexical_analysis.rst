@@ -76,12 +76,14 @@ are ignored by the syntax; they are not tokens.
 Encoding declarations
 ---------------------
 
-.. index:: source character set, encodings
+.. index:: source character set, encoding declarations (source file)
 
 If a comment in the first or second line of the Python script matches the
 regular expression ``coding[=:]\s*([-\w.]+)``, this comment is processed as an
 encoding declaration; the first group of this expression names the encoding of
-the source code file. The recommended forms of this expression are ::
+the source code file. The encoding declaration must appear on a line of its
+own. If it is the second line, the first line must also be a comment-only line.
+The recommended forms of an encoding expression are ::
 
    # -*- coding: <encoding-name> -*-
 
@@ -98,7 +100,7 @@ among others, by Microsoft's :program:`notepad`).
 
 If an encoding is declared, the encoding name must be recognized by Python. The
 encoding is used for all lexical analysis, including string literals, comments
-and identifiers. The encoding declaration must appear on a line of its own.
+and identifiers.
 
 .. XXX there should be a list of supported encodings.
 
@@ -310,7 +312,9 @@ The Unicode category codes mentioned above stand for:
 * *Mc* - spacing combining marks
 * *Nd* - decimal numbers
 * *Pc* - connector punctuations
-* *Other_ID_Start* - explicit list of characters in `PropList.txt <http://unicode.org/Public/UNIDATA/PropList.txt>`_ to support backwards compatibility
+* *Other_ID_Start* - explicit list of characters in `PropList.txt
+  <http://www.unicode.org/Public/8.0.0/ucd/PropList.txt>`_ to support backwards
+  compatibility
 * *Other_ID_Continue* - likewise
 
 All identifiers are converted into the normal form NFKC while parsing; comparison
@@ -441,7 +445,7 @@ instance of the :class:`bytes` type instead of the :class:`str` type.  They
 may only contain ASCII characters; bytes with a numeric value of 128 or greater
 must be expressed with escapes.
 
-As of Python 3.3 it is possible again to prefix unicode strings with a
+As of Python 3.3 it is possible again to prefix string literals with a
 ``u`` prefix to simplify maintenance of dual 2.x and 3.x codebases.
 
 Both string and bytes literals may optionally be prefixed with a letter ``'r'``
@@ -451,24 +455,24 @@ escapes in raw strings are not treated specially. Given that Python 2.x's raw
 unicode literals behave differently than Python 3.x's the ``'ur'`` syntax
 is not supported.
 
-   .. versionadded:: 3.3
-      The ``'rb'`` prefix of raw bytes literals has been added as a synonym
-      of ``'br'``.
+.. versionadded:: 3.3
+   The ``'rb'`` prefix of raw bytes literals has been added as a synonym
+   of ``'br'``.
 
-   .. versionadded:: 3.3
-      Support for the unicode legacy literal (``u'value'``) was reintroduced
-      to simplify the maintenance of dual Python 2.x and 3.x codebases.
-      See :pep:`414` for more information.
+.. versionadded:: 3.3
+   Support for the unicode legacy literal (``u'value'``) was reintroduced
+   to simplify the maintenance of dual Python 2.x and 3.x codebases.
+   See :pep:`414` for more information.
 
-In triple-quoted strings, unescaped newlines and quotes are allowed (and are
-retained), except that three unescaped quotes in a row terminate the string.  (A
-"quote" is the character used to open the string, i.e. either ``'`` or ``"``.)
+In triple-quoted literals, unescaped newlines and quotes are allowed (and are
+retained), except that three unescaped quotes in a row terminate the literal.  (A
+"quote" is the character used to open the literal, i.e. either ``'`` or ``"``.)
 
 .. index:: physical line, escape sequence, Standard C, C
 
-Unless an ``'r'`` or ``'R'`` prefix is present, escape sequences in strings are
-interpreted according to rules similar to those used by Standard C.  The
-recognized escape sequences are:
+Unless an ``'r'`` or ``'R'`` prefix is present, escape sequences in string and
+bytes literals are interpreted according to rules similar to those used by
+Standard C.  The recognized escape sequences are:
 
 +-----------------+---------------------------------+-------+
 | Escape Sequence | Meaning                         | Notes |
@@ -545,20 +549,20 @@ Notes:
 .. index:: unrecognized escape sequence
 
 Unlike Standard C, all unrecognized escape sequences are left in the string
-unchanged, i.e., *the backslash is left in the string*.  (This behavior is
+unchanged, i.e., *the backslash is left in the result*.  (This behavior is
 useful when debugging: if an escape sequence is mistyped, the resulting output
 is more easily recognized as broken.)  It is also important to note that the
 escape sequences only recognized in string literals fall into the category of
 unrecognized escapes for bytes literals.
 
-Even in a raw string, string quotes can be escaped with a backslash, but the
-backslash remains in the string; for example, ``r"\""`` is a valid string
+Even in a raw literal, quotes can be escaped with a backslash, but the
+backslash remains in the result; for example, ``r"\""`` is a valid string
 literal consisting of two characters: a backslash and a double quote; ``r"\"``
 is not a valid string literal (even a raw string cannot end in an odd number of
-backslashes).  Specifically, *a raw string cannot end in a single backslash*
+backslashes).  Specifically, *a raw literal cannot end in a single backslash*
 (since the backslash would escape the following quote character).  Note also
 that a single backslash followed by a newline is interpreted as those two
-characters as part of the string, *not* as a line continuation.
+characters as part of the literal, *not* as a line continuation.
 
 
 .. _string-catenation:
@@ -630,8 +634,7 @@ for disambiguation with C-style octal literals, which Python used before version
 Some examples of integer literals::
 
    7     2147483647                        0o177    0b100110111
-   3     79228162514264337593543950336     0o377    0x100000000
-         79228162514264337593543950336              0xdeadbeef
+   3     79228162514264337593543950336     0o377    0xdeadbeef
 
 
 .. _floating:
@@ -689,7 +692,7 @@ Operators
 
 The following tokens are operators::
 
-   +       -       *       **      /       //      %
+   +       -       *       **      /       //      %      @
    <<      >>      &       |       ^       ~
    <       >       <=      >=      ==      !=
 
@@ -705,7 +708,7 @@ The following tokens serve as delimiters in the grammar::
 
    (       )       [       ]       {       }
    ,       :       .       ;       @       =       ->
-   +=      -=      *=      /=      //=     %=
+   +=      -=      *=      /=      //=     %=      @=
    &=      |=      ^=      >>=     <<=     **=
 
 The period can also occur in floating-point and imaginary literals.  A sequence
@@ -726,4 +729,4 @@ occurrence outside string literals and comments is an unconditional error::
 
 .. rubric:: Footnotes
 
-.. [#] http://www.unicode.org/Public/6.1.0/ucd/NameAliases.txt
+.. [#] http://www.unicode.org/Public/8.0.0/ucd/NameAliases.txt

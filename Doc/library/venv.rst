@@ -40,11 +40,11 @@ Creating virtual environments
    A venv is a directory tree which contains Python executable files and
    other files which indicate that it is a venv.
 
-   Common installation tools such as ``Distribute`` and ``pip`` work as
+   Common installation tools such as ``Setuptools`` and ``pip`` work as
    expected with venvs - i.e. when a venv is active, they install Python
    packages into the venv without needing to be told to do so explicitly.
    Of course, you need to install them into the venv first: this could be
-   done by running ``distribute_setup.py`` with the venv activated,
+   done by running ``ez_setup.py`` with the venv activated,
    followed by running ``easy_install pip``. Alternatively, you could download
    the source tarballs and run ``python setup.py install`` after unpacking,
    with the venv activated.
@@ -75,6 +75,8 @@ Creating virtual environments
    a Windows Explorer window should run the script with the correct interpreter
    without there needing to be any reference to its venv in ``PATH``.
 
+
+.. _venv-api:
 
 API
 ---
@@ -107,7 +109,8 @@ creation according to their needs, the :class:`EnvBuilder` class.
       upgraded in-place (defaults to ``False``).
 
     * ``with_pip`` -- a Boolean value which, if true, ensures pip is
-      installed in the virtual environment
+      installed in the virtual environment. This uses :mod:`ensurepip` with
+      the ``--default-pip`` option.
 
     .. versionchanged:: 3.4
        Added the ``with_pip`` parameter

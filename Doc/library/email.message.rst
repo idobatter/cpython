@@ -34,7 +34,7 @@ Here are the methods of the :class:`Message` class:
 .. class:: Message(policy=compat32)
 
    If *policy* is specified (it must be an instance of a :mod:`~email.policy`
-   class) use the rules it specifies to udpate and serialize the representation
+   class) use the rules it specifies to update and serialize the representation
    of the message.  If *policy* is not set, use the :class:`compat32
    <email.policy.Compat32>` policy, which maintains backward compatibility with
    the Python 3.2 version of the email package.  For more information see the
@@ -131,7 +131,11 @@ Here are the methods of the :class:`Message` class:
 
       Return ``True`` if the message's payload is a list of sub-\
       :class:`Message` objects, otherwise return ``False``.  When
-      :meth:`is_multipart` returns ``False``, the payload should be a string object.
+      :meth:`is_multipart` returns ``False``, the payload should be a string
+      object.  (Note that :meth:`is_multipart` returning ``True`` does not
+      necessarily mean that "msg.get_content_maintype() == 'multipart'" will
+      return the ``True``.   For example, ``is_multipart`` will return ``True``
+      when the :class:`Message` is of type ``message/rfc822``.)
 
 
    .. method:: set_unixfrom(unixfrom)
@@ -466,7 +470,7 @@ Here are the methods of the :class:`Message` class:
       to ``False``.
 
 
-   .. method:: set_param(param, value, header='Content-Type', requote=True,
+   .. method:: set_param(param, value, header='Content-Type', requote=True, \
                          charset=None, language='', replace=False)
 
       Set a parameter in the :mailheader:`Content-Type` header.  If the
@@ -488,7 +492,7 @@ Here are the methods of the :class:`Message` class:
       end of the list of headers.  If *replace* is ``True``, the header
       will be updated in place.
 
-      .. versionchanged: 3.4 ``replace`` keyword was added.
+      .. versionchanged:: 3.4 ``replace`` keyword was added.
 
 
    .. method:: del_param(param, header='content-type', requote=True)
@@ -574,6 +578,15 @@ Here are the methods of the :class:`Message` class:
       will be *failobj*.
 
 
+   .. method:: get_content_disposition()
+
+      Return the lowercased value (without parameters) of the message's
+      :mailheader:`Content-Disposition` header if it has one, or ``None``.  The
+      possible values for this method are *inline*, *attachment* or ``None``
+      if the message follows :rfc:`2183`.
+
+      .. versionadded:: 3.5
+
    .. method:: walk()
 
       The :meth:`walk` method is an all-purpose generator which can be used to
@@ -584,23 +597,56 @@ Here are the methods of the :class:`Message` class:
       Here's an example that prints the MIME type of every part of a multipart
       message structure:
 
-       .. testsetup::
+      .. testsetup::
 
-            >>> from email import message_from_binary_file
-            >>> with open('Lib/test/test_email/data/msg_16.txt', 'rb') as f:
-            ...     msg = message_from_binary_file(f)
+         >>> from email import message_from_binary_file
+         >>> with open('Lib/test/test_email/data/msg_16.txt', 'rb') as f:
+         ...     msg = message_from_binary_file(f)
+         >>> from email.iterators import _structure
 
-       .. doctest::
+      .. doctest::
 
-            >>> for part in msg.walk():
-            ...     print(part.get_content_type())
-            multipart/report
-            text/plain
-            message/delivery-status
-            text/plain
-            text/plain
-            message/rfc822
-            text/plain
+         >>> for part in msg.walk():
+         ...     print(part.get_content_type())
+         multipart/report
+         text/plain
+         message/delivery-status
+         text/plain
+         text/plain
+         message/rfc822
+         text/plain
+
+      ``walk`` iterates over the subparts of any part where
+      :meth:`is_multipart` returns ``True``, even though
+      ``msg.get_content_maintype() == 'multipart'`` may return ``False``.  We
+      can see this in our example by making use of the ``_structure`` debug
+      helper function:
+
+      .. doctest::
+
+         >>> for part in msg.walk():
+         ...     print(part.get_content_maintype() == 'multipart'),
+         ...           part.is_multipart())
+         True True
+         False False
+         False True
+         False False
+         False False
+         False True
+         False False
+         >>> _structure(msg)
+         multipart/report
+             text/plain
+         message/delivery-status
+             text/plain
+             text/plain
+         message/rfc822
+             text/plain
+
+      Here the ``message`` parts are not ``multiparts``, but they do contain
+      subparts. ``is_multipart()`` returns ``True`` and ``walk`` descends
+      into the subparts.
+
 
    :class:`Message` objects can also optionally contain two instance attributes,
    which can be used when generating the plain text of a MIME message.

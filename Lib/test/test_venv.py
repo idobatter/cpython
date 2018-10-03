@@ -8,15 +8,18 @@ Licensed to the PSF under a contributor agreement.
 import ensurepip
 import os
 import os.path
-import shutil
+import struct
 import subprocess
 import sys
 import tempfile
-from test.support import (captured_stdout, captured_stderr, run_unittest,
-                          can_symlink, EnvironmentVarGuard)
+from test.support import (captured_stdout, captured_stderr,
+                          can_symlink, EnvironmentVarGuard, rmtree)
 import textwrap
 import unittest
 import venv
+
+# pip currently requires ssl support, so we ensure we handle
+# it being missing (http://bugs.python.org/issue19744)
 try:
     import ssl
 except ImportError:
@@ -25,6 +28,12 @@ except ImportError:
 skipInVenv = unittest.skipIf(sys.prefix != sys.base_prefix,
                              'Test not appropriate in a venv')
 
+# os.path.exists('nul') is False: http://bugs.python.org/issue20541
+if os.devnull.lower() == 'nul':
+    failsOnWindows = unittest.expectedFailure
+else:
+    def failsOnWindows(f):
+        return f
 
 class BaseTest(unittest.TestCase):
     """Base class for venv tests."""
@@ -46,7 +55,7 @@ class BaseTest(unittest.TestCase):
         self.exe = os.path.split(executable)[-1]
 
     def tearDown(self):
-        shutil.rmtree(self.env_dir)
+        rmtree(self.env_dir)
 
     def run_with_capture(self, func, *args, **kwargs):
         with captured_stdout() as output:
@@ -73,11 +82,19 @@ class BasicTest(BaseTest):
         """
         Test the create function with default arguments.
         """
-        shutil.rmtree(self.env_dir)
+        rmtree(self.env_dir)
         self.run_with_capture(venv.create, self.env_dir)
         self.isdir(self.bindir)
         self.isdir(self.include)
         self.isdir(*self.lib)
+        # Issue 21197
+        p = self.get_env_file('lib64')
+        conditions = ((struct.calcsize('P') == 8) and (os.name == 'posix') and
+                      (sys.platform != 'darwin'))
+        if conditions:
+            self.assertTrue(os.path.islink(p))
+        else:
+            self.assertFalse(os.path.exists(p))
         data = self.get_text_file_contents('pyvenv.cfg')
         if sys.platform == 'darwin' and ('__PYVENV_LAUNCHER__'
                                          in os.environ):
@@ -103,7 +120,7 @@ class BasicTest(BaseTest):
         self.assertEqual(sys.base_exec_prefix, sys.exec_prefix)
 
         # check a venv's prefixes
-        shutil.rmtree(self.env_dir)
+        rmtree(self.env_dir)
         self.run_with_capture(venv.create, self.env_dir)
         envpy = os.path.join(self.env_dir, self.bindir, self.exe)
         cmd = [envpy, '-c', None]
@@ -170,7 +187,7 @@ class BasicTest(BaseTest):
             if os.path.islink(fn) or os.path.isfile(fn):
                 os.remove(fn)
             elif os.path.isdir(fn):
-                shutil.rmtree(fn)
+                rmtree(fn)
 
     def test_unoverwritable_fails(self):
         #create a file clashing with directories in the env dir
@@ -185,17 +202,22 @@ class BasicTest(BaseTest):
         """
         Test upgrading an existing environment directory.
         """
-        builder = venv.EnvBuilder(upgrade=True)
-        self.run_with_capture(builder.create, self.env_dir)
-        self.isdir(self.bindir)
-        self.isdir(self.include)
-        self.isdir(*self.lib)
-        fn = self.get_env_file(self.bindir, self.exe)
-        if not os.path.exists(fn):  # diagnostics for Windows buildbot failures
-            bd = self.get_env_file(self.bindir)
-            print('Contents of %r:' % bd)
-            print('    %r' % os.listdir(bd))
-        self.assertTrue(os.path.exists(fn), 'File %r should exist.' % fn)
+        # See Issue #21643: the loop needs to run twice to ensure
+        # that everything works on the upgrade (the first run just creates
+        # the venv).
+        for upgrade in (False, True):
+            builder = venv.EnvBuilder(upgrade=upgrade)
+            self.run_with_capture(builder.create, self.env_dir)
+            self.isdir(self.bindir)
+            self.isdir(self.include)
+            self.isdir(*self.lib)
+            fn = self.get_env_file(self.bindir, self.exe)
+            if not os.path.exists(fn):
+                # diagnostics for Windows buildbot failures
+                bd = self.get_env_file(self.bindir)
+                print('Contents of %r:' % bd)
+                print('    %r' % os.listdir(bd))
+            self.assertTrue(os.path.exists(fn), 'File %r should exist.' % fn)
 
     def test_isolation(self):
         """
@@ -231,7 +253,7 @@ class BasicTest(BaseTest):
         """
         Test that the sys.executable value is as expected.
         """
-        shutil.rmtree(self.env_dir)
+        rmtree(self.env_dir)
         self.run_with_capture(venv.create, self.env_dir)
         envpy = os.path.join(os.path.realpath(self.env_dir), self.bindir, self.exe)
         cmd = [envpy, '-c', 'import sys; print(sys.executable)']
@@ -245,7 +267,7 @@ class BasicTest(BaseTest):
         """
         Test that the sys.executable value is as expected.
         """
-        shutil.rmtree(self.env_dir)
+        rmtree(self.env_dir)
         builder = venv.EnvBuilder(clear=True, symlinks=True)
         builder.create(self.env_dir)
         envpy = os.path.join(os.path.realpath(self.env_dir), self.bindir, self.exe)
@@ -276,37 +298,68 @@ class EnsurePipTest(BaseTest):
 
 
     def test_no_pip_by_default(self):
-        shutil.rmtree(self.env_dir)
+        rmtree(self.env_dir)
         self.run_with_capture(venv.create, self.env_dir)
         self.assert_pip_not_installed()
 
     def test_explicit_no_pip(self):
-        shutil.rmtree(self.env_dir)
+        rmtree(self.env_dir)
         self.run_with_capture(venv.create, self.env_dir, with_pip=False)
         self.assert_pip_not_installed()
 
-    # Temporary skip for http://bugs.python.org/issue19744
-    @unittest.skipIf(ssl is None, 'pip needs SSL support')
+    @failsOnWindows
+    def test_devnull_exists_and_is_empty(self):
+        # Fix for issue #20053 uses os.devnull to force a config file to
+        # appear empty. However http://bugs.python.org/issue20541 means
+        # that doesn't currently work properly on Windows. Once that is
+        # fixed, the "win_location" part of test_with_pip should be restored
+        self.assertTrue(os.path.exists(os.devnull))
+        with open(os.devnull, "rb") as f:
+            self.assertEqual(f.read(), b"")
+
+    # Requesting pip fails without SSL (http://bugs.python.org/issue19744)
+    @unittest.skipIf(ssl is None, ensurepip._MISSING_SSL_MESSAGE)
     def test_with_pip(self):
-        shutil.rmtree(self.env_dir)
+        rmtree(self.env_dir)
         with EnvironmentVarGuard() as envvars:
             # pip's cross-version compatibility may trigger deprecation
             # warnings in current versions of Python. Ensure related
             # environment settings don't cause venv to fail.
             envvars["PYTHONWARNINGS"] = "e"
-            # pip doesn't ignore environment variables when running in
-            # isolated mode, and we don't have an active virtualenv here,
-            # we're relying on the native venv support in 3.3+
-            # See http://bugs.python.org/issue19734 for details
-            del envvars["PIP_REQUIRE_VIRTUALENV"]
-            try:
-                self.run_with_capture(venv.create, self.env_dir, with_pip=True)
-            except subprocess.CalledProcessError as exc:
-                # The output this produces can be a little hard to read, but
-                # least it has all the details
-                details = exc.output.decode(errors="replace")
-                msg = "{}\n\n**Subprocess Output**\n{}".format(exc, details)
-                self.fail(msg)
+            # ensurepip is different enough from a normal pip invocation
+            # that we want to ensure it ignores the normal pip environment
+            # variable settings. We set PIP_NO_INSTALL here specifically
+            # to check that ensurepip (and hence venv) ignores it.
+            # See http://bugs.python.org/issue19734
+            envvars["PIP_NO_INSTALL"] = "1"
+            # Also check that we ignore the pip configuration file
+            # See http://bugs.python.org/issue20053
+            with tempfile.TemporaryDirectory() as home_dir:
+                envvars["HOME"] = home_dir
+                bad_config = "[global]\nno-install=1"
+                # Write to both config file names on all platforms to reduce
+                # cross-platform variation in test code behaviour
+                win_location = ("pip", "pip.ini")
+                posix_location = (".pip", "pip.conf")
+                # Skips win_location due to http://bugs.python.org/issue20541
+                for dirname, fname in (posix_location,):
+                    dirpath = os.path.join(home_dir, dirname)
+                    os.mkdir(dirpath)
+                    fpath = os.path.join(dirpath, fname)
+                    with open(fpath, 'w') as f:
+                        f.write(bad_config)
+
+                # Actually run the create command with all that unhelpful
+                # config in place to ensure we ignore it
+                try:
+                    self.run_with_capture(venv.create, self.env_dir,
+                                          with_pip=True)
+                except subprocess.CalledProcessError as exc:
+                    # The output this produces can be a little hard to read,
+                    # but at least it has all the details
+                    details = exc.output.decode(errors="replace")
+                    msg = "{}\n\n**Subprocess Output**\n{}"
+                    self.fail(msg.format(exc, details))
         # Ensure pip is available in the virtual environment
         envpy = os.path.join(os.path.realpath(self.env_dir), self.bindir, self.exe)
         cmd = [envpy, '-Im', 'pip', '--version']
@@ -328,11 +381,6 @@ class EnsurePipTest(BaseTest):
         # installers works (at least in a virtual environment)
         cmd = [envpy, '-Im', 'ensurepip._uninstall']
         with EnvironmentVarGuard() as envvars:
-            # pip doesn't ignore environment variables when running in
-            # isolated mode, and we don't have an active virtualenv here,
-            # we're relying on the native venv support in 3.3+
-            # See http://bugs.python.org/issue19734 for details
-            del envvars["PIP_REQUIRE_VIRTUALENV"]
             p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                       stderr=subprocess.PIPE)
             out, err = p.communicate()
@@ -350,8 +398,5 @@ class EnsurePipTest(BaseTest):
         self.assert_pip_not_installed()
 
 
-def test_main():
-    run_unittest(BasicTest, EnsurePipTest)
-
 if __name__ == "__main__":
-    test_main()
+    unittest.main()

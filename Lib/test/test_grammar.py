@@ -1,7 +1,8 @@
 # Python test set -- part 1, grammar.
 # This just tests whether the parser accepts them all.
 
-from test.support import run_unittest, check_syntax_error
+from test.support import check_syntax_error
+import inspect
 import unittest
 import sys
 # testing import *
@@ -79,6 +80,12 @@ class TokenTests(unittest.TestCase):
         x = 3.e14
         x = .3e14
         x = 3.1e4
+
+    def test_float_exponent_tokenization(self):
+        # See issue 21642.
+        self.assertEqual(1 if 1else 0, 1)
+        self.assertEqual(1 if 0else 0, 0)
+        self.assertRaises(SyntaxError, eval, "0 if 1Else 0")
 
     def test_string_literals(self):
         x = ''; y = ""; self.assertTrue(len(x) == 0 and x == y)
@@ -198,7 +205,10 @@ class GrammarTests(unittest.TestCase):
         d01()
         d01(1)
         d01(*(1,))
+        d01(*[] or [2])
+        d01(*() or (), *{} and (), **() or {})
         d01(**{'a':2})
+        d01(**{'a':2} or {})
         def d11(a, b=1): pass
         d11(1)
         d11(1, 2)
@@ -285,35 +295,50 @@ class GrammarTests(unittest.TestCase):
         pos2key2dict(1,2,k2=100,tokwarg1=100,tokwarg2=200)
         pos2key2dict(1,2,tokwarg1=100,tokwarg2=200, k2=100)
 
+        self.assertRaises(SyntaxError, eval, "def f(*): pass")
+        self.assertRaises(SyntaxError, eval, "def f(*,): pass")
+        self.assertRaises(SyntaxError, eval, "def f(*, **kwds): pass")
+
         # keyword arguments after *arglist
         def f(*args, **kwargs):
             return args, kwargs
         self.assertEqual(f(1, x=2, *[3, 4], y=5), ((1, 3, 4),
                                                     {'x':2, 'y':5}))
-        self.assertRaises(SyntaxError, eval, "f(1, *(2,3), 4)")
+        self.assertEqual(f(1, *(2,3), 4), ((1, 2, 3, 4), {}))
         self.assertRaises(SyntaxError, eval, "f(1, x=2, *(3,4), x=5)")
+        self.assertEqual(f(**{'eggs':'scrambled', 'spam':'fried'}),
+                         ((), {'eggs':'scrambled', 'spam':'fried'}))
+        self.assertEqual(f(spam='fried', **{'eggs':'scrambled'}),
+                         ((), {'eggs':'scrambled', 'spam':'fried'}))
 
         # argument annotation tests
         def f(x) -> list: pass
         self.assertEqual(f.__annotations__, {'return': list})
-        def f(x:int): pass
+        def f(x: int): pass
         self.assertEqual(f.__annotations__, {'x': int})
-        def f(*x:str): pass
+        def f(*x: str): pass
         self.assertEqual(f.__annotations__, {'x': str})
-        def f(**x:float): pass
+        def f(**x: float): pass
         self.assertEqual(f.__annotations__, {'x': float})
-        def f(x, y:1+2): pass
+        def f(x, y: 1+2): pass
         self.assertEqual(f.__annotations__, {'y': 3})
-        def f(a, b:1, c:2, d): pass
+        def f(a, b: 1, c: 2, d): pass
         self.assertEqual(f.__annotations__, {'b': 1, 'c': 2})
-        def f(a, b:1, c:2, d, e:3=4, f=5, *g:6): pass
+        def f(a, b: 1, c: 2, d, e: 3 = 4, f=5, *g: 6): pass
         self.assertEqual(f.__annotations__,
-                          {'b': 1, 'c': 2, 'e': 3, 'g': 6})
-        def f(a, b:1, c:2, d, e:3=4, f=5, *g:6, h:7, i=8, j:9=10,
-              **k:11) -> 12: pass
+                         {'b': 1, 'c': 2, 'e': 3, 'g': 6})
+        def f(a, b: 1, c: 2, d, e: 3 = 4, f=5, *g: 6, h: 7, i=8, j: 9 = 10,
+              **k: 11) -> 12: pass
         self.assertEqual(f.__annotations__,
-                          {'b': 1, 'c': 2, 'e': 3, 'g': 6, 'h': 7, 'j': 9,
-                           'k': 11, 'return': 12})
+                         {'b': 1, 'c': 2, 'e': 3, 'g': 6, 'h': 7, 'j': 9,
+                          'k': 11, 'return': 12})
+        # Check for issue #20625 -- annotations mangling
+        class Spam:
+            def f(self, *, __kw: 1):
+                pass
+        class Ham(Spam): pass
+        self.assertEqual(Spam.f.__annotations__, {'_Spam__kw': 1})
+        self.assertEqual(Ham.f.__annotations__, {'_Spam__kw': 1})
         # Check for SF Bug #1697248 - mixing decorators and a return annotation
         def null(x): return x
         @null
@@ -330,6 +355,23 @@ class GrammarTests(unittest.TestCase):
         # Check ast errors in *args and *kwargs
         check_syntax_error(self, "f(*g(1=2))")
         check_syntax_error(self, "f(**g(1=2))")
+
+        # Check trailing commas are permitted in funcdef argument list
+        def f(a,): pass
+        def f(*args,): pass
+        def f(**kwds,): pass
+        def f(a, *args,): pass
+        def f(a, **kwds,): pass
+        def f(*args, b,): pass
+        def f(*, b,): pass
+        def f(*args, **kwds,): pass
+        def f(a, *args, b,): pass
+        def f(a, *, b,): pass
+        def f(a, *args, **kwds,): pass
+        def f(*args, b, **kwds,): pass
+        def f(*, b, **kwds,): pass
+        def f(a, *args, b, **kwds,): pass
+        def f(a, *, b, **kwds,): pass
 
     def test_lambdef(self):
         ### lambdef: 'lambda' [varargslist] ':' test
@@ -348,6 +390,23 @@ class GrammarTests(unittest.TestCase):
         l6 = lambda x, y, *, k=20: x+y+k
         self.assertEqual(l6(1,2), 1+2+20)
         self.assertEqual(l6(1,2,k=10), 1+2+10)
+
+        # check that trailing commas are permitted
+        l10 = lambda a,: 0
+        l11 = lambda *args,: 0
+        l12 = lambda **kwds,: 0
+        l13 = lambda a, *args,: 0
+        l14 = lambda a, **kwds,: 0
+        l15 = lambda *args, b,: 0
+        l16 = lambda *, b,: 0
+        l17 = lambda *args, **kwds,: 0
+        l18 = lambda a, *args, b,: 0
+        l19 = lambda a, *, b,: 0
+        l20 = lambda a, *args, **kwds,: 0
+        l21 = lambda *args, b, **kwds,: 0
+        l22 = lambda *, b, **kwds,: 0
+        l23 = lambda a, *args, b, **kwds,: 0
+        l24 = lambda a, *, b, **kwds,: 0
 
 
     ### stmt: simple_stmt | compound_stmt
@@ -376,6 +435,31 @@ class GrammarTests(unittest.TestCase):
 
         check_syntax_error(self, "x + 1 = 1")
         check_syntax_error(self, "a + 1 = b + 2")
+
+    # Check the heuristic for print & exec covers significant cases
+    # As well as placing some limits on false positives
+    def test_former_statements_refer_to_builtins(self):
+        keywords = "print", "exec"
+        # Cases where we want the custom error
+        cases = [
+            "{} foo",
+            "{} {{1:foo}}",
+            "if 1: {} foo",
+            "if 1: {} {{1:foo}}",
+            "if 1:\n    {} foo",
+            "if 1:\n    {} {{1:foo}}",
+        ]
+        for keyword in keywords:
+            custom_msg = "call to '{}'".format(keyword)
+            for case in cases:
+                source = case.format(keyword)
+                with self.subTest(source=source):
+                    with self.assertRaisesRegex(SyntaxError, custom_msg):
+                        exec(source)
+                source = source.replace("foo", "(foo.)")
+                with self.subTest(source=source):
+                    with self.assertRaisesRegex(SyntaxError, "invalid syntax"):
+                        exec(source)
 
     def test_del_stmt(self):
         # 'del' exprlist
@@ -490,7 +574,8 @@ class GrammarTests(unittest.TestCase):
         # Not allowed at class scope
         check_syntax_error(self, "class foo:yield 1")
         check_syntax_error(self, "class foo:yield from ()")
-
+        # Check annotation refleak on SyntaxError
+        check_syntax_error(self, "def g(a:(yield)): pass")
 
     def test_raise(self):
         # 'raise' test [',' test]
@@ -978,9 +1063,103 @@ class GrammarTests(unittest.TestCase):
         self.assertFalse((False is 2) is 3)
         self.assertFalse(False is 2 is 3)
 
+    def test_matrix_mul(self):
+        # This is not intended to be a comprehensive test, rather just to be few
+        # samples of the @ operator in test_grammar.py.
+        class M:
+            def __matmul__(self, o):
+                return 4
+            def __imatmul__(self, o):
+                self.other = o
+                return self
+        m = M()
+        self.assertEqual(m @ m, 4)
+        m @= 42
+        self.assertEqual(m.other, 42)
 
-def test_main():
-    run_unittest(TokenTests, GrammarTests)
+    def test_async_await(self):
+        async = 1
+        await = 2
+        self.assertEqual(async, 1)
+
+        def async():
+            nonlocal await
+            await = 10
+        async()
+        self.assertEqual(await, 10)
+
+        self.assertFalse(bool(async.__code__.co_flags & inspect.CO_COROUTINE))
+
+        async def test():
+            def sum():
+                pass
+            if 1:
+                await someobj()
+
+        self.assertEqual(test.__name__, 'test')
+        self.assertTrue(bool(test.__code__.co_flags & inspect.CO_COROUTINE))
+
+        def decorator(func):
+            setattr(func, '_marked', True)
+            return func
+
+        @decorator
+        async def test2():
+            return 22
+        self.assertTrue(test2._marked)
+        self.assertEqual(test2.__name__, 'test2')
+        self.assertTrue(bool(test2.__code__.co_flags & inspect.CO_COROUTINE))
+
+    def test_async_for(self):
+        class Done(Exception): pass
+
+        class AIter:
+            async def __aiter__(self):
+                return self
+            async def __anext__(self):
+                raise StopAsyncIteration
+
+        async def foo():
+            async for i in AIter():
+                pass
+            async for i, j in AIter():
+                pass
+            async for i in AIter():
+                pass
+            else:
+                pass
+            raise Done
+
+        with self.assertRaises(Done):
+            foo().send(None)
+
+    def test_async_with(self):
+        class Done(Exception): pass
+
+        class manager:
+            async def __aenter__(self):
+                return (1, 2)
+            async def __aexit__(self, *exc):
+                return False
+
+        async def foo():
+            async with manager():
+                pass
+            async with manager() as x:
+                pass
+            async with manager() as (x, y):
+                pass
+            async with manager(), manager():
+                pass
+            async with manager() as x, manager() as y:
+                pass
+            async with manager() as x, manager():
+                pass
+            raise Done
+
+        with self.assertRaises(Done):
+            foo().send(None)
+
 
 if __name__ == '__main__':
-    test_main()
+    unittest.main()

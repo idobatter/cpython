@@ -52,21 +52,21 @@ The :mod:`binascii` module defines the following functions:
    than one line may be passed at a time.
 
 
-.. function:: b2a_base64(data)
+.. function:: b2a_base64(data, \*, newline=True)
 
    Convert binary data to a line of ASCII characters in base64 coding. The return
-   value is the converted line, including a newline char. The length of *data*
-   should be at most 57 to adhere to the base64 standard.
+   value is the converted line, including a newline char if *newline* is
+   true.  The output of this function conforms to :rfc:`3548`.
+
+   .. versionchanged:: 3.6
+      Added the *newline* parameter.
 
 
-.. function:: a2b_qp(string, header=False)
+.. function:: a2b_qp(data, header=False)
 
    Convert a block of quoted-printable data back to binary and return the binary
    data. More than one line may be passed at a time. If the optional argument
    *header* is present and true, underscores will be decoded as spaces.
-
-   .. versionchanged:: 3.2
-      Accept only bytestring or bytearray objects as input.
 
 
 .. function:: b2a_qp(data, quotetabs=False, istext=True, header=False)
@@ -113,15 +113,16 @@ The :mod:`binascii` module defines the following functions:
    possibly the last fragment).
 
 
-.. function:: crc_hqx(data, crc)
+.. function:: crc_hqx(data, value)
 
-   Compute the binhex4 crc value of *data*, starting with an initial *crc* and
-   returning the result.
+   Compute the binhex4 crc value of *data*, starting with *value* as the
+   initial crc, and return the result.
 
 
-.. function:: crc32(data[, crc])
+.. function:: crc32(data[, value])
 
-   Compute CRC-32, the 32-bit checksum of data, starting with an initial crc.  This
+   Compute CRC-32, the 32-bit checksum of *data*, starting with an
+   initial CRC of *value*.  The default initial CRC is zero.  The algorithm
    is consistent with the ZIP file checksum.  Since the algorithm is designed for
    use as a checksum algorithm, it is not suitable for use as a general hash
    algorithm.  Use as follows::
@@ -129,15 +130,13 @@ The :mod:`binascii` module defines the following functions:
       print(binascii.crc32(b"hello world"))
       # Or, in two pieces:
       crc = binascii.crc32(b"hello")
-      crc = binascii.crc32(b" world", crc) & 0xffffffff
+      crc = binascii.crc32(b" world", crc)
       print('crc32 = {:#010x}'.format(crc))
 
-.. note::
-   To generate the same numeric value across all Python versions and
-   platforms use crc32(data) & 0xffffffff.  If you are only using
-   the checksum in packed binary format this is not necessary as the
-   return value is the correct 32bit binary representation
-   regardless of sign.
+   .. versionchanged:: 3.0
+      The result is always unsigned.
+      To generate the same numeric value across all Python versions and
+      platforms, use ``crc32(data) & 0xffffffff``.
 
 
 .. function:: b2a_hex(data)
@@ -156,9 +155,6 @@ The :mod:`binascii` module defines the following functions:
    of hexadecimal digits (which can be upper or lower case), otherwise a
    :exc:`TypeError` is raised.
 
-   .. versionchanged:: 3.2
-      Accept only bytestring or bytearray objects as input.
-
 
 .. exception:: Error
 
@@ -174,7 +170,8 @@ The :mod:`binascii` module defines the following functions:
 .. seealso::
 
    Module :mod:`base64`
-      Support for base64 encoding used in MIME email messages.
+      Support for RFC compliant base64-style encoding in base 16, 32, 64,
+      and 85.
 
    Module :mod:`binhex`
       Support for the binhex format used on the Macintosh.

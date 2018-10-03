@@ -15,6 +15,9 @@ It also defines names for some object types that are used by the standard
 Python interpreter, but not exposed as builtins like :class:`int` or
 :class:`str` are.
 
+Finally, it provides some additional type-related utility classes and functions
+that are not fundamental enough to be builtins.
+
 
 Dynamic Type Creation
 ---------------------
@@ -83,8 +86,16 @@ Standard names are defined for the following types:
 
 .. data:: GeneratorType
 
-   The type of :term:`generator`-iterator objects, produced by calling a
-   generator function.
+   The type of :term:`generator`-iterator objects, created by
+   generator functions.
+
+
+.. data:: CoroutineType
+
+   The type of :term:`coroutine` objects, created by
+   :keyword:`async def` functions.
+
+   .. versionadded:: 3.5
 
 
 .. data:: CodeType
@@ -111,6 +122,10 @@ Standard names are defined for the following types:
 
    The type of :term:`modules <module>`. Constructor takes the name of the
    module to be created and optionally its :term:`docstring`.
+
+   .. note::
+      Use :func:`importlib.util.module_from_spec` to create a new module if you
+      wish to set the various import-controlled attributes.
 
    .. attribute:: __doc__
 
@@ -220,6 +235,9 @@ Standard names are defined for the following types:
       Return a new view of the underlying mapping's values.
 
 
+Additional Utility Classes and Functions
+----------------------------------------
+
 .. class:: SimpleNamespace
 
    A simple :class:`object` subclass that provides attribute access to its
@@ -246,3 +264,40 @@ Standard names are defined for the following types:
    instead.
 
    .. versionadded:: 3.3
+
+
+.. function:: DynamicClassAttribute(fget=None, fset=None, fdel=None, doc=None)
+
+   Route attribute access on a class to __getattr__.
+
+   This is a descriptor, used to define attributes that act differently when
+   accessed through an instance and through a class.  Instance access remains
+   normal, but access to an attribute through a class will be routed to the
+   class's __getattr__ method; this is done by raising AttributeError.
+
+   This allows one to have properties active on an instance, and have virtual
+   attributes on the class with the same name (see Enum for an example).
+
+   .. versionadded:: 3.4
+
+
+Coroutine Utility Functions
+---------------------------
+
+.. function:: coroutine(gen_func)
+
+   This function transforms a :term:`generator` function into a
+   :term:`coroutine function` which returns a generator-based coroutine.
+   The generator-based coroutine is still a :term:`generator iterator`,
+   but is also considered to be a :term:`coroutine` object and is
+   :term:`awaitable`.  However, it may not necessarily implement
+   the :meth:`__await__` method.
+
+   If *gen_func* is a generator function, it will be modified in-place.
+
+   If *gen_func* is not a generator function, it will be wrapped. If it
+   returns an instance of :class:`collections.abc.Generator`, the instance
+   will be wrapped in an *awaitable* proxy object.  All other types
+   of objects will be returned as is.
+
+   .. versionadded:: 3.5

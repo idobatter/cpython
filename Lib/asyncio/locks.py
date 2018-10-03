@@ -4,12 +4,89 @@ __all__ = ['Lock', 'Event', 'Condition', 'Semaphore', 'BoundedSemaphore']
 
 import collections
 
+from . import compat
 from . import events
 from . import futures
-from . import tasks
+from .coroutines import coroutine
 
 
-class Lock:
+class _ContextManager:
+    """Context manager.
+
+    This enables the following idiom for acquiring and releasing a
+    lock around a block:
+
+        with (yield from lock):
+            <block>
+
+    while failing loudly when accidentally using:
+
+        with lock:
+            <block>
+    """
+
+    def __init__(self, lock):
+        self._lock = lock
+
+    def __enter__(self):
+        # We have no use for the "as ..."  clause in the with
+        # statement for locks.
+        return None
+
+    def __exit__(self, *args):
+        try:
+            self._lock.release()
+        finally:
+            self._lock = None  # Crudely prevent reuse.
+
+
+class _ContextManagerMixin:
+    def __enter__(self):
+        raise RuntimeError(
+            '"yield from" should be used as context manager expression')
+
+    def __exit__(self, *args):
+        # This must exist because __enter__ exists, even though that
+        # always raises; that's how the with-statement works.
+        pass
+
+    @coroutine
+    def __iter__(self):
+        # This is not a coroutine.  It is meant to enable the idiom:
+        #
+        #     with (yield from lock):
+        #         <block>
+        #
+        # as an alternative to:
+        #
+        #     yield from lock.acquire()
+        #     try:
+        #         <block>
+        #     finally:
+        #         lock.release()
+        yield from self.acquire()
+        return _ContextManager(self)
+
+    if compat.PY35:
+
+        def __await__(self):
+            # To make "with await lock" work.
+            yield from self.acquire()
+            return _ContextManager(self)
+
+        @coroutine
+        def __aenter__(self):
+            yield from self.acquire()
+            # We have no use for the "as ..."  clause in the with
+            # statement for locks.
+            return None
+
+        @coroutine
+        def __aexit__(self, exc_type, exc, tb):
+            self.release()
+
+
+class Lock(_ContextManagerMixin):
     """Primitive lock objects.
 
     A primitive lock is a synchronization primitive that is not owned
@@ -33,7 +110,7 @@ class Lock:
 
     acquire() is a coroutine and should be called with 'yield from'.
 
-    Locks also support the context manager protocol.  '(yield from lock)'
+    Locks also support the context management protocol.  '(yield from lock)'
     should be used as context manager expression.
 
     Usage:
@@ -82,7 +159,7 @@ class Lock:
         """Return True if lock is acquired."""
         return self._locked
 
-    @tasks.coroutine
+    @coroutine
     def acquire(self):
         """Acquire a lock.
 
@@ -123,22 +200,9 @@ class Lock:
         else:
             raise RuntimeError('Lock is not acquired.')
 
-    def __enter__(self):
-        if not self._locked:
-            raise RuntimeError(
-                '"yield from" should be used as context manager expression')
-        return True
-
-    def __exit__(self, *args):
-        self.release()
-
-    def __iter__(self):
-        yield from self.acquire()
-        return self
-
 
 class Event:
-    """An Event implementation, asynchronous equivalent to threading.Event.
+    """Asynchronous equivalent to threading.Event.
 
     Class implementing event objects. An event manages a flag that can be set
     to true with the set() method and reset to false with the clear() method.
@@ -183,7 +247,7 @@ class Event:
         to true again."""
         self._value = False
 
-    @tasks.coroutine
+    @coroutine
     def wait(self):
         """Block until the internal flag is true.
 
@@ -203,8 +267,8 @@ class Event:
             self._waiters.remove(fut)
 
 
-class Condition:
-    """A Condition implementation, asynchronous equivalent to threading.Condition.
+class Condition(_ContextManagerMixin):
+    """Asynchronous equivalent to threading.Condition.
 
     This class implements condition variable objects. A condition variable
     allows one or more coroutines to wait until they are notified by another
@@ -213,14 +277,17 @@ class Condition:
     A new Lock object is created and used as the underlying lock.
     """
 
-    def __init__(self, *, loop=None):
+    def __init__(self, lock=None, *, loop=None):
         if loop is not None:
             self._loop = loop
         else:
             self._loop = events.get_event_loop()
 
-        # Lock as an attribute as in threading.Condition.
-        lock = Lock(loop=self._loop)
+        if lock is None:
+            lock = Lock(loop=self._loop)
+        elif lock._loop is not self._loop:
+            raise ValueError("loop argument must agree with lock")
+
         self._lock = lock
         # Export the lock's locked(), acquire() and release() methods.
         self.locked = lock.locked
@@ -236,7 +303,7 @@ class Condition:
             extra = '{},waiters:{}'.format(extra, len(self._waiters))
         return '<{} [{}]>'.format(res[1:-1], extra)
 
-    @tasks.coroutine
+    @coroutine
     def wait(self):
         """Wait until notified.
 
@@ -251,7 +318,6 @@ class Condition:
         if not self.locked():
             raise RuntimeError('cannot wait on un-acquired lock')
 
-        keep_lock = True
         self.release()
         try:
             fut = futures.Future(loop=self._loop)
@@ -262,14 +328,10 @@ class Condition:
             finally:
                 self._waiters.remove(fut)
 
-        except GeneratorExit:
-            keep_lock = False  # Prevent yield in finally clause.
-            raise
         finally:
-            if keep_lock:
-                yield from self.acquire()
+            yield from self.acquire()
 
-    @tasks.coroutine
+    @coroutine
     def wait_for(self, predicate):
         """Wait until a predicate becomes true.
 
@@ -315,18 +377,8 @@ class Condition:
         """
         self.notify(len(self._waiters))
 
-    def __enter__(self):
-        return self._lock.__enter__()
 
-    def __exit__(self, *args):
-        return self._lock.__exit__(*args)
-
-    def __iter__(self):
-        yield from self.acquire()
-        return self
-
-
-class Semaphore:
+class Semaphore(_ContextManagerMixin):
     """A Semaphore implementation.
 
     A semaphore manages an internal counter which is decremented by each
@@ -334,7 +386,7 @@ class Semaphore:
     can never go below zero; when acquire() finds that it is zero, it blocks,
     waiting until some other thread calls release().
 
-    Semaphores also support the context manager protocol.
+    Semaphores also support the context management protocol.
 
     The optional argument gives the initial value for the internal
     counter; it defaults to 1. If the value given is less than 0,
@@ -346,7 +398,6 @@ class Semaphore:
             raise ValueError("Semaphore initial value must be >= 0")
         self._value = value
         self._waiters = collections.deque()
-        self._locked = (value == 0)
         if loop is not None:
             self._loop = loop
         else:
@@ -354,17 +405,24 @@ class Semaphore:
 
     def __repr__(self):
         res = super().__repr__()
-        extra = 'locked' if self._locked else 'unlocked,value:{}'.format(
+        extra = 'locked' if self.locked() else 'unlocked,value:{}'.format(
             self._value)
         if self._waiters:
             extra = '{},waiters:{}'.format(extra, len(self._waiters))
         return '<{} [{}]>'.format(res[1:-1], extra)
 
+    def _wake_up_next(self):
+        while self._waiters:
+            waiter = self._waiters.popleft()
+            if not waiter.done():
+                waiter.set_result(None)
+                return
+
     def locked(self):
         """Returns True if semaphore can not be acquired immediately."""
-        return self._locked
+        return self._value == 0
 
-    @tasks.coroutine
+    @coroutine
     def acquire(self):
         """Acquire a semaphore.
 
@@ -374,22 +432,19 @@ class Semaphore:
         called release() to make it larger than 0, and then return
         True.
         """
-        if not self._waiters and self._value > 0:
-            self._value -= 1
-            if self._value == 0:
-                self._locked = True
-            return True
-
-        fut = futures.Future(loop=self._loop)
-        self._waiters.append(fut)
-        try:
-            yield from fut
-            self._value -= 1
-            if self._value == 0:
-                self._locked = True
-            return True
-        finally:
-            self._waiters.remove(fut)
+        while self._value <= 0:
+            fut = futures.Future(loop=self._loop)
+            self._waiters.append(fut)
+            try:
+                yield from fut
+            except:
+                # See the similar code in Queue.get.
+                fut.cancel()
+                if self._value > 0 and not fut.cancelled():
+                    self._wake_up_next()
+                raise
+        self._value -= 1
+        return True
 
     def release(self):
         """Release a semaphore, incrementing the internal counter by one.
@@ -397,23 +452,7 @@ class Semaphore:
         become larger than zero again, wake up that coroutine.
         """
         self._value += 1
-        self._locked = False
-        for waiter in self._waiters:
-            if not waiter.done():
-                waiter.set_result(True)
-                break
-
-    def __enter__(self):
-        # TODO: This is questionable.  How do we know the user actually
-        # wrote "with (yield from sema)" instead of "with sema"?
-        return True
-
-    def __exit__(self, *args):
-        self.release()
-
-    def __iter__(self):
-        yield from self.acquire()
-        return self
+        self._wake_up_next()
 
 
 class BoundedSemaphore(Semaphore):

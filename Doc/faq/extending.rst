@@ -42,7 +42,7 @@ on what you're trying to do.
 .. XXX make sure these all work
 
 `Cython <http://cython.org>`_ and its relative `Pyrex
-<http://www.cosc.canterbury.ac.nz/~greg/python/Pyrex/>`_ are compilers
+<http://www.cosc.canterbury.ac.nz/greg.ewing/python/Pyrex/>`_ are compilers
 that accept a slightly modified form of Python and generate the corresponding
 C code.  Cython and Pyrex make it possible to write an extension without having
 to learn Python's C API.
@@ -50,11 +50,11 @@ to learn Python's C API.
 If you need to interface to some C or C++ library for which no Python extension
 currently exists, you can try wrapping the library's data types and functions
 with a tool such as `SWIG <http://www.swig.org>`_.  `SIP
-<http://www.riverbankcomputing.co.uk/software/sip/>`__, `CXX
+<http://www.riverbankcomputing.co.uk/software/sip/intro>`__, `CXX
 <http://cxx.sourceforge.net/>`_ `Boost
 <http://www.boost.org/libs/python/doc/index.html>`_, or `Weave
-<http://www.scipy.org/Weave>`_ are also alternatives for wrapping
-C++ libraries.
+<http://docs.scipy.org/doc/scipy-dev/reference/tutorial/weave.html>`_ are also
+alternatives for wrapping C++ libraries.
 
 
 How can I execute arbitrary Python statements from C?
@@ -95,8 +95,8 @@ To test the type of an object, first make sure it isn't *NULL*, and then use
 There is also a high-level API to Python objects which is provided by the
 so-called 'abstract' interface -- read ``Include/abstract.h`` for further
 details.  It allows interfacing with any kind of Python sequence using calls
-like :c:func:`PySequence_Length`, :c:func:`PySequence_GetItem`, etc.) as well
-as many other useful protocols such as numbers (:c:func:`PyNumber_Index` et.
+like :c:func:`PySequence_Length`, :c:func:`PySequence_GetItem`, etc. as well
+as many other useful protocols such as numbers (:c:func:`PyNumber_Index` et
 al.) and mappings in the PyMapping APIs.
 
 
@@ -115,8 +115,8 @@ call, a format string like that used with :c:func:`Py_BuildValue`, and the
 argument values::
 
    PyObject *
-   PyObject_CallMethod(PyObject *object, char *method_name,
-                       char *arg_format, ...);
+   PyObject_CallMethod(PyObject *object, const char *method_name,
+                       const char *arg_format, ...);
 
 This works for any object that has methods -- whether built-in or user-defined.
 You are responsible for eventually :c:func:`Py_DECREF`\ 'ing the return value.
@@ -247,20 +247,6 @@ For Red Hat, install the python-devel RPM to get the necessary files.
 For Debian, run ``apt-get install python-dev``.
 
 
-What does "SystemError: _PyImport_FixupExtension: module yourmodule not loaded" mean?
--------------------------------------------------------------------------------------
-
-This means that you have created an extension module named "yourmodule", but
-your module init function does not initialize with that name.
-
-Every module init function will have a line similar to::
-
-   module = Py_InitModule("yourmodule", yourmodule_functions);
-
-If the string passed to this function is not the same name as your extension
-module, the :exc:`SystemError` exception will be raised.
-
-
 How do I tell "incomplete input" from "invalid input"?
 ------------------------------------------------------
 
@@ -348,7 +334,7 @@ complete example using the GNU readline library (you may want to ignore
      {
        line = readline (prompt);
 
-       if (NULL == line)                          /* CTRL-D pressed */
+       if (NULL == line)                          /* Ctrl-D pressed */
        {
          done = 1;
        }
@@ -443,8 +429,8 @@ extension module using g++ (e.g., ``g++ -shared -o mymodule.so mymodule.o``).
 Can I create an object class with some methods implemented in C and others in Python (e.g. through inheritance)?
 ----------------------------------------------------------------------------------------------------------------
 
-In Python 2.2, you can inherit from built-in classes such as :class:`int`,
-:class:`list`, :class:`dict`, etc.
+Yes, you can inherit from built-in classes such as :class:`int`, :class:`list`,
+:class:`dict`, etc.
 
 The Boost Python Library (BPL, http://www.boost.org/libs/python/doc/index.html)
 provides a way of doing this from C++ (i.e. you can inherit from an extension

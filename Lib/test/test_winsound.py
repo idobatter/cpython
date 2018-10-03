@@ -158,14 +158,15 @@ class PlaySoundTest(unittest.TestCase):
             )
 
     def test_alias_fallback(self):
-        if _have_soundcard():
+        # In the absense of the ability to tell if a sound was actually
+        # played, this test has two acceptable outcomes: success (no error,
+        # sound was theoretically played; although as issue #19987 shows
+        # a box without a soundcard can "succeed") or RuntimeError.  Any
+        # other error is a failure.
+        try:
             winsound.PlaySound('!"$%&/(#+*', winsound.SND_ALIAS)
-        else:
-            self.assertRaises(
-                RuntimeError,
-                winsound.PlaySound,
-                '!"$%&/(#+*', winsound.SND_ALIAS
-            )
+        except RuntimeError:
+            pass
 
     def test_alias_nofallback(self):
         if _have_soundcard():
@@ -245,8 +246,5 @@ def _have_soundcard():
     return __have_soundcard_cache
 
 
-def test_main():
-    support.run_unittest(BeepTest, MessageBeepTest, PlaySoundTest)
-
-if __name__=="__main__":
-    test_main()
+if __name__ == "__main__":
+    unittest.main()

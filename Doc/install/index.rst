@@ -2,9 +2,9 @@
 
 .. _install-index:
 
-*****************************
-  Installing Python Modules
-*****************************
+********************************************
+  Installing Python Modules (Legacy version)
+********************************************
 
 :Author: Greg Ward
 
@@ -20,15 +20,23 @@
    Finally, it might be useful to include all the material from my "Care
    and Feeding of a Python Installation" talk in here somewhere.  Yow!
 
-.. topic:: Abstract
+This document describes the Python Distribution Utilities ("Distutils") from the
+end-user's point-of-view, describing how to extend the capabilities of a
+standard Python installation by building and installing third-party Python
+modules and extensions.
 
-   This document describes the Python Distribution Utilities ("Distutils") from the
-   end-user's point-of-view, describing how to extend the capabilities of a
-   standard Python installation by building and installing third-party Python
-   modules and extensions.
+
+.. note::
+
+   This guide only covers the basic tools for building and distributing
+   extensions that are provided as part of this version of Python. Third party
+   tools offer easier to use and more secure alternatives. Refer to the `quick
+   recommendations section <https://packaging.python.org/en/latest/current/>`__
+   in the Python Packaging User Guide for more information.
 
 
 .. _inst-intro:
+
 
 Introduction
 ============
@@ -50,7 +58,8 @@ new goodies to their toolbox.  You don't need to know Python to read this
 document; there will be some brief forays into using Python's interactive mode
 to explore your installation, but that's it.  If you're looking for information
 on how to distribute your own Python modules so that others may use them, see
-the :ref:`distutils-index` manual.
+the :ref:`distutils-index` manual.  :ref:`debug-setup-script` may also be of
+interest.
 
 
 .. _inst-trivial-install:
@@ -139,7 +148,7 @@ into.  For example, if you've just downloaded a module source distribution
 
 On Windows, you'd probably download :file:`foo-1.0.zip`.  If you downloaded the
 archive file to :file:`C:\\Temp`, then it would unpack into
-:file:`C:\\Temp\\foo-1.0`; you can use either a archive manipulator with a
+:file:`C:\\Temp\\foo-1.0`; you can use either an archive manipulator with a
 graphical user interface (such as WinZip) or a command-line tool (such as
 :program:`unzip` or :program:`pkunzip`) to unpack the archive.  Then, open a
 command prompt window and run::
@@ -352,7 +361,7 @@ And here are the values used on Windows:
 Type of file    Installation directory
 =============== ===========================================================
 modules         :file:`{userbase}\\Python{XY}\\site-packages`
-scripts         :file:`{userbase}\\Scripts`
+scripts         :file:`{userbase}\\Python{XY}\\Scripts`
 data            :file:`{userbase}`
 C headers       :file:`{userbase}\\Python{XY}\\Include\\{distname}`
 =============== ===========================================================
@@ -1003,7 +1012,7 @@ section :ref:`inst-config-files`.)
 
 .. seealso::
 
-   `C++Builder Compiler <http://www.codegear.com/downloads/free/cppbuilder>`_
+   `C++Builder Compiler <http://www.embarcadero.com/downloads>`_
       Information about the free C++ compiler from Borland, including links to the
       download pages.
 
@@ -1075,7 +1084,7 @@ normal libraries do.
 
 .. seealso::
 
-   `Building Python modules on MS Windows platform with MinGW <http://www.zope.org/Members/als/tips/win32_mingw_modules>`_
+   `Building Python modules on MS Windows platform with MinGW <http://old.zope.org/Members/als/tips/win32_mingw_modules>`_
       Information about building the required libraries for the MinGW environment.
 
 
@@ -1084,7 +1093,7 @@ normal libraries do.
 .. [#] This also means you could replace all existing COFF-libraries with OMF-libraries
    of the same name.
 
-.. [#] Check http://sources.redhat.com/cygwin/ and http://www.mingw.org/ for more
+.. [#] Check http://www.sourceware.org/cygwin/ and http://www.mingw.org/ for more
    information
 
 .. [#] Then you have no POSIX emulation available, but you also don't need

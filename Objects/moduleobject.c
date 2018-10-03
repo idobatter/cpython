@@ -20,7 +20,7 @@ static PyMemberDef module_members[] = {
     {0}
 };
 
-static PyTypeObject moduledef_type = {
+PyTypeObject PyModuleDef_Type = {
     PyVarObject_HEAD_INIT(&PyType_Type, 0)
     "moduledef",                                /* tp_name */
     sizeof(struct PyModuleDef),                 /* tp_size */
@@ -28,29 +28,48 @@ static PyTypeObject moduledef_type = {
 };
 
 
+PyObject*
+PyModuleDef_Init(struct PyModuleDef* def)
+{
+    if (PyType_Ready(&PyModuleDef_Type) < 0)
+         return NULL;
+    if (def->m_base.m_index == 0) {
+        max_module_number++;
+        Py_REFCNT(def) = 1;
+        Py_TYPE(def) = &PyModuleDef_Type;
+        def->m_base.m_index = max_module_number;
+    }
+    return (PyObject*)def;
+}
+
 static int
 module_init_dict(PyModuleObject *mod, PyObject *md_dict,
                  PyObject *name, PyObject *doc)
 {
+    _Py_IDENTIFIER(__name__);
+    _Py_IDENTIFIER(__doc__);
+    _Py_IDENTIFIER(__package__);
+    _Py_IDENTIFIER(__loader__);
+    _Py_IDENTIFIER(__spec__);
+
     if (md_dict == NULL)
         return -1;
     if (doc == NULL)
         doc = Py_None;
 
-    if (PyDict_SetItemString(md_dict, "__name__", name) != 0)
+    if (_PyDict_SetItemId(md_dict, &PyId___name__, name) != 0)
         return -1;
-    if (PyDict_SetItemString(md_dict, "__doc__", doc) != 0)
+    if (_PyDict_SetItemId(md_dict, &PyId___doc__, doc) != 0)
         return -1;
-    if (PyDict_SetItemString(md_dict, "__package__", Py_None) != 0)
+    if (_PyDict_SetItemId(md_dict, &PyId___package__, Py_None) != 0)
         return -1;
-    if (PyDict_SetItemString(md_dict, "__loader__", Py_None) != 0)
+    if (_PyDict_SetItemId(md_dict, &PyId___loader__, Py_None) != 0)
         return -1;
-    if (PyDict_SetItemString(md_dict, "__spec__", Py_None) != 0)
+    if (_PyDict_SetItemId(md_dict, &PyId___spec__, Py_None) != 0)
         return -1;
     if (PyUnicode_CheckExact(name)) {
         Py_INCREF(name);
-        Py_XDECREF(mod->md_name);
-        mod->md_name = name;
+        Py_SETREF(mod->md_name, name);
     }
 
     return 0;
@@ -91,26 +110,13 @@ PyModule_New(const char *name)
     return module;
 }
 
-
-PyObject *
-PyModule_Create2(struct PyModuleDef* module, int module_api_version)
+/* Check API/ABI version
+ * Issues a warning on mismatch, which is usually not fatal.
+ * Returns 0 if an exception is raised.
+ */
+static int
+check_api_version(const char *name, int module_api_version)
 {
-    PyObject *d, *v, *n;
-    PyMethodDef *ml;
-    const char* name;
-    PyModuleObject *m;
-    PyInterpreterState *interp = PyThreadState_Get()->interp;
-    if (interp->modules == NULL)
-        Py_FatalError("Python import machinery not initialized");
-    if (PyType_Ready(&moduledef_type) < 0)
-        return NULL;
-    if (module->m_base.m_index == 0) {
-        max_module_number++;
-        Py_REFCNT(module) = 1;
-        Py_TYPE(module) = &moduledef_type;
-        module->m_base.m_index = max_module_number;
-    }
-    name = module->m_name;
     if (module_api_version != PYTHON_API_VERSION && module_api_version != PYTHON_ABI_VERSION) {
         int err;
         err = PyErr_WarnFormat(PyExc_RuntimeWarning, 1,
@@ -119,7 +125,30 @@ PyModule_Create2(struct PyModuleDef* module, int module_api_version)
              name,
              PYTHON_API_VERSION, name, module_api_version);
         if (err)
-            return NULL;
+            return 0;
+    }
+    return 1;
+}
+
+PyObject *
+PyModule_Create2(struct PyModuleDef* module, int module_api_version)
+{
+    const char* name;
+    PyModuleObject *m;
+    PyInterpreterState *interp = PyThreadState_Get()->interp;
+    if (interp->modules == NULL)
+        Py_FatalError("Python import machinery not initialized");
+    if (!PyModuleDef_Init(module))
+        return NULL;
+    name = module->m_name;
+    if (!check_api_version(name, module_api_version)) {
+        return NULL;
+    }
+    if (module->m_slots) {
+        PyErr_Format(
+            PyExc_SystemError,
+            "module %s: PyModule_Create is incompatible with m_slots", name);
+        return NULL;
     }
     /* Make sure name is fully qualified.
 
@@ -150,52 +179,261 @@ PyModule_Create2(struct PyModuleDef* module, int module_api_version)
         memset(m->md_state, 0, module->m_size);
     }
 
-    d = PyModule_GetDict((PyObject*)m);
     if (module->m_methods != NULL) {
-        n = PyUnicode_FromString(name);
-        if (n == NULL) {
+        if (PyModule_AddFunctions((PyObject *) m, module->m_methods) != 0) {
             Py_DECREF(m);
             return NULL;
         }
-        for (ml = module->m_methods; ml->ml_name != NULL; ml++) {
-            if ((ml->ml_flags & METH_CLASS) ||
-                (ml->ml_flags & METH_STATIC)) {
-                PyErr_SetString(PyExc_ValueError,
-                                "module functions cannot set"
-                                " METH_CLASS or METH_STATIC");
-                Py_DECREF(n);
-                Py_DECREF(m);
-                return NULL;
-            }
-            v = PyCFunction_NewEx(ml, (PyObject*)m, n);
-            if (v == NULL) {
-                Py_DECREF(n);
-                Py_DECREF(m);
-                return NULL;
-            }
-            if (PyDict_SetItemString(d, ml->ml_name, v) != 0) {
-                Py_DECREF(v);
-                Py_DECREF(n);
-                Py_DECREF(m);
-                return NULL;
-            }
-            Py_DECREF(v);
-        }
-        Py_DECREF(n);
     }
     if (module->m_doc != NULL) {
-        v = PyUnicode_FromString(module->m_doc);
-        if (v == NULL || PyDict_SetItemString(d, "__doc__", v) != 0) {
-            Py_XDECREF(v);
+        if (PyModule_SetDocString((PyObject *) m, module->m_doc) != 0) {
             Py_DECREF(m);
             return NULL;
         }
-        Py_DECREF(v);
     }
     m->md_def = module;
     return (PyObject*)m;
 }
 
+PyObject *
+PyModule_FromDefAndSpec2(struct PyModuleDef* def, PyObject *spec, int module_api_version)
+{
+    PyModuleDef_Slot* cur_slot;
+    PyObject *(*create)(PyObject *, PyModuleDef*) = NULL;
+    PyObject *nameobj;
+    PyObject *m = NULL;
+    int has_execution_slots = 0;
+    char *name;
+    int ret;
+
+    PyModuleDef_Init(def);
+
+    nameobj = PyObject_GetAttrString(spec, "name");
+    if (nameobj == NULL) {
+        return NULL;
+    }
+    name = PyUnicode_AsUTF8(nameobj);
+    if (name == NULL) {
+        goto error;
+    }
+
+    if (!check_api_version(name, module_api_version)) {
+        goto error;
+    }
+
+    if (def->m_size < 0) {
+        PyErr_Format(
+            PyExc_SystemError,
+            "module %s: m_size may not be negative for multi-phase initialization",
+            name);
+        goto error;
+    }
+
+    for (cur_slot = def->m_slots; cur_slot && cur_slot->slot; cur_slot++) {
+        if (cur_slot->slot == Py_mod_create) {
+            if (create) {
+                PyErr_Format(
+                    PyExc_SystemError,
+                    "module %s has multiple create slots",
+                    name);
+                goto error;
+            }
+            create = cur_slot->value;
+        } else if (cur_slot->slot < 0 || cur_slot->slot > _Py_mod_LAST_SLOT) {
+            PyErr_Format(
+                PyExc_SystemError,
+                "module %s uses unknown slot ID %i",
+                name, cur_slot->slot);
+            goto error;
+        } else {
+            has_execution_slots = 1;
+        }
+    }
+
+    if (create) {
+        m = create(spec, def);
+        if (m == NULL) {
+            if (!PyErr_Occurred()) {
+                PyErr_Format(
+                    PyExc_SystemError,
+                    "creation of module %s failed without setting an exception",
+                    name);
+            }
+            goto error;
+        } else {
+            if (PyErr_Occurred()) {
+                PyErr_Format(PyExc_SystemError,
+                            "creation of module %s raised unreported exception",
+                            name);
+                goto error;
+            }
+        }
+    } else {
+        m = PyModule_New(name);
+        if (m == NULL) {
+            goto error;
+        }
+    }
+
+    if (PyModule_Check(m)) {
+        ((PyModuleObject*)m)->md_state = NULL;
+        ((PyModuleObject*)m)->md_def = def;
+    } else {
+        if (def->m_size > 0 || def->m_traverse || def->m_clear || def->m_free) {
+            PyErr_Format(
+                PyExc_SystemError,
+                "module %s is not a module object, but requests module state",
+                name);
+            goto error;
+        }
+        if (has_execution_slots) {
+            PyErr_Format(
+                PyExc_SystemError,
+                "module %s specifies execution slots, but did not create "
+                    "a ModuleType instance",
+                name);
+            goto error;
+        }
+    }
+
+    if (def->m_methods != NULL) {
+        ret = PyModule_AddFunctions(m, def->m_methods);
+        if (ret != 0) {
+            goto error;
+        }
+    }
+
+    if (def->m_doc != NULL) {
+        ret = PyModule_SetDocString(m, def->m_doc);
+        if (ret != 0) {
+            goto error;
+        }
+    }
+
+    Py_DECREF(nameobj);
+    return m;
+
+error:
+    Py_DECREF(nameobj);
+    Py_XDECREF(m);
+    return NULL;
+}
+
+int
+PyModule_ExecDef(PyObject *module, PyModuleDef *def)
+{
+    PyModuleDef_Slot *cur_slot;
+    const char *name;
+    int ret;
+
+    name = PyModule_GetName(module);
+    if (name == NULL) {
+        return -1;
+    }
+
+    if (PyModule_Check(module) && def->m_size >= 0) {
+        PyModuleObject *md = (PyModuleObject*)module;
+        if (md->md_state == NULL) {
+            /* Always set a state pointer; this serves as a marker to skip
+             * multiple initialization (importlib.reload() is no-op) */
+            md->md_state = PyMem_MALLOC(def->m_size);
+            if (!md->md_state) {
+                PyErr_NoMemory();
+                return -1;
+            }
+            memset(md->md_state, 0, def->m_size);
+        }
+    }
+
+    if (def->m_slots == NULL) {
+        return 0;
+    }
+
+    for (cur_slot = def->m_slots; cur_slot && cur_slot->slot; cur_slot++) {
+        switch (cur_slot->slot) {
+            case Py_mod_create:
+                /* handled in PyModule_CreateFromSlots */
+                break;
+            case Py_mod_exec:
+                ret = ((int (*)(PyObject *))cur_slot->value)(module);
+                if (ret != 0) {
+                    if (!PyErr_Occurred()) {
+                        PyErr_Format(
+                            PyExc_SystemError,
+                            "execution of module %s failed without setting an exception",
+                            name);
+                    }
+                    return -1;
+                }
+                if (PyErr_Occurred()) {
+                    PyErr_Format(
+                        PyExc_SystemError,
+                        "execution of module %s raised unreported exception",
+                        name);
+                    return -1;
+                }
+                break;
+            default:
+                PyErr_Format(
+                    PyExc_SystemError,
+                    "module %s initialized with unknown slot %i",
+                    name, cur_slot->slot);
+                return -1;
+        }
+    }
+    return 0;
+}
+
+int
+PyModule_AddFunctions(PyObject *m, PyMethodDef *functions)
+{
+    PyObject *name, *func;
+    PyMethodDef *fdef;
+
+    name = PyModule_GetNameObject(m);
+    if (name == NULL) {
+        return -1;
+    }
+
+    for (fdef = functions; fdef->ml_name != NULL; fdef++) {
+        if ((fdef->ml_flags & METH_CLASS) ||
+            (fdef->ml_flags & METH_STATIC)) {
+            PyErr_SetString(PyExc_ValueError,
+                            "module functions cannot set"
+                            " METH_CLASS or METH_STATIC");
+            Py_DECREF(name);
+            return -1;
+        }
+        func = PyCFunction_NewEx(fdef, (PyObject*)m, name);
+        if (func == NULL) {
+            Py_DECREF(name);
+            return -1;
+        }
+        if (PyObject_SetAttrString(m, fdef->ml_name, func) != 0) {
+            Py_DECREF(func);
+            Py_DECREF(name);
+            return -1;
+        }
+        Py_DECREF(func);
+    }
+    Py_DECREF(name);
+    return 0;
+}
+
+int
+PyModule_SetDocString(PyObject *m, const char *doc)
+{
+    PyObject *v;
+    _Py_IDENTIFIER(__doc__);
+
+    v = PyUnicode_FromString(doc);
+    if (v == NULL || _PyObject_SetAttrId(m, &PyId___doc__, v) != 0) {
+        Py_XDECREF(v);
+        return -1;
+    }
+    Py_DECREF(v);
+    return 0;
+}
 
 PyObject *
 PyModule_GetDict(PyObject *m)
@@ -214,6 +452,7 @@ PyModule_GetDict(PyObject *m)
 PyObject*
 PyModule_GetNameObject(PyObject *m)
 {
+    _Py_IDENTIFIER(__name__);
     PyObject *d;
     PyObject *name;
     if (!PyModule_Check(m)) {
@@ -222,7 +461,7 @@ PyModule_GetNameObject(PyObject *m)
     }
     d = ((PyModuleObject *)m)->md_dict;
     if (d == NULL ||
-        (name = PyDict_GetItemString(d, "__name__")) == NULL ||
+        (name = _PyDict_GetItemId(d, &PyId___name__)) == NULL ||
         !PyUnicode_Check(name))
     {
         PyErr_SetString(PyExc_SystemError, "nameless module");
@@ -245,6 +484,7 @@ PyModule_GetName(PyObject *m)
 PyObject*
 PyModule_GetFilenameObject(PyObject *m)
 {
+    _Py_IDENTIFIER(__file__);
     PyObject *d;
     PyObject *fileobj;
     if (!PyModule_Check(m)) {
@@ -253,7 +493,7 @@ PyModule_GetFilenameObject(PyObject *m)
     }
     d = ((PyModuleObject *)m)->md_dict;
     if (d == NULL ||
-        (fileobj = PyDict_GetItemString(d, "__file__")) == NULL ||
+        (fileobj = _PyDict_GetItemId(d, &PyId___file__)) == NULL ||
         !PyUnicode_Check(fileobj))
     {
         PyErr_SetString(PyExc_SystemError, "module filename missing");
@@ -299,6 +539,14 @@ PyModule_GetState(PyObject* m)
 void
 _PyModule_Clear(PyObject *m)
 {
+    PyObject *d = ((PyModuleObject *)m)->md_dict;
+    if (d != NULL)
+        _PyModule_ClearDict(d);
+}
+
+void
+_PyModule_ClearDict(PyObject *d)
+{
     /* To make the execution order of destructors for global
        objects a bit more predictable, we first zap all objects
        whose name starts with a single underscore, before we clear
@@ -308,11 +556,6 @@ _PyModule_Clear(PyObject *m)
 
     Py_ssize_t pos;
     PyObject *key, *value;
-    PyObject *d;
-
-    d = ((PyModuleObject *)m)->md_dict;
-    if (d == NULL)
-        return;
 
     /* First, clear only names starting with a single underscore */
     pos = 0;
@@ -327,7 +570,8 @@ _PyModule_Clear(PyObject *m)
                     else
                         PyErr_Clear();
                 }
-                PyDict_SetItem(d, key, Py_None);
+                if (PyDict_SetItem(d, key, Py_None) != 0)
+                    PyErr_Clear();
             }
         }
     }
@@ -346,7 +590,8 @@ _PyModule_Clear(PyObject *m)
                     else
                         PyErr_Clear();
                 }
-                PyDict_SetItem(d, key, Py_None);
+                if (PyDict_SetItem(d, key, Py_None) != 0)
+                    PyErr_Clear();
             }
         }
     }
@@ -406,6 +651,31 @@ module_repr(PyModuleObject *m)
     return PyObject_CallMethod(interp->importlib, "_module_repr", "O", m);
 }
 
+static PyObject*
+module_getattro(PyModuleObject *m, PyObject *name)
+{
+    PyObject *attr, *mod_name;
+    attr = PyObject_GenericGetAttr((PyObject *)m, name);
+    if (attr || !PyErr_ExceptionMatches(PyExc_AttributeError))
+        return attr;
+    PyErr_Clear();
+    if (m->md_dict) {
+        _Py_IDENTIFIER(__name__);
+        mod_name = _PyDict_GetItemId(m->md_dict, &PyId___name__);
+        if (mod_name) {
+            PyErr_Format(PyExc_AttributeError,
+                        "module '%U' has no attribute '%U'", mod_name, name);
+            return NULL;
+        }
+        else if (PyErr_Occurred()) {
+            PyErr_Clear();
+        }
+    }
+    PyErr_Format(PyExc_AttributeError,
+                "module has no attribute '%U'", name);
+    return NULL;
+}
+
 static int
 module_traverse(PyModuleObject *m, visitproc visit, void *arg)
 {
@@ -459,7 +729,6 @@ static PyMethodDef module_methods[] = {
     {0}
 };
 
-
 PyDoc_STRVAR(module_doc,
 "module(name[, doc])\n\
 \n\
@@ -483,7 +752,7 @@ PyTypeObject PyModule_Type = {
     0,                                          /* tp_hash */
     0,                                          /* tp_call */
     0,                                          /* tp_str */
-    PyObject_GenericGetAttr,                    /* tp_getattro */
+    (getattrofunc)module_getattro,              /* tp_getattro */
     PyObject_GenericSetAttr,                    /* tp_setattro */
     0,                                          /* tp_as_buffer */
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC |

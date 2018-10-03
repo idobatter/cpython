@@ -318,6 +318,32 @@ def _comment_line(line):
     else:
         return '#'
 
+def _strip_exception_details(msg):
+    # Support for IGNORE_EXCEPTION_DETAIL.
+    # Get rid of everything except the exception name; in particular, drop
+    # the possibly dotted module path (if any) and the exception message (if
+    # any).  We assume that a colon is never part of a dotted name, or of an
+    # exception name.
+    # E.g., given
+    #    "foo.bar.MyError: la di da"
+    # return "MyError"
+    # Or for "abc.def" or "abc.def:\n" return "def".
+
+    start, end = 0, len(msg)
+    # The exception name must appear on the first line.
+    i = msg.find("\n")
+    if i >= 0:
+        end = i
+    # retain up to the first colon (if any)
+    i = msg.find(':', 0, end)
+    if i >= 0:
+        end = i
+    # retain just the exception name
+    i = msg.rfind('.', 0, end)
+    if i >= 0:
+        start = i+1
+    return msg[start: end]
+
 class _OutputRedirectingPdb(pdb.Pdb):
     """
     A specialized version of the python debugger that redirects stdout
@@ -455,9 +481,6 @@ class Example:
                self.options == other.options and \
                self.exc_msg == other.exc_msg
 
-    def __ne__(self, other):
-        return not self == other
-
     def __hash__(self):
         return hash((self.source, self.want, self.lineno, self.indent,
                      self.exc_msg))
@@ -507,8 +530,9 @@ class DocTest:
             examples = '1 example'
         else:
             examples = '%d examples' % len(self.examples)
-        return ('<DocTest %s from %s:%s (%s)>' %
-                (self.name, self.filename, self.lineno, examples))
+        return ('<%s %s from %s:%s (%s)>' %
+                (self.__class__.__name__,
+                 self.name, self.filename, self.lineno, examples))
 
     def __eq__(self, other):
         if type(self) is not type(other):
@@ -520,9 +544,6 @@ class DocTest:
                self.name == other.name and \
                self.filename == other.filename and \
                self.lineno == other.lineno
-
-    def __ne__(self, other):
-        return not self == other
 
     def __hash__(self):
         return hash((self.docstring, self.name, self.filename, self.lineno))
@@ -919,7 +940,13 @@ class DocTestFinder:
         elif inspect.isfunction(object):
             return module.__dict__ is object.__globals__
         elif inspect.ismethoddescriptor(object):
-            return module.__name__ == object.__objclass__.__module__
+            if hasattr(object, '__objclass__'):
+                obj_mod = object.__objclass__.__module__
+            elif hasattr(object, '__module__'):
+                obj_mod = object.__module__
+            else:
+                return True # [XX] no easy way to tell otherwise
+            return module.__name__ == obj_mod
         elif inspect.isclass(object):
             return module.__name__ == object.__module__
         elif hasattr(object, '__module__'):
@@ -952,7 +979,8 @@ class DocTestFinder:
             for valname, val in obj.__dict__.items():
                 valname = '%s.%s' % (name, valname)
                 # Recurse to functions & classes.
-                if ((inspect.isroutine(val) or inspect.isclass(val)) and
+                if ((inspect.isroutine(inspect.unwrap(val))
+                     or inspect.isclass(val)) and
                     self._from_module(module, val)):
                     self._find(tests, val, valname, module, source_lines,
                                globs, seen)
@@ -1023,7 +1051,7 @@ class DocTestFinder:
             filename = None
         else:
             filename = getattr(module, '__file__', module.__name__)
-            if filename[-4:] in (".pyc", ".pyo"):
+            if filename[-4:] == ".pyc":
                 filename = filename[:-1]
         return self._parser.get_doctest(docstring, globs, name,
                                         filename, lineno)
@@ -1325,10 +1353,9 @@ class DocTestRunner:
 
                 # Another chance if they didn't care about the detail.
                 elif self.optionflags & IGNORE_EXCEPTION_DETAIL:
-                    m1 = re.match(r'(?:[^:]*\.)?([^:]*:)', example.exc_msg)
-                    m2 = re.match(r'(?:[^:]*\.)?([^:]*:)', exc_msg)
-                    if m1 and m2 and check(m1.group(1), m2.group(1),
-                                           self.optionflags):
+                    if check(_strip_exception_details(example.exc_msg),
+                             _strip_exception_details(exc_msg),
+                             self.optionflags):
                         outcome = SUCCESS
 
             # Report the outcome.
@@ -1548,7 +1575,7 @@ class OutputChecker:
 
         # If `want` contains hex-escaped character such as "\u1234",
         # then `want` is a string of six characters(e.g. [\,u,1,2,3,4]).
-        # On the other hand, `got` could be an another sequence of
+        # On the other hand, `got` could be another sequence of
         # characters such as [\u1234], so `want` and `got` should
         # be folded to hex-escaped ASCII string to compare.
         got = self._toAscii(got)
@@ -2258,9 +2285,6 @@ class DocTestCase(unittest.TestCase):
                self._dt_tearDown == other._dt_tearDown and \
                self._dt_checker == other._dt_checker
 
-    def __ne__(self, other):
-        return not self == other
-
     def __hash__(self):
         return hash((self._dt_optionflags, self._dt_setUp, self._dt_tearDown,
                      self._dt_checker))
@@ -2345,15 +2369,6 @@ def DocTestSuite(module=None, globs=None, extraglobs=None, test_finder=None,
         suite = _DocTestSuite()
         suite.addTest(SkipDocTestCase(module))
         return suite
-    elif not tests:
-        # Why do we want to do this? Because it reveals a bug that might
-        # otherwise be hidden.
-        # It is probably a bug that this exception is not also raised if the
-        # number of doctest examples in tests is zero (i.e. if no doctest
-        # examples were found).  However, we should probably not be raising
-        # an exception at all here, though it is too late to make this change
-        # for a maintenance release.  See also issue #14649.
-        raise ValueError(module, "has no docstrings")
 
     tests.sort()
     suite = _DocTestSuite()
@@ -2363,7 +2378,7 @@ def DocTestSuite(module=None, globs=None, extraglobs=None, test_finder=None,
             continue
         if not test.filename:
             filename = module.__file__
-            if filename[-4:] in (".pyc", ".pyo"):
+            if filename[-4:] == ".pyc":
                 filename = filename[:-1]
             test.filename = filename
         suite.addTest(DocTestCase(test, **options))

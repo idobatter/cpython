@@ -115,7 +115,7 @@ validate_arguments(arguments_ty args)
     }
     if (!validate_args(args->kwonlyargs))
         return 0;
-    if (args->kwarg && args->kwarg->annotation 
+    if (args->kwarg && args->kwarg->annotation
         && !validate_expr(args->kwarg->annotation, Load)) {
             return 0;
     }
@@ -164,6 +164,8 @@ validate_expr(expr_ty exp, expr_context_ty ctx)
             return 0;
         }
         check_ctx = 0;
+        /* set actual_ctx to prevent gcc warning */
+        actual_ctx = 0;
     }
     if (check_ctx && actual_ctx != ctx) {
         PyErr_Format(PyExc_ValueError, "expression must have %s context but has %s instead",
@@ -197,8 +199,10 @@ validate_expr(expr_ty exp, expr_context_ty ctx)
                             "Dict doesn't have the same number of keys as values");
             return 0;
         }
-        return validate_exprs(exp->v.Dict.keys, Load, 0) &&
-            validate_exprs(exp->v.Dict.values, Load, 0);
+        /* null_ok=1 for keys expressions to allow dict unpacking to work in
+           dict literals, i.e. ``{**{a:b}}`` */
+        return validate_exprs(exp->v.Dict.keys, Load, /*null_ok=*/ 1) &&
+            validate_exprs(exp->v.Dict.values, Load, /*null_ok=*/ 0);
     case Set_kind:
         return validate_exprs(exp->v.Set.elts, Load, 0);
 #define COMP(NAME) \
@@ -217,6 +221,8 @@ validate_expr(expr_ty exp, expr_context_ty ctx)
         return !exp->v.Yield.value || validate_expr(exp->v.Yield.value, Load);
     case YieldFrom_kind:
         return validate_expr(exp->v.YieldFrom.value, Load);
+    case Await_kind:
+        return validate_expr(exp->v.Await.value, Load);
     case Compare_kind:
         if (!asdl_seq_LEN(exp->v.Compare.comparators)) {
             PyErr_SetString(PyExc_ValueError, "Compare with no comparators");
@@ -233,9 +239,7 @@ validate_expr(expr_ty exp, expr_context_ty ctx)
     case Call_kind:
         return validate_expr(exp->v.Call.func, Load) &&
             validate_exprs(exp->v.Call.args, Load, 0) &&
-            validate_keywords(exp->v.Call.keywords) &&
-            (!exp->v.Call.starargs || validate_expr(exp->v.Call.starargs, Load)) &&
-            (!exp->v.Call.kwargs || validate_expr(exp->v.Call.kwargs, Load));
+            validate_keywords(exp->v.Call.keywords);
     case Num_kind: {
         PyObject *n = exp->v.Num.n;
         if (!PyLong_CheckExact(n) && !PyFloat_CheckExact(n) &&
@@ -253,6 +257,14 @@ validate_expr(expr_ty exp, expr_context_ty ctx)
         }
         return 1;
     }
+    case JoinedStr_kind:
+        return validate_exprs(exp->v.JoinedStr.values, Load, 0);
+    case FormattedValue_kind:
+        if (validate_expr(exp->v.FormattedValue.value, Load) == 0)
+            return 0;
+        if (exp->v.FormattedValue.format_spec)
+            return validate_expr(exp->v.FormattedValue.format_spec, Load);
+        return 1;
     case Bytes_kind: {
         PyObject *b = exp->v.Bytes.s;
         if (!PyBytes_CheckExact(b)) {
@@ -320,9 +332,7 @@ validate_stmt(stmt_ty stmt)
         return validate_body(stmt->v.ClassDef.body, "ClassDef") &&
             validate_exprs(stmt->v.ClassDef.bases, Load, 0) &&
             validate_keywords(stmt->v.ClassDef.keywords) &&
-            validate_exprs(stmt->v.ClassDef.decorator_list, Load, 0) &&
-            (!stmt->v.ClassDef.starargs || validate_expr(stmt->v.ClassDef.starargs, Load)) &&
-            (!stmt->v.ClassDef.kwargs || validate_expr(stmt->v.ClassDef.kwargs, Load));
+            validate_exprs(stmt->v.ClassDef.decorator_list, Load, 0);
     case Return_kind:
         return !stmt->v.Return.value || validate_expr(stmt->v.Return.value, Load);
     case Delete_kind:
@@ -338,6 +348,11 @@ validate_stmt(stmt_ty stmt)
             validate_expr(stmt->v.For.iter, Load) &&
             validate_body(stmt->v.For.body, "For") &&
             validate_stmts(stmt->v.For.orelse);
+    case AsyncFor_kind:
+        return validate_expr(stmt->v.AsyncFor.target, Store) &&
+            validate_expr(stmt->v.AsyncFor.iter, Load) &&
+            validate_body(stmt->v.AsyncFor.body, "AsyncFor") &&
+            validate_stmts(stmt->v.AsyncFor.orelse);
     case While_kind:
         return validate_expr(stmt->v.While.test, Load) &&
             validate_body(stmt->v.While.body, "While") &&
@@ -356,6 +371,16 @@ validate_stmt(stmt_ty stmt)
                 return 0;
         }
         return validate_body(stmt->v.With.body, "With");
+    case AsyncWith_kind:
+        if (!validate_nonempty_seq(stmt->v.AsyncWith.items, "items", "AsyncWith"))
+            return 0;
+        for (i = 0; i < asdl_seq_LEN(stmt->v.AsyncWith.items); i++) {
+            withitem_ty item = asdl_seq_GET(stmt->v.AsyncWith.items, i);
+            if (!validate_expr(item->context_expr, Load) ||
+                (item->optional_vars && !validate_expr(item->optional_vars, Store)))
+                return 0;
+        }
+        return validate_body(stmt->v.AsyncWith.body, "AsyncWith");
     case Raise_kind:
         if (stmt->v.Raise.exc) {
             return validate_expr(stmt->v.Raise.exc, Load) &&
@@ -407,6 +432,12 @@ validate_stmt(stmt_ty stmt)
         return validate_nonempty_seq(stmt->v.Nonlocal.names, "names", "Nonlocal");
     case Expr_kind:
         return validate_expr(stmt->v.Expr.value, Load);
+    case AsyncFunctionDef_kind:
+        return validate_body(stmt->v.AsyncFunctionDef.body, "AsyncFunctionDef") &&
+            validate_arguments(stmt->v.AsyncFunctionDef.args) &&
+            validate_exprs(stmt->v.AsyncFunctionDef.decorator_list, Load, 0) &&
+            (!stmt->v.AsyncFunctionDef.returns ||
+             validate_expr(stmt->v.AsyncFunctionDef.returns, Load));
     case Pass_kind:
     case Break_kind:
     case Continue_kind:
@@ -451,7 +482,7 @@ validate_exprs(asdl_seq *exprs, expr_context_ty ctx, int null_ok)
                             "None disallowed in expression list");
             return 0;
         }
-            
+
     }
     return 1;
 }
@@ -490,7 +521,7 @@ PyAST_Validate(mod_ty mod)
 /* Data structure used internally */
 struct compiling {
     char *c_encoding; /* source encoding */
-    PyArena *c_arena; /* arena for allocating memeory */
+    PyArena *c_arena; /* Arena for allocating memory. */
     PyObject *c_filename; /* filename */
     PyObject *c_normalize; /* Normalization function from unicodedata. */
     PyObject *c_normalize_args; /* Normalization argument tuple. */
@@ -505,13 +536,14 @@ static asdl_seq *ast_for_exprlist(struct compiling *, const node *,
 static expr_ty ast_for_testlist(struct compiling *, const node *);
 static stmt_ty ast_for_classdef(struct compiling *, const node *, asdl_seq *);
 
+static stmt_ty ast_for_with_stmt(struct compiling *, const node *, int);
+static stmt_ty ast_for_for_stmt(struct compiling *, const node *, int);
+
 /* Note different signature for ast_for_call */
 static expr_ty ast_for_call(struct compiling *, const node *, expr_ty);
 
 static PyObject *parsenumber(struct compiling *, const char *);
-static PyObject *parsestr(struct compiling *, const node *n, int *bytesmode);
-static PyObject *parsestrplus(struct compiling *, const node *n,
-                              int *bytesmode);
+static expr_ty parsestrplus(struct compiling *, const node *n);
 
 #define COMP_GENEXP   0
 #define COMP_LISTCOMP 1
@@ -825,6 +857,8 @@ get_operator(const node *n)
             return Sub;
         case STAR:
             return Mult;
+        case AT:
+            return MatMult;
         case SLASH:
             return Div;
         case DOUBLESLASH:
@@ -836,7 +870,7 @@ get_operator(const node *n)
     }
 }
 
-static const char* FORBIDDEN[] = {
+static const char * const FORBIDDEN[] = {
     "None",
     "True",
     "False",
@@ -844,7 +878,8 @@ static const char* FORBIDDEN[] = {
 };
 
 static int
-forbidden_name(struct compiling *c, identifier name, const node *n, int full_checks)
+forbidden_name(struct compiling *c, identifier name, const node *n,
+               int full_checks)
 {
     assert(PyUnicode_Check(name));
     if (PyUnicode_CompareWithASCIIString(name, "__debug__") == 0) {
@@ -852,7 +887,7 @@ forbidden_name(struct compiling *c, identifier name, const node *n, int full_che
         return 1;
     }
     if (full_checks) {
-        const char **p;
+        const char * const *p;
         for (p = FORBIDDEN; *p; p++) {
             if (PyUnicode_CompareWithASCIIString(name, *p) == 0) {
                 ast_error(c, n, "assignment to keyword");
@@ -940,6 +975,9 @@ set_context(struct compiling *c, expr_ty e, expr_context_ty ctx, const node *n)
         case YieldFrom_kind:
             expr_name = "yield expression";
             break;
+        case Await_kind:
+            expr_name = "await expression";
+            break;
         case ListComp_kind:
             expr_name = "list comprehension";
             break;
@@ -954,6 +992,8 @@ set_context(struct compiling *c, expr_ty e, expr_context_ty ctx, const node *n)
         case Num_kind:
         case Str_kind:
         case Bytes_kind:
+        case JoinedStr_kind:
+        case FormattedValue_kind:
             expr_name = "literal";
             break;
         case NameConstant_kind:
@@ -1030,6 +1070,8 @@ ast_for_augassign(struct compiling *c, const node *n)
                 return Pow;
             else
                 return Mult;
+        case '@':
+            return MatMult;
         default:
             PyErr_Format(PyExc_SystemError, "invalid augassign: %s", STR(n));
             return (operator_ty)0;
@@ -1123,7 +1165,7 @@ ast_for_arg(struct compiling *c, const node *n)
     identifier name;
     expr_ty annotation = NULL;
     node *ch;
-    arg_ty tmp;
+    arg_ty ret;
 
     assert(TYPE(n) == tfpdef || TYPE(n) == vfpdef);
     ch = CHILD(n, 0);
@@ -1139,13 +1181,10 @@ ast_for_arg(struct compiling *c, const node *n)
             return NULL;
     }
 
-    tmp = arg(name, annotation, c->c_arena);
-    if (!tmp)
+    ret = arg(name, annotation, LINENO(n), n->n_col_offset, c->c_arena);
+    if (!ret)
         return NULL;
-
-    tmp->lineno = LINENO(n);
-    tmp->col_offset = n->n_col_offset;
-    return tmp;
+    return ret;
 }
 
 /* returns -1 if failed to handle keyword only arguments
@@ -1200,7 +1239,8 @@ handle_keywordonly_args(struct compiling *c, const node *n, int start,
                     goto error;
                 if (forbidden_name(c, argname, ch, 0))
                     goto error;
-                arg = arg(argname, annotation, c->c_arena);
+                arg = arg(argname, annotation, LINENO(ch), ch->n_col_offset,
+                          c->c_arena);
                 if (!arg)
                     goto error;
                 asdl_seq_SET(kwonlyargs, j++, arg);
@@ -1227,16 +1267,20 @@ ast_for_arguments(struct compiling *c, const node *n)
        and varargslist (lambda definition).
 
        parameters: '(' [typedargslist] ')'
-       typedargslist: ((tfpdef ['=' test] ',')*
-           ('*' [tfpdef] (',' tfpdef ['=' test])* [',' '**' tfpdef]
-           | '**' tfpdef)
-           | tfpdef ['=' test] (',' tfpdef ['=' test])* [','])
+       typedargslist: (tfpdef ['=' test] (',' tfpdef ['=' test])* [',' [
+               '*' [tfpdef] (',' tfpdef ['=' test])* [',' ['**' tfpdef [',']]]
+             | '**' tfpdef [',']]]
+         | '*' [tfpdef] (',' tfpdef ['=' test])* [',' ['**' tfpdef [',']]]
+         | '**' tfpdef [','])
        tfpdef: NAME [':' test]
-       varargslist: ((vfpdef ['=' test] ',')*
-           ('*' [vfpdef] (',' vfpdef ['=' test])*  [',' '**' vfpdef]
-           | '**' vfpdef)
-           | vfpdef ['=' test] (',' vfpdef ['=' test])* [','])
+       varargslist: (vfpdef ['=' test] (',' vfpdef ['=' test])* [',' [
+               '*' [vfpdef] (',' vfpdef ['=' test])* [',' ['**' vfpdef [',']]]
+             | '**' vfpdef [',']]]
+         | '*' [vfpdef] (',' vfpdef ['=' test])* [',' ['**' vfpdef [',']]]
+         | '**' vfpdef [',']
+       )
        vfpdef: NAME
+
     */
     int i, j, k, nposargs = 0, nkwonlyargs = 0;
     int nposdefaults = 0, found_default = 0;
@@ -1338,7 +1382,8 @@ ast_for_arguments(struct compiling *c, const node *n)
                 i += 2; /* the name and the comma */
                 break;
             case STAR:
-                if (i+1 >= NCH(n)) {
+                if (i+1 >= NCH(n) ||
+                    (i+2 == NCH(n) && TYPE(CHILD(n, i+1)) == COMMA)) {
                     ast_error(c, CHILD(n, i),
                         "named arguments must follow bare *");
                     return NULL;
@@ -1438,7 +1483,7 @@ ast_for_decorator(struct compiling *c, const node *n)
         name_expr = NULL;
     }
     else if (NCH(n) == 5) { /* Call with no arguments */
-        d = Call(name_expr, NULL, NULL, NULL, NULL, LINENO(n),
+        d = Call(name_expr, NULL, NULL, LINENO(n),
                  n->n_col_offset, c->c_arena);
         if (!d)
             return NULL;
@@ -1476,7 +1521,8 @@ ast_for_decorators(struct compiling *c, const node *n)
 }
 
 static stmt_ty
-ast_for_funcdef(struct compiling *c, const node *n, asdl_seq *decorator_seq)
+ast_for_funcdef_impl(struct compiling *c, const node *n,
+                     asdl_seq *decorator_seq, int is_async)
 {
     /* funcdef: 'def' NAME parameters ['->' test] ':' suite */
     identifier name;
@@ -1505,14 +1551,68 @@ ast_for_funcdef(struct compiling *c, const node *n, asdl_seq *decorator_seq)
     if (!body)
         return NULL;
 
-    return FunctionDef(name, args, body, decorator_seq, returns, LINENO(n),
-                       n->n_col_offset, c->c_arena);
+    if (is_async)
+        return AsyncFunctionDef(name, args, body, decorator_seq, returns,
+                                LINENO(n),
+                                n->n_col_offset, c->c_arena);
+    else
+        return FunctionDef(name, args, body, decorator_seq, returns,
+                           LINENO(n),
+                           n->n_col_offset, c->c_arena);
+}
+
+static stmt_ty
+ast_for_async_funcdef(struct compiling *c, const node *n, asdl_seq *decorator_seq)
+{
+    /* async_funcdef: ASYNC funcdef */
+    REQ(n, async_funcdef);
+    REQ(CHILD(n, 0), ASYNC);
+    REQ(CHILD(n, 1), funcdef);
+
+    return ast_for_funcdef_impl(c, CHILD(n, 1), decorator_seq,
+                                1 /* is_async */);
+}
+
+static stmt_ty
+ast_for_funcdef(struct compiling *c, const node *n, asdl_seq *decorator_seq)
+{
+    /* funcdef: 'def' NAME parameters ['->' test] ':' suite */
+    return ast_for_funcdef_impl(c, n, decorator_seq,
+                                0 /* is_async */);
+}
+
+
+static stmt_ty
+ast_for_async_stmt(struct compiling *c, const node *n)
+{
+    /* async_stmt: ASYNC (funcdef | with_stmt | for_stmt) */
+    REQ(n, async_stmt);
+    REQ(CHILD(n, 0), ASYNC);
+
+    switch (TYPE(CHILD(n, 1))) {
+        case funcdef:
+            return ast_for_funcdef_impl(c, CHILD(n, 1), NULL,
+                                        1 /* is_async */);
+        case with_stmt:
+            return ast_for_with_stmt(c, CHILD(n, 1),
+                                     1 /* is_async */);
+
+        case for_stmt:
+            return ast_for_for_stmt(c, CHILD(n, 1),
+                                    1 /* is_async */);
+
+        default:
+            PyErr_Format(PyExc_SystemError,
+                         "invalid async stament: %s",
+                         STR(CHILD(n, 1)));
+            return NULL;
+    }
 }
 
 static stmt_ty
 ast_for_decorated(struct compiling *c, const node *n)
 {
-    /* decorated: decorators (classdef | funcdef) */
+    /* decorated: decorators (classdef | funcdef | async_funcdef) */
     stmt_ty thing = NULL;
     asdl_seq *decorator_seq = NULL;
 
@@ -1523,12 +1623,15 @@ ast_for_decorated(struct compiling *c, const node *n)
       return NULL;
 
     assert(TYPE(CHILD(n, 1)) == funcdef ||
+           TYPE(CHILD(n, 1)) == async_funcdef ||
            TYPE(CHILD(n, 1)) == classdef);
 
     if (TYPE(CHILD(n, 1)) == funcdef) {
       thing = ast_for_funcdef(c, CHILD(n, 1), decorator_seq);
     } else if (TYPE(CHILD(n, 1)) == classdef) {
       thing = ast_for_classdef(c, CHILD(n, 1), decorator_seq);
+    } else if (TYPE(CHILD(n, 1)) == async_funcdef) {
+      thing = ast_for_async_funcdef(c, CHILD(n, 1), decorator_seq);
     }
     /* we count the decorators in when talking about the class' or
      * function's line number */
@@ -1728,16 +1831,22 @@ ast_for_comprehension(struct compiling *c, const node *n)
 static expr_ty
 ast_for_itercomp(struct compiling *c, const node *n, int type)
 {
-    /* testlist_comp: test ( comp_for | (',' test)* [','] )
-       argument: [test '='] test [comp_for]       # Really [keyword '='] test */
+    /* testlist_comp: (test|star_expr)
+     *                ( comp_for | (',' (test|star_expr))* [','] ) */
     expr_ty elt;
     asdl_seq *comps;
+    node *ch;
 
     assert(NCH(n) > 1);
 
-    elt = ast_for_expr(c, CHILD(n, 0));
+    ch = CHILD(n, 0);
+    elt = ast_for_expr(c, ch);
     if (!elt)
         return NULL;
+    if (elt->kind == Starred_kind) {
+        ast_error(c, ch, "iterable unpacking cannot be used in comprehension");
+        return NULL;
+    }
 
     comps = ast_for_comprehension(c, CHILD(n, 1));
     if (!comps)
@@ -1754,27 +1863,96 @@ ast_for_itercomp(struct compiling *c, const node *n, int type)
         return NULL;
 }
 
+/* Fills in the key, value pair corresponding to the dict element.  In case
+ * of an unpacking, key is NULL.  *i is advanced by the number of ast
+ * elements.  Iff successful, nonzero is returned.
+ */
+static int
+ast_for_dictelement(struct compiling *c, const node *n, int *i,
+                    expr_ty *key, expr_ty *value)
+{
+    expr_ty expression;
+    if (TYPE(CHILD(n, *i)) == DOUBLESTAR) {
+        assert(NCH(n) - *i >= 2);
+
+        expression = ast_for_expr(c, CHILD(n, *i + 1));
+        if (!expression)
+            return 0;
+        *key = NULL;
+        *value = expression;
+
+        *i += 2;
+    }
+    else {
+        assert(NCH(n) - *i >= 3);
+
+        expression = ast_for_expr(c, CHILD(n, *i));
+        if (!expression)
+            return 0;
+        *key = expression;
+
+        REQ(CHILD(n, *i + 1), COLON);
+
+        expression = ast_for_expr(c, CHILD(n, *i + 2));
+        if (!expression)
+            return 0;
+        *value = expression;
+
+        *i += 3;
+    }
+    return 1;
+}
+
 static expr_ty
 ast_for_dictcomp(struct compiling *c, const node *n)
 {
     expr_ty key, value;
     asdl_seq *comps;
+    int i = 0;
 
-    assert(NCH(n) > 3);
-    REQ(CHILD(n, 1), COLON);
-
-    key = ast_for_expr(c, CHILD(n, 0));
-    if (!key)
+    if (!ast_for_dictelement(c, n, &i, &key, &value))
         return NULL;
-    value = ast_for_expr(c, CHILD(n, 2));
-    if (!value)
-        return NULL;
+    assert(key);
+    assert(NCH(n) - i >= 1);
 
-    comps = ast_for_comprehension(c, CHILD(n, 3));
+    comps = ast_for_comprehension(c, CHILD(n, i));
     if (!comps)
         return NULL;
 
     return DictComp(key, value, comps, LINENO(n), n->n_col_offset, c->c_arena);
+}
+
+static expr_ty
+ast_for_dictdisplay(struct compiling *c, const node *n)
+{
+    int i;
+    int j;
+    int size;
+    asdl_seq *keys, *values;
+
+    size = (NCH(n) + 1) / 3; /* +1 in case no trailing comma */
+    keys = _Py_asdl_seq_new(size, c->c_arena);
+    if (!keys)
+        return NULL;
+
+    values = _Py_asdl_seq_new(size, c->c_arena);
+    if (!values)
+        return NULL;
+
+    j = 0;
+    for (i = 0; i < NCH(n); i++) {
+        expr_ty key, value;
+
+        if (!ast_for_dictelement(c, n, &i, &key, &value))
+            return NULL;
+        asdl_seq_SET(keys, j, key);
+        asdl_seq_SET(values, j, value);
+
+        j++;
+    }
+    keys->size = j;
+    values->size = j;
+    return Dict(keys, values, LINENO(n), n->n_col_offset, c->c_arena);
 }
 
 static expr_ty
@@ -1798,6 +1976,27 @@ ast_for_setcomp(struct compiling *c, const node *n)
     return ast_for_itercomp(c, n, COMP_SETCOMP);
 }
 
+static expr_ty
+ast_for_setdisplay(struct compiling *c, const node *n)
+{
+    int i;
+    int size;
+    asdl_seq *elts;
+
+    assert(TYPE(n) == (dictorsetmaker));
+    size = (NCH(n) + 1) / 2; /* +1 in case no trailing comma */
+    elts = _Py_asdl_seq_new(size, c->c_arena);
+    if (!elts)
+        return NULL;
+    for (i = 0; i < NCH(n); i += 2) {
+        expr_ty expression;
+        expression = ast_for_expr(c, CHILD(n, i));
+        if (!expression)
+            return NULL;
+        asdl_seq_SET(elts, i / 2, expression);
+    }
+    return Set(elts, LINENO(n), n->n_col_offset, c->c_arena);
+}
 
 static expr_ty
 ast_for_atom(struct compiling *c, const node *n)
@@ -1807,7 +2006,6 @@ ast_for_atom(struct compiling *c, const node *n)
        | '...' | 'None' | 'True' | 'False'
     */
     node *ch = CHILD(n, 0);
-    int bytesmode = 0;
 
     switch (TYPE(ch)) {
     case NAME: {
@@ -1829,7 +2027,7 @@ ast_for_atom(struct compiling *c, const node *n)
         return Name(name, Load, LINENO(n), n->n_col_offset, c->c_arena);
     }
     case STRING: {
-        PyObject *str = parsestrplus(c, n, &bytesmode);
+        expr_ty str = parsestrplus(c, n);
         if (!str) {
             const char *errtype = NULL;
             if (PyErr_ExceptionMatches(PyExc_UnicodeError))
@@ -1846,6 +2044,7 @@ ast_for_atom(struct compiling *c, const node *n)
                     PyOS_snprintf(buf, sizeof(buf), "(%s) %s", errtype, s);
                     Py_DECREF(errstr);
                 } else {
+                    PyErr_Clear();
                     PyOS_snprintf(buf, sizeof(buf), "(%s) unknown error", errtype);
                 }
                 ast_error(c, n, buf);
@@ -1855,14 +2054,7 @@ ast_for_atom(struct compiling *c, const node *n)
             }
             return NULL;
         }
-        if (PyArena_AddPyObject(c->c_arena, str) < 0) {
-            Py_DECREF(str);
-            return NULL;
-        }
-        if (bytesmode)
-            return Bytes(str, LINENO(n), n->n_col_offset, c->c_arena);
-        else
-            return Str(str, LINENO(n), n->n_col_offset, c->c_arena);
+        return str;
     }
     case NUMBER: {
         PyObject *pynum = parsenumber(c, STR(ch));
@@ -1908,62 +2100,48 @@ ast_for_atom(struct compiling *c, const node *n)
         else
             return ast_for_listcomp(c, ch);
     case LBRACE: {
-        /* dictorsetmaker: test ':' test (',' test ':' test)* [','] |
-         *                 test (gen_for | (',' test)* [','])  */
-        int i, size;
-        asdl_seq *keys, *values;
-
+        /* dictorsetmaker: ( ((test ':' test | '**' test)
+         *                    (comp_for | (',' (test ':' test | '**' test))* [','])) |
+         *                   ((test | '*' test)
+         *                    (comp_for | (',' (test | '*' test))* [','])) ) */
+        expr_ty res;
         ch = CHILD(n, 1);
         if (TYPE(ch) == RBRACE) {
-            /* it's an empty dict */
+            /* It's an empty dict. */
             return Dict(NULL, NULL, LINENO(n), n->n_col_offset, c->c_arena);
-        } else if (NCH(ch) == 1 || TYPE(CHILD(ch, 1)) == COMMA) {
-            /* it's a simple set */
-            asdl_seq *elts;
-            size = (NCH(ch) + 1) / 2; /* +1 in case no trailing comma */
-            elts = _Py_asdl_seq_new(size, c->c_arena);
-            if (!elts)
-                return NULL;
-            for (i = 0; i < NCH(ch); i += 2) {
-                expr_ty expression;
-                expression = ast_for_expr(c, CHILD(ch, i));
-                if (!expression)
-                    return NULL;
-                asdl_seq_SET(elts, i / 2, expression);
+        }
+        else {
+            int is_dict = (TYPE(CHILD(ch, 0)) == DOUBLESTAR);
+            if (NCH(ch) == 1 ||
+                    (NCH(ch) > 1 &&
+                     TYPE(CHILD(ch, 1)) == COMMA)) {
+                /* It's a set display. */
+                res = ast_for_setdisplay(c, ch);
             }
-            return Set(elts, LINENO(n), n->n_col_offset, c->c_arena);
-        } else if (TYPE(CHILD(ch, 1)) == comp_for) {
-            /* it's a set comprehension */
-            return ast_for_setcomp(c, ch);
-        } else if (NCH(ch) > 3 && TYPE(CHILD(ch, 3)) == comp_for) {
-            return ast_for_dictcomp(c, ch);
-        } else {
-            /* it's a dict */
-            size = (NCH(ch) + 1) / 4; /* +1 in case no trailing comma */
-            keys = _Py_asdl_seq_new(size, c->c_arena);
-            if (!keys)
-                return NULL;
-
-            values = _Py_asdl_seq_new(size, c->c_arena);
-            if (!values)
-                return NULL;
-
-            for (i = 0; i < NCH(ch); i += 4) {
-                expr_ty expression;
-
-                expression = ast_for_expr(c, CHILD(ch, i));
-                if (!expression)
-                    return NULL;
-
-                asdl_seq_SET(keys, i / 4, expression);
-
-                expression = ast_for_expr(c, CHILD(ch, i + 2));
-                if (!expression)
-                    return NULL;
-
-                asdl_seq_SET(values, i / 4, expression);
+            else if (NCH(ch) > 1 &&
+                    TYPE(CHILD(ch, 1)) == comp_for) {
+                /* It's a set comprehension. */
+                res = ast_for_setcomp(c, ch);
             }
-            return Dict(keys, values, LINENO(n), n->n_col_offset, c->c_arena);
+            else if (NCH(ch) > 3 - is_dict &&
+                    TYPE(CHILD(ch, 3 - is_dict)) == comp_for) {
+                /* It's a dictionary comprehension. */
+                if (is_dict) {
+                    ast_error(c, n, "dict unpacking cannot be used in "
+                            "dict comprehension");
+                    return NULL;
+                }
+                res = ast_for_dictcomp(c, ch);
+            }
+            else {
+                /* It's a dictionary display. */
+                res = ast_for_dictdisplay(c, ch);
+            }
+            if (res) {
+                res->lineno = LINENO(n);
+                res->col_offset = n->n_col_offset;
+            }
+            return res;
         }
     }
     default:
@@ -2099,24 +2277,17 @@ ast_for_trailer(struct compiling *c, const node *n, expr_ty left_expr)
     REQ(n, trailer);
     if (TYPE(CHILD(n, 0)) == LPAR) {
         if (NCH(n) == 2)
-            return Call(left_expr, NULL, NULL, NULL, NULL, LINENO(n),
+            return Call(left_expr, NULL, NULL, LINENO(n),
                         n->n_col_offset, c->c_arena);
-        else {
-            expr_ty tmp = ast_for_call(c, CHILD(n, 1), left_expr);
-            if (!tmp)
-                return NULL;
-
-            tmp->lineno = LINENO(n);
-            tmp->col_offset = n->n_col_offset;
-            return tmp;
-        }
+        else
+            return ast_for_call(c, CHILD(n, 1), left_expr);
     }
-    else if (TYPE(CHILD(n, 0)) == DOT ) {
+    else if (TYPE(CHILD(n, 0)) == DOT) {
         PyObject *attr_id = NEW_IDENTIFIER(CHILD(n, 1));
         if (!attr_id)
             return NULL;
         return Attribute(left_expr, attr_id, Load,
-                         LINENO(CHILD(n, 1)), CHILD(n, 1)->n_col_offset, c->c_arena);
+                         LINENO(n), n->n_col_offset, c->c_arena);
     }
     else {
         REQ(CHILD(n, 0), LSQB);
@@ -2198,35 +2369,66 @@ ast_for_factor(struct compiling *c, const node *n)
 }
 
 static expr_ty
-ast_for_power(struct compiling *c, const node *n)
+ast_for_atom_expr(struct compiling *c, const node *n)
 {
-    /* power: atom trailer* ('**' factor)*
-     */
-    int i;
+    int i, nch, start = 0;
     expr_ty e, tmp;
-    REQ(n, power);
-    e = ast_for_atom(c, CHILD(n, 0));
+
+    REQ(n, atom_expr);
+    nch = NCH(n);
+
+    if (TYPE(CHILD(n, 0)) == AWAIT) {
+        start = 1;
+        assert(nch > 1);
+    }
+
+    e = ast_for_atom(c, CHILD(n, start));
     if (!e)
         return NULL;
-    if (NCH(n) == 1)
+    if (nch == 1)
         return e;
-    for (i = 1; i < NCH(n); i++) {
+    if (start && nch == 2) {
+        return Await(e, LINENO(n), n->n_col_offset, c->c_arena);
+    }
+
+    for (i = start + 1; i < nch; i++) {
         node *ch = CHILD(n, i);
         if (TYPE(ch) != trailer)
             break;
         tmp = ast_for_trailer(c, ch, e);
         if (!tmp)
             return NULL;
+        tmp->lineno = e->lineno;
+        tmp->col_offset = e->col_offset;
         e = tmp;
     }
+
+    if (start) {
+        /* there was an AWAIT */
+        return Await(e, LINENO(n), n->n_col_offset, c->c_arena);
+    }
+    else {
+        return e;
+    }
+}
+
+static expr_ty
+ast_for_power(struct compiling *c, const node *n)
+{
+    /* power: atom trailer* ('**' factor)*
+     */
+    expr_ty e;
+    REQ(n, power);
+    e = ast_for_atom_expr(c, CHILD(n, 0));
+    if (!e)
+        return NULL;
+    if (NCH(n) == 1)
+        return e;
     if (TYPE(CHILD(n, NCH(n) - 1)) == factor) {
         expr_ty f = ast_for_expr(c, CHILD(n, NCH(n) - 1));
         if (!f)
             return NULL;
-        tmp = BinOp(e, Pow, f, LINENO(n), n->n_col_offset, c->c_arena);
-        if (!tmp)
-            return NULL;
-        e = tmp;
+        e = BinOp(e, Pow, f, LINENO(n), n->n_col_offset, c->c_arena);
     }
     return e;
 }
@@ -2264,9 +2466,11 @@ ast_for_expr(struct compiling *c, const node *n)
        and_expr: shift_expr ('&' shift_expr)*
        shift_expr: arith_expr (('<<'|'>>') arith_expr)*
        arith_expr: term (('+'|'-') term)*
-       term: factor (('*'|'/'|'%'|'//') factor)*
+       term: factor (('*'|'@'|'/'|'%'|'//') factor)*
        factor: ('+'|'-'|'~') factor | power
-       power: atom trailer* ('**' factor)*
+       power: atom_expr ['**' factor]
+       atom_expr: [AWAIT] atom trailer*
+       yield_expr: 'yield' [yield_arg]
     */
 
     asdl_seq *seq;
@@ -2416,15 +2620,14 @@ static expr_ty
 ast_for_call(struct compiling *c, const node *n, expr_ty func)
 {
     /*
-      arglist: (argument ',')* (argument [',']| '*' test [',' '**' test]
-               | '**' test)
-      argument: [test '='] (test) [comp_for]        # Really [keyword '='] test
+      arglist: argument (',' argument)*  [',']
+      argument: ( test [comp_for] | '*' test | test '=' test | '**' test )
     */
 
     int i, nargs, nkeywords, ngens;
+    int ndoublestars;
     asdl_seq *args;
     asdl_seq *keywords;
-    expr_ty vararg = NULL, kwarg = NULL;
 
     REQ(n, arglist);
 
@@ -2438,7 +2641,10 @@ ast_for_call(struct compiling *c, const node *n, expr_ty func)
                 nargs++;
             else if (TYPE(CHILD(ch, 1)) == comp_for)
                 ngens++;
+            else if (TYPE(CHILD(ch, 0)) == STAR)
+                nargs++;
             else
+                /* TYPE(CHILD(ch, 0)) == DOUBLESTAR or keyword argument */
                 nkeywords++;
         }
     }
@@ -2459,41 +2665,81 @@ ast_for_call(struct compiling *c, const node *n, expr_ty func)
     keywords = _Py_asdl_seq_new(nkeywords, c->c_arena);
     if (!keywords)
         return NULL;
-    nargs = 0;
-    nkeywords = 0;
+
+    nargs = 0;  /* positional arguments + iterable argument unpackings */
+    nkeywords = 0;  /* keyword arguments + keyword argument unpackings */
+    ndoublestars = 0;  /* just keyword argument unpackings */
     for (i = 0; i < NCH(n); i++) {
         node *ch = CHILD(n, i);
         if (TYPE(ch) == argument) {
             expr_ty e;
+            node *chch = CHILD(ch, 0);
             if (NCH(ch) == 1) {
+                /* a positional argument */
                 if (nkeywords) {
-                    ast_error(c, CHILD(ch, 0),
-                              "non-keyword arg after keyword arg");
+                    if (ndoublestars) {
+                        ast_error(c, chch,
+                                "positional argument follows "
+                                "keyword argument unpacking");
+                    }
+                    else {
+                        ast_error(c, chch,
+                                "positional argument follows "
+                                "keyword argument");
+                    }
                     return NULL;
                 }
-                if (vararg) {
-                    ast_error(c, CHILD(ch, 0),
-                              "only named arguments may follow *expression");
-                    return NULL;
-                }
-                e = ast_for_expr(c, CHILD(ch, 0));
+                e = ast_for_expr(c, chch);
                 if (!e)
                     return NULL;
                 asdl_seq_SET(args, nargs++, e);
             }
+            else if (TYPE(chch) == STAR) {
+                /* an iterable argument unpacking */
+                expr_ty starred;
+                if (ndoublestars) {
+                    ast_error(c, chch,
+                            "iterable argument unpacking follows "
+                            "keyword argument unpacking");
+                    return NULL;
+                }
+                e = ast_for_expr(c, CHILD(ch, 1));
+                if (!e)
+                    return NULL;
+                starred = Starred(e, Load, LINENO(chch),
+                        chch->n_col_offset,
+                        c->c_arena);
+                if (!starred)
+                    return NULL;
+                asdl_seq_SET(args, nargs++, starred);
+
+            }
+            else if (TYPE(chch) == DOUBLESTAR) {
+                /* a keyword argument unpacking */
+                keyword_ty kw;
+                i++;
+                e = ast_for_expr(c, CHILD(ch, 1));
+                if (!e)
+                    return NULL;
+                kw = keyword(NULL, e, c->c_arena);
+                asdl_seq_SET(keywords, nkeywords++, kw);
+                ndoublestars++;
+            }
             else if (TYPE(CHILD(ch, 1)) == comp_for) {
+                /* the lone generator expression */
                 e = ast_for_genexp(c, ch);
                 if (!e)
                     return NULL;
                 asdl_seq_SET(args, nargs++, e);
             }
             else {
+                /* a keyword argument */
                 keyword_ty kw;
                 identifier key, tmp;
                 int k;
 
-                /* CHILD(ch, 0) is test, but must be an identifier? */
-                e = ast_for_expr(c, CHILD(ch, 0));
+                /* chch is test, but must be an identifier? */
+                e = ast_for_expr(c, chch);
                 if (!e)
                     return NULL;
                 /* f(lambda x: x[0] = 3) ends up getting parsed with
@@ -2502,19 +2748,24 @@ ast_for_call(struct compiling *c, const node *n, expr_ty func)
                  * then is very confusing.
                  */
                 if (e->kind == Lambda_kind) {
-                    ast_error(c, CHILD(ch, 0), "lambda cannot contain assignment");
+                    ast_error(c, chch,
+                            "lambda cannot contain assignment");
                     return NULL;
-                } else if (e->kind != Name_kind) {
-                    ast_error(c, CHILD(ch, 0), "keyword can't be an expression");
+                }
+                else if (e->kind != Name_kind) {
+                    ast_error(c, chch,
+                            "keyword can't be an expression");
                     return NULL;
-                } else if (forbidden_name(c, e->v.Name.id, ch, 1)) {
+                }
+                else if (forbidden_name(c, e->v.Name.id, ch, 1)) {
                     return NULL;
                 }
                 key = e->v.Name.id;
                 for (k = 0; k < nkeywords; k++) {
                     tmp = ((keyword_ty)asdl_seq_GET(keywords, k))->arg;
-                    if (!PyUnicode_Compare(tmp, key)) {
-                        ast_error(c, CHILD(ch, 0), "keyword argument repeated");
+                    if (tmp && !PyUnicode_Compare(tmp, key)) {
+                        ast_error(c, chch,
+                                "keyword argument repeated");
                         return NULL;
                     }
                 }
@@ -2527,21 +2778,9 @@ ast_for_call(struct compiling *c, const node *n, expr_ty func)
                 asdl_seq_SET(keywords, nkeywords++, kw);
             }
         }
-        else if (TYPE(ch) == STAR) {
-            vararg = ast_for_expr(c, CHILD(n, i+1));
-            if (!vararg)
-                return NULL;
-            i++;
-        }
-        else if (TYPE(ch) == DOUBLESTAR) {
-            kwarg = ast_for_expr(c, CHILD(n, i+1));
-            if (!kwarg)
-                return NULL;
-            i++;
-        }
     }
 
-    return Call(func, args, keywords, vararg, kwarg, func->lineno, func->col_offset, c->c_arena);
+    return Call(func, args, keywords, func->lineno, func->col_offset, c->c_arena);
 }
 
 static expr_ty
@@ -2575,7 +2814,7 @@ ast_for_expr_stmt(struct compiling *c, const node *n)
     /* expr_stmt: testlist_star_expr (augassign (yield_expr|testlist)
                 | ('=' (yield_expr|testlist))*)
        testlist_star_expr: (test|star_expr) (',' test|star_expr)* [',']
-       augassign: '+=' | '-=' | '*=' | '/=' | '%=' | '&=' | '|=' | '^='
+       augassign: '+=' | '-=' | '*=' | '@=' | '/=' | '%=' | '&=' | '|=' | '^='
                 | '<<=' | '>>=' | '**=' | '//='
        test: ... here starts the operator precendence dance
      */
@@ -3295,7 +3534,7 @@ ast_for_while_stmt(struct compiling *c, const node *n)
 }
 
 static stmt_ty
-ast_for_for_stmt(struct compiling *c, const node *n)
+ast_for_for_stmt(struct compiling *c, const node *n, int is_async)
 {
     asdl_seq *_target, *seq = NULL, *suite_seq;
     expr_ty expression;
@@ -3329,8 +3568,14 @@ ast_for_for_stmt(struct compiling *c, const node *n)
     if (!suite_seq)
         return NULL;
 
-    return For(target, expression, suite_seq, seq, LINENO(n), n->n_col_offset,
-               c->c_arena);
+    if (is_async)
+        return AsyncFor(target, expression, suite_seq, seq,
+                        LINENO(n), n->n_col_offset,
+                        c->c_arena);
+    else
+        return For(target, expression, suite_seq, seq,
+                   LINENO(n), n->n_col_offset,
+                   c->c_arena);
 }
 
 static excepthandler_ty
@@ -3477,7 +3722,7 @@ ast_for_with_item(struct compiling *c, const node *n)
 
 /* with_stmt: 'with' with_item (',' with_item)* ':' suite */
 static stmt_ty
-ast_for_with_stmt(struct compiling *c, const node *n)
+ast_for_with_stmt(struct compiling *c, const node *n, int is_async)
 {
     int i, n_items;
     asdl_seq *items, *body;
@@ -3499,7 +3744,10 @@ ast_for_with_stmt(struct compiling *c, const node *n)
     if (!body)
         return NULL;
 
-    return With(items, body, LINENO(n), n->n_col_offset, c->c_arena);
+    if (is_async)
+        return AsyncWith(items, body, LINENO(n), n->n_col_offset, c->c_arena);
+    else
+        return With(items, body, LINENO(n), n->n_col_offset, c->c_arena);
 }
 
 static stmt_ty
@@ -3521,8 +3769,8 @@ ast_for_classdef(struct compiling *c, const node *n, asdl_seq *decorator_seq)
             return NULL;
         if (forbidden_name(c, classname, CHILD(n, 3), 0))
             return NULL;
-        return ClassDef(classname, NULL, NULL, NULL, NULL, s, decorator_seq,
-                        LINENO(n), n->n_col_offset, c->c_arena);
+        return ClassDef(classname, NULL, NULL, s, decorator_seq, LINENO(n),
+                        n->n_col_offset, c->c_arena);
     }
 
     if (TYPE(CHILD(n, 3)) == RPAR) { /* class NAME '(' ')' ':' suite */
@@ -3534,8 +3782,8 @@ ast_for_classdef(struct compiling *c, const node *n, asdl_seq *decorator_seq)
             return NULL;
         if (forbidden_name(c, classname, CHILD(n, 3), 0))
             return NULL;
-        return ClassDef(classname, NULL, NULL, NULL, NULL, s, decorator_seq,
-                        LINENO(n), n->n_col_offset, c->c_arena);
+        return ClassDef(classname, NULL, NULL, s, decorator_seq, LINENO(n),
+                        n->n_col_offset, c->c_arena);
     }
 
     /* class NAME '(' arglist ')' ':' suite */
@@ -3560,8 +3808,7 @@ ast_for_classdef(struct compiling *c, const node *n, asdl_seq *decorator_seq)
     if (forbidden_name(c, classname, CHILD(n, 1), 0))
         return NULL;
 
-    return ClassDef(classname, call->v.Call.args, call->v.Call.keywords,
-                    call->v.Call.starargs, call->v.Call.kwargs, s,
+    return ClassDef(classname, call->v.Call.args, call->v.Call.keywords, s,
                     decorator_seq, LINENO(n), n->n_col_offset, c->c_arena);
 }
 
@@ -3607,7 +3854,7 @@ ast_for_stmt(struct compiling *c, const node *n)
     }
     else {
         /* compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt
-                        | funcdef | classdef | decorated
+                        | funcdef | classdef | decorated | async_stmt
         */
         node *ch = CHILD(n, 0);
         REQ(n, compound_stmt);
@@ -3617,17 +3864,19 @@ ast_for_stmt(struct compiling *c, const node *n)
             case while_stmt:
                 return ast_for_while_stmt(c, ch);
             case for_stmt:
-                return ast_for_for_stmt(c, ch);
+                return ast_for_for_stmt(c, ch, 0);
             case try_stmt:
                 return ast_for_try_stmt(c, ch);
             case with_stmt:
-                return ast_for_with_stmt(c, ch);
+                return ast_for_with_stmt(c, ch, 0);
             case funcdef:
                 return ast_for_funcdef(c, ch, NULL);
             case classdef:
                 return ast_for_classdef(c, ch, NULL);
             case decorated:
                 return ast_for_decorated(c, ch);
+            case async_stmt:
+                return ast_for_async_stmt(c, ch);
             default:
                 PyErr_Format(PyExc_SystemError,
                              "unhandled small_stmt: TYPE=%d NCH=%d\n",
@@ -3692,7 +3941,7 @@ decode_utf8(struct compiling *c, const char **sPtr, const char *end)
 }
 
 static PyObject *
-decode_unicode(struct compiling *c, const char *s, size_t len, int rawmode, const char *encoding)
+decode_unicode(struct compiling *c, const char *s, size_t len, const char *encoding)
 {
     PyObject *v, *u;
     char *buf;
@@ -3748,20 +3997,874 @@ decode_unicode(struct compiling *c, const char *s, size_t len, int rawmode, cons
         len = p - buf;
         s = buf;
     }
-    if (rawmode)
-        v = PyUnicode_DecodeRawUnicodeEscape(s, len, NULL);
-    else
-        v = PyUnicode_DecodeUnicodeEscape(s, len, NULL);
+    v = PyUnicode_DecodeUnicodeEscape(s, len, NULL);
     Py_XDECREF(u);
     return v;
 }
 
-/* s is a Python string literal, including the bracketing quote characters,
- * and r &/or b prefixes (if any), and embedded escape sequences (if any).
- * parsestr parses it, and returns the decoded Python string object.
- */
+/* Compile this expression in to an expr_ty. We know that we can
+   temporarily modify the character before the start of this string
+   (it's '{'), and we know we can temporarily modify the character
+   after this string (it is a '}').  Leverage this to create a
+   sub-string with enough room for us to add parens around the
+   expression. This is to allow strings with embedded newlines, for
+   example. */
+static expr_ty
+fstring_compile_expr(PyObject *str, Py_ssize_t expr_start,
+                     Py_ssize_t expr_end, struct compiling *c, const node *n)
+
+{
+    PyCompilerFlags cf;
+    mod_ty mod;
+    char *utf_expr;
+    Py_ssize_t i;
+    Py_UCS4 end_ch = -1;
+    int all_whitespace;
+    PyObject *sub = NULL;
+
+    /* We only decref sub if we allocated it with a PyUnicode_Substring.
+       decref_sub records that. */
+    int decref_sub = 0;
+
+    assert(str);
+
+    assert(expr_start >= 0 && expr_start < PyUnicode_GET_LENGTH(str));
+    assert(expr_end >= 0 && expr_end < PyUnicode_GET_LENGTH(str));
+    assert(expr_end >= expr_start);
+
+    /* There has to be at least one character on each side of the
+       expression inside this str. This will have been caught before
+       we're called. */
+    assert(expr_start >= 1);
+    assert(expr_end <= PyUnicode_GET_LENGTH(str)-1);
+
+    /* If the substring is all whitespace, it's an error. We need to
+        catch this here, and not when we call PyParser_ASTFromString,
+        because turning the expression '' in to '()' would go from
+        being invalid to valid. */
+    /* Note that this code says an empty string is all
+        whitespace. That's important. There's a test for it: f'{}'. */
+    all_whitespace = 1;
+    for (i = expr_start; i < expr_end; i++) {
+        if (!Py_UNICODE_ISSPACE(PyUnicode_READ_CHAR(str, i))) {
+            all_whitespace = 0;
+            break;
+        }
+    }
+    if (all_whitespace) {
+        ast_error(c, n, "f-string: empty expression not allowed");
+        goto error;
+    }
+
+    /* If the substring will be the entire source string, we can't use
+        PyUnicode_Substring, since it will return another reference to
+        our original string. Because we're modifying the string in
+        place, that's a no-no. So, detect that case and just use our
+        string directly. */
+
+    if (expr_start-1 == 0 && expr_end+1 == PyUnicode_GET_LENGTH(str)) {
+        /* If str is well formed, then the first and last chars must
+           be '{' and '}', respectively. But, if there's a syntax
+           error, for example f'{3!', then the last char won't be a
+           closing brace. So, remember the last character we read in
+           order for us to restore it. */
+        end_ch = PyUnicode_ReadChar(str, expr_end-expr_start+1);
+        assert(end_ch != (Py_UCS4)-1);
+
+        /* In all cases, however, start_ch must be '{'. */
+        assert(PyUnicode_ReadChar(str, 0) == '{');
+
+        sub = str;
+    } else {
+        /* Create a substring object. It must be a new object, with
+           refcount==1, so that we can modify it. */
+        sub = PyUnicode_Substring(str, expr_start-1, expr_end+1);
+        if (!sub)
+            goto error;
+        assert(sub != str);  /* Make sure it's a new string. */
+        decref_sub = 1;      /* Remember to deallocate it on error. */
+    }
+
+    /* Put () around the expression. */
+    if (PyUnicode_WriteChar(sub, 0, '(') < 0 ||
+        PyUnicode_WriteChar(sub, expr_end-expr_start+1, ')') < 0)
+        goto error;
+
+    /* No need to free the memory returned here: it's managed by the
+       string. */
+    utf_expr = PyUnicode_AsUTF8(sub);
+    if (!utf_expr)
+        goto error;
+
+    cf.cf_flags = PyCF_ONLY_AST;
+    mod = PyParser_ASTFromString(utf_expr, "<fstring>",
+                                 Py_eval_input, &cf, c->c_arena);
+    if (!mod)
+        goto error;
+
+    if (sub != str)
+        /* Clear instead of decref in case we ever modify this code to change
+           the error handling: this is safest because the XDECREF won't try
+           and decref it when it's NULL. */
+        /* No need to restore the chars in sub, since we know it's getting
+           ready to get deleted (refcount must be 1, since we got a new string
+           in PyUnicode_Substring). */
+        Py_CLEAR(sub);
+    else {
+        assert(!decref_sub);
+        assert(end_ch != (Py_UCS4)-1);
+        /* Restore str, which we earlier modified directly. */
+        if (PyUnicode_WriteChar(str, 0, '{') < 0 ||
+            PyUnicode_WriteChar(str, expr_end-expr_start+1, end_ch) < 0)
+            goto error;
+    }
+    return mod->v.Expression.body;
+
+error:
+    /* Only decref sub if it was the result of a call to SubString. */
+    if (decref_sub)
+        Py_XDECREF(sub);
+
+    if (end_ch != (Py_UCS4)-1) {
+        /* We only get here if we modified str. Make sure that's the
+           case: str will be equal to sub. */
+        if (str == sub) {
+            /* Don't check the error, because we've already set the
+               error state (that's why we're in 'error', after
+               all). */
+            PyUnicode_WriteChar(str, 0, '{');
+            PyUnicode_WriteChar(str, expr_end-expr_start+1, end_ch);
+        }
+    }
+    return NULL;
+}
+
+/* Return -1 on error.
+
+   Return 0 if we reached the end of the literal.
+
+   Return 1 if we haven't reached the end of the literal, but we want
+   the caller to process the literal up to this point. Used for
+   doubled braces.
+*/
+static int
+fstring_find_literal(PyObject *str, Py_ssize_t *ofs, PyObject **literal,
+                     int recurse_lvl, struct compiling *c, const node *n)
+{
+    /* Get any literal string. It ends when we hit an un-doubled brace, or the
+       end of the string. */
+
+    Py_ssize_t literal_start, literal_end;
+    int result = 0;
+
+    enum PyUnicode_Kind kind = PyUnicode_KIND(str);
+    void *data = PyUnicode_DATA(str);
+
+    assert(*literal == NULL);
+
+    literal_start = *ofs;
+    for (; *ofs < PyUnicode_GET_LENGTH(str); *ofs += 1) {
+        Py_UCS4 ch = PyUnicode_READ(kind, data, *ofs);
+        if (ch == '{' || ch == '}') {
+            /* Check for doubled braces, but only at the top level. If
+               we checked at every level, then f'{0:{3}}' would fail
+               with the two closing braces. */
+            if (recurse_lvl == 0) {
+                if (*ofs + 1 < PyUnicode_GET_LENGTH(str) &&
+                    PyUnicode_READ(kind, data, *ofs + 1) == ch) {
+                    /* We're going to tell the caller that the literal ends
+                       here, but that they should continue scanning. But also
+                       skip over the second brace when we resume scanning. */
+                    literal_end = *ofs + 1;
+                    *ofs += 2;
+                    result = 1;
+                    goto done;
+                }
+
+                /* Where a single '{' is the start of a new expression, a
+                   single '}' is not allowed. */
+                if (ch == '}') {
+                    ast_error(c, n, "f-string: single '}' is not allowed");
+                    return -1;
+                }
+            }
+
+            /* We're either at a '{', which means we're starting another
+               expression; or a '}', which means we're at the end of this
+               f-string (for a nested format_spec). */
+            break;
+        }
+    }
+    literal_end = *ofs;
+
+    assert(*ofs == PyUnicode_GET_LENGTH(str) ||
+           PyUnicode_READ(kind, data, *ofs) == '{' ||
+           PyUnicode_READ(kind, data, *ofs) == '}');
+done:
+    if (literal_start != literal_end) {
+        *literal = PyUnicode_Substring(str, literal_start, literal_end);
+        if (!*literal)
+            return -1;
+    }
+
+    return result;
+}
+
+/* Forward declaration because parsing is recursive. */
+static expr_ty
+fstring_parse(PyObject *str, Py_ssize_t *ofs, int recurse_lvl,
+              struct compiling *c, const node *n);
+
+/* Parse the f-string str, starting at ofs. We know *ofs starts an
+   expression (so it must be a '{'). Returns the FormattedValue node,
+   which includes the expression, conversion character, and
+   format_spec expression.
+
+   Note that I don't do a perfect job here: I don't make sure that a
+   closing brace doesn't match an opening paren, for example. It
+   doesn't need to error on all invalid expressions, just correctly
+   find the end of all valid ones. Any errors inside the expression
+   will be caught when we parse it later. */
+static int
+fstring_find_expr(PyObject *str, Py_ssize_t *ofs, int recurse_lvl,
+                  expr_ty *expression, struct compiling *c, const node *n)
+{
+    /* Return -1 on error, else 0. */
+
+    Py_ssize_t expr_start;
+    Py_ssize_t expr_end;
+    expr_ty simple_expression;
+    expr_ty format_spec = NULL; /* Optional format specifier. */
+    Py_UCS4 conversion = -1; /* The conversion char. -1 if not specified. */
+
+    enum PyUnicode_Kind kind = PyUnicode_KIND(str);
+    void *data = PyUnicode_DATA(str);
+
+    /* 0 if we're not in a string, else the quote char we're trying to
+       match (single or double quote). */
+    Py_UCS4 quote_char = 0;
+
+    /* If we're inside a string, 1=normal, 3=triple-quoted. */
+    int string_type = 0;
+
+    /* Keep track of nesting level for braces/parens/brackets in
+       expressions. */
+    Py_ssize_t nested_depth = 0;
+
+    /* Can only nest one level deep. */
+    if (recurse_lvl >= 2) {
+        ast_error(c, n, "f-string: expressions nested too deeply");
+        return -1;
+    }
+
+    /* The first char must be a left brace, or we wouldn't have gotten
+       here. Skip over it. */
+    assert(PyUnicode_READ(kind, data, *ofs) == '{');
+    *ofs += 1;
+
+    expr_start = *ofs;
+    for (; *ofs < PyUnicode_GET_LENGTH(str); *ofs += 1) {
+        Py_UCS4 ch;
+
+        /* Loop invariants. */
+        assert(nested_depth >= 0);
+        assert(*ofs >= expr_start);
+        if (quote_char)
+            assert(string_type == 1 || string_type == 3);
+        else
+            assert(string_type == 0);
+
+        ch = PyUnicode_READ(kind, data, *ofs);
+        if (quote_char) {
+            /* We're inside a string. See if we're at the end. */
+            /* This code needs to implement the same non-error logic
+               as tok_get from tokenizer.c, at the letter_quote
+               label. To actually share that code would be a
+               nightmare. But, it's unlikely to change and is small,
+               so duplicate it here. Note we don't need to catch all
+               of the errors, since they'll be caught when parsing the
+               expression. We just need to match the non-error
+               cases. Thus we can ignore \n in single-quoted strings,
+               for example. Or non-terminated strings. */
+            if (ch == quote_char) {
+                /* Does this match the string_type (single or triple
+                   quoted)? */
+                if (string_type == 3) {
+                    if (*ofs+2 < PyUnicode_GET_LENGTH(str) &&
+                        PyUnicode_READ(kind, data, *ofs+1) == ch &&
+                        PyUnicode_READ(kind, data, *ofs+2) == ch) {
+                        /* We're at the end of a triple quoted string. */
+                        *ofs += 2;
+                        string_type = 0;
+                        quote_char = 0;
+                        continue;
+                    }
+                } else {
+                    /* We're at the end of a normal string. */
+                    quote_char = 0;
+                    string_type = 0;
+                    continue;
+                }
+            }
+            /* We're inside a string, and not finished with the
+               string. If this is a backslash, skip the next char (it
+               might be an end quote that needs skipping). Otherwise,
+               just consume this character normally. */
+            if (ch == '\\' && *ofs+1 < PyUnicode_GET_LENGTH(str)) {
+                /* Just skip the next char, whatever it is. */
+                *ofs += 1;
+            }
+        } else if (ch == '\'' || ch == '"') {
+            /* Is this a triple quoted string? */
+            if (*ofs+2 < PyUnicode_GET_LENGTH(str) &&
+                PyUnicode_READ(kind, data, *ofs+1) == ch &&
+                PyUnicode_READ(kind, data, *ofs+2) == ch) {
+                string_type = 3;
+                *ofs += 2;
+            } else {
+                /* Start of a normal string. */
+                string_type = 1;
+            }
+            /* Start looking for the end of the string. */
+            quote_char = ch;
+        } else if (ch == '[' || ch == '{' || ch == '(') {
+            nested_depth++;
+        } else if (nested_depth != 0 &&
+                   (ch == ']' || ch == '}' || ch == ')')) {
+            nested_depth--;
+        } else if (ch == '#') {
+            /* Error: can't include a comment character, inside parens
+               or not. */
+            ast_error(c, n, "f-string cannot include '#'");
+            return -1;
+        } else if (nested_depth == 0 &&
+                   (ch == '!' || ch == ':' || ch == '}')) {
+            /* First, test for the special case of "!=". Since '=' is
+               not an allowed conversion character, nothing is lost in
+               this test. */
+            if (ch == '!' && *ofs+1 < PyUnicode_GET_LENGTH(str) &&
+                  PyUnicode_READ(kind, data, *ofs+1) == '=')
+                /* This isn't a conversion character, just continue. */
+                continue;
+
+            /* Normal way out of this loop. */
+            break;
+        } else {
+            /* Just consume this char and loop around. */
+        }
+    }
+    expr_end = *ofs;
+    /* If we leave this loop in a string or with mismatched parens, we
+       don't care. We'll get a syntax error when compiling the
+       expression. But, we can produce a better error message, so
+       let's just do that.*/
+    if (quote_char) {
+        ast_error(c, n, "f-string: unterminated string");
+        return -1;
+    }
+    if (nested_depth) {
+        ast_error(c, n, "f-string: mismatched '(', '{', or '['");
+        return -1;
+    }
+
+    if (*ofs >= PyUnicode_GET_LENGTH(str))
+        goto unexpected_end_of_string;
+
+    /* Compile the expression as soon as possible, so we show errors
+       related to the expression before errors related to the
+       conversion or format_spec. */
+    simple_expression = fstring_compile_expr(str, expr_start, expr_end, c, n);
+    if (!simple_expression)
+        return -1;
+
+    /* Check for a conversion char, if present. */
+    if (PyUnicode_READ(kind, data, *ofs) == '!') {
+        *ofs += 1;
+        if (*ofs >= PyUnicode_GET_LENGTH(str))
+            goto unexpected_end_of_string;
+
+        conversion = PyUnicode_READ(kind, data, *ofs);
+        *ofs += 1;
+
+        /* Validate the conversion. */
+        if (!(conversion == 's' || conversion == 'r'
+              || conversion == 'a')) {
+            ast_error(c, n, "f-string: invalid conversion character: "
+                            "expected 's', 'r', or 'a'");
+            return -1;
+        }
+    }
+
+    /* Check for the format spec, if present. */
+    if (*ofs >= PyUnicode_GET_LENGTH(str))
+        goto unexpected_end_of_string;
+    if (PyUnicode_READ(kind, data, *ofs) == ':') {
+        *ofs += 1;
+        if (*ofs >= PyUnicode_GET_LENGTH(str))
+            goto unexpected_end_of_string;
+
+        /* Parse the format spec. */
+        format_spec = fstring_parse(str, ofs, recurse_lvl+1, c, n);
+        if (!format_spec)
+            return -1;
+    }
+
+    if (*ofs >= PyUnicode_GET_LENGTH(str) ||
+          PyUnicode_READ(kind, data, *ofs) != '}')
+        goto unexpected_end_of_string;
+
+    /* We're at a right brace. Consume it. */
+    assert(*ofs < PyUnicode_GET_LENGTH(str));
+    assert(PyUnicode_READ(kind, data, *ofs) == '}');
+    *ofs += 1;
+
+    /* And now create the FormattedValue node that represents this entire
+       expression with the conversion and format spec. */
+    *expression = FormattedValue(simple_expression, (int)conversion,
+                                 format_spec, LINENO(n), n->n_col_offset,
+                                 c->c_arena);
+    if (!*expression)
+        return -1;
+
+    return 0;
+
+unexpected_end_of_string:
+    ast_error(c, n, "f-string: expecting '}'");
+    return -1;
+}
+
+/* Return -1 on error.
+
+   Return 0 if we have a literal (possible zero length) and an
+   expression (zero length if at the end of the string.
+
+   Return 1 if we have a literal, but no expression, and we want the
+   caller to call us again. This is used to deal with doubled
+   braces.
+
+   When called multiple times on the string 'a{{b{0}c', this function
+   will return:
+
+   1. the literal 'a{' with no expression, and a return value
+      of 1. Despite the fact that there's no expression, the return
+      value of 1 means we're not finished yet.
+
+   2. the literal 'b' and the expression '0', with a return value of
+      0. The fact that there's an expression means we're not finished.
+
+   3. literal 'c' with no expression and a return value of 0. The
+      combination of the return value of 0 with no expression means
+      we're finished.
+*/
+static int
+fstring_find_literal_and_expr(PyObject *str, Py_ssize_t *ofs, int recurse_lvl,
+                              PyObject **literal, expr_ty *expression,
+                              struct compiling *c, const node *n)
+{
+    int result;
+
+    assert(*literal == NULL && *expression == NULL);
+
+    /* Get any literal string. */
+    result = fstring_find_literal(str, ofs, literal, recurse_lvl, c, n);
+    if (result < 0)
+        goto error;
+
+    assert(result == 0 || result == 1);
+
+    if (result == 1)
+        /* We have a literal, but don't look at the expression. */
+        return 1;
+
+    assert(*ofs <= PyUnicode_GET_LENGTH(str));
+
+    if (*ofs >= PyUnicode_GET_LENGTH(str) ||
+        PyUnicode_READ_CHAR(str, *ofs) == '}')
+        /* We're at the end of the string or the end of a nested
+           f-string: no expression. The top-level error case where we
+           expect to be at the end of the string but we're at a '}' is
+           handled later. */
+        return 0;
+
+    /* We must now be the start of an expression, on a '{'. */
+    assert(*ofs < PyUnicode_GET_LENGTH(str) &&
+           PyUnicode_READ_CHAR(str, *ofs) == '{');
+
+    if (fstring_find_expr(str, ofs, recurse_lvl, expression, c, n) < 0)
+        goto error;
+
+    return 0;
+
+error:
+    Py_CLEAR(*literal);
+    return -1;
+}
+
+#define EXPRLIST_N_CACHED  64
+
+typedef struct {
+    /* Incrementally build an array of expr_ty, so be used in an
+       asdl_seq. Cache some small but reasonably sized number of
+       expr_ty's, and then after that start dynamically allocating,
+       doubling the number allocated each time. Note that the f-string
+       f'{0}a{1}' contains 3 expr_ty's: 2 FormattedValue's, and one
+       Str for the literal 'a'. So you add expr_ty's about twice as
+       fast as you add exressions in an f-string. */
+
+    Py_ssize_t allocated;  /* Number we've allocated. */
+    Py_ssize_t size;       /* Number we've used. */
+    expr_ty    *p;         /* Pointer to the memory we're actually
+                              using. Will point to 'data' until we
+                              start dynamically allocating. */
+    expr_ty    data[EXPRLIST_N_CACHED];
+} ExprList;
+
+#ifdef NDEBUG
+#define ExprList_check_invariants(l)
+#else
+static void
+ExprList_check_invariants(ExprList *l)
+{
+    /* Check our invariants. Make sure this object is "live", and
+       hasn't been deallocated. */
+    assert(l->size >= 0);
+    assert(l->p != NULL);
+    if (l->size <= EXPRLIST_N_CACHED)
+        assert(l->data == l->p);
+}
+#endif
+
+static void
+ExprList_Init(ExprList *l)
+{
+    l->allocated = EXPRLIST_N_CACHED;
+    l->size = 0;
+
+    /* Until we start allocating dynamically, p points to data. */
+    l->p = l->data;
+
+    ExprList_check_invariants(l);
+}
+
+static int
+ExprList_Append(ExprList *l, expr_ty exp)
+{
+    ExprList_check_invariants(l);
+    if (l->size >= l->allocated) {
+        /* We need to alloc (or realloc) the memory. */
+        Py_ssize_t new_size = l->allocated * 2;
+
+        /* See if we've ever allocated anything dynamically. */
+        if (l->p == l->data) {
+            Py_ssize_t i;
+            /* We're still using the cached data. Switch to
+               alloc-ing. */
+            l->p = PyMem_RawMalloc(sizeof(expr_ty) * new_size);
+            if (!l->p)
+                return -1;
+            /* Copy the cached data into the new buffer. */
+            for (i = 0; i < l->size; i++)
+                l->p[i] = l->data[i];
+        } else {
+            /* Just realloc. */
+            expr_ty *tmp = PyMem_RawRealloc(l->p, sizeof(expr_ty) * new_size);
+            if (!tmp) {
+                PyMem_RawFree(l->p);
+                l->p = NULL;
+                return -1;
+            }
+            l->p = tmp;
+        }
+
+        l->allocated = new_size;
+        assert(l->allocated == 2 * l->size);
+    }
+
+    l->p[l->size++] = exp;
+
+    ExprList_check_invariants(l);
+    return 0;
+}
+
+static void
+ExprList_Dealloc(ExprList *l)
+{
+    ExprList_check_invariants(l);
+
+    /* If there's been an error, or we've never dynamically allocated,
+       do nothing. */
+    if (!l->p || l->p == l->data) {
+        /* Do nothing. */
+    } else {
+        /* We have dynamically allocated. Free the memory. */
+        PyMem_RawFree(l->p);
+    }
+    l->p = NULL;
+    l->size = -1;
+}
+
+static asdl_seq *
+ExprList_Finish(ExprList *l, PyArena *arena)
+{
+    asdl_seq *seq;
+
+    ExprList_check_invariants(l);
+
+    /* Allocate the asdl_seq and copy the expressions in to it. */
+    seq = _Py_asdl_seq_new(l->size, arena);
+    if (seq) {
+        Py_ssize_t i;
+        for (i = 0; i < l->size; i++)
+            asdl_seq_SET(seq, i, l->p[i]);
+    }
+    ExprList_Dealloc(l);
+    return seq;
+}
+
+/* The FstringParser is designed to add a mix of strings and
+   f-strings, and concat them together as needed. Ultimately, it
+   generates an expr_ty. */
+typedef struct {
+    PyObject *last_str;
+    ExprList expr_list;
+} FstringParser;
+
+#ifdef NDEBUG
+#define FstringParser_check_invariants(state)
+#else
+static void
+FstringParser_check_invariants(FstringParser *state)
+{
+    if (state->last_str)
+        assert(PyUnicode_CheckExact(state->last_str));
+    ExprList_check_invariants(&state->expr_list);
+}
+#endif
+
+static void
+FstringParser_Init(FstringParser *state)
+{
+    state->last_str = NULL;
+    ExprList_Init(&state->expr_list);
+    FstringParser_check_invariants(state);
+}
+
+static void
+FstringParser_Dealloc(FstringParser *state)
+{
+    FstringParser_check_invariants(state);
+
+    Py_XDECREF(state->last_str);
+    ExprList_Dealloc(&state->expr_list);
+}
+
+/* Make a Str node, but decref the PyUnicode object being added. */
+static expr_ty
+make_str_node_and_del(PyObject **str, struct compiling *c, const node* n)
+{
+    PyObject *s = *str;
+    *str = NULL;
+    assert(PyUnicode_CheckExact(s));
+    if (PyArena_AddPyObject(c->c_arena, s) < 0) {
+        Py_DECREF(s);
+        return NULL;
+    }
+    return Str(s, LINENO(n), n->n_col_offset, c->c_arena);
+}
+
+/* Add a non-f-string (that is, a regular literal string). str is
+   decref'd. */
+static int
+FstringParser_ConcatAndDel(FstringParser *state, PyObject *str)
+{
+    FstringParser_check_invariants(state);
+
+    assert(PyUnicode_CheckExact(str));
+
+    if (PyUnicode_GET_LENGTH(str) == 0) {
+        Py_DECREF(str);
+        return 0;
+    }
+
+    if (!state->last_str) {
+        /* We didn't have a string before, so just remember this one. */
+        state->last_str = str;
+    } else {
+        /* Concatenate this with the previous string. */
+        PyUnicode_AppendAndDel(&state->last_str, str);
+        if (!state->last_str)
+            return -1;
+    }
+    FstringParser_check_invariants(state);
+    return 0;
+}
+
+/* Parse an f-string. The f-string is in str, starting at ofs, with no 'f'
+   or quotes. str is not decref'd, since we don't know if it's used elsewhere.
+   And if we're only looking at a part of a string, then decref'ing is
+   definitely not the right thing to do! */
+static int
+FstringParser_ConcatFstring(FstringParser *state, PyObject *str,
+                            Py_ssize_t *ofs, int recurse_lvl,
+                            struct compiling *c, const node *n)
+{
+    FstringParser_check_invariants(state);
+
+    /* Parse the f-string. */
+    while (1) {
+        PyObject *literal = NULL;
+        expr_ty expression = NULL;
+
+        /* If there's a zero length literal in front of the
+           expression, literal will be NULL. If we're at the end of
+           the f-string, expression will be NULL (unless result == 1,
+           see below). */
+        int result = fstring_find_literal_and_expr(str, ofs, recurse_lvl,
+                                                   &literal, &expression,
+                                                   c, n);
+        if (result < 0)
+            return -1;
+
+        /* Add the literal, if any. */
+        if (!literal) {
+            /* Do nothing. Just leave last_str alone (and possibly
+               NULL). */
+        } else if (!state->last_str) {
+            state->last_str = literal;
+            literal = NULL;
+        } else {
+            /* We have a literal, concatenate it. */
+            assert(PyUnicode_GET_LENGTH(literal) != 0);
+            if (FstringParser_ConcatAndDel(state, literal) < 0)
+                return -1;
+            literal = NULL;
+        }
+        assert(!state->last_str ||
+               PyUnicode_GET_LENGTH(state->last_str) != 0);
+
+        /* We've dealt with the literal now. It can't be leaked on further
+           errors. */
+        assert(literal == NULL);
+
+        /* See if we should just loop around to get the next literal
+           and expression, while ignoring the expression this
+           time. This is used for un-doubling braces, as an
+           optimization. */
+        if (result == 1)
+            continue;
+
+        if (!expression)
+            /* We're done with this f-string. */
+            break;
+
+        /* We know we have an expression. Convert any existing string
+           to a Str node. */
+        if (!state->last_str) {
+            /* Do nothing. No previous literal. */
+        } else {
+            /* Convert the existing last_str literal to a Str node. */
+            expr_ty str = make_str_node_and_del(&state->last_str, c, n);
+            if (!str || ExprList_Append(&state->expr_list, str) < 0)
+                return -1;
+        }
+
+        if (ExprList_Append(&state->expr_list, expression) < 0)
+            return -1;
+    }
+
+    assert(*ofs <= PyUnicode_GET_LENGTH(str));
+
+    /* If recurse_lvl is zero, then we must be at the end of the
+       string. Otherwise, we must be at a right brace. */
+
+    if (recurse_lvl == 0 && *ofs < PyUnicode_GET_LENGTH(str)) {
+        ast_error(c, n, "f-string: unexpected end of string");
+        return -1;
+    }
+    if (recurse_lvl != 0 && PyUnicode_READ_CHAR(str, *ofs) != '}') {
+        ast_error(c, n, "f-string: expecting '}'");
+        return -1;
+    }
+
+    FstringParser_check_invariants(state);
+    return 0;
+}
+
+/* Convert the partial state reflected in last_str and expr_list to an
+   expr_ty. The expr_ty can be a Str, or a JoinedStr. */
+static expr_ty
+FstringParser_Finish(FstringParser *state, struct compiling *c,
+                     const node *n)
+{
+    asdl_seq *seq;
+
+    FstringParser_check_invariants(state);
+
+    /* If we're just a constant string with no expressions, return
+       that. */
+    if(state->expr_list.size == 0) {
+        if (!state->last_str) {
+            /* Create a zero length string. */
+            state->last_str = PyUnicode_FromStringAndSize(NULL, 0);
+            if (!state->last_str)
+                goto error;
+        }
+        return make_str_node_and_del(&state->last_str, c, n);
+    }
+
+    /* Create a Str node out of last_str, if needed. It will be the
+       last node in our expression list. */
+    if (state->last_str) {
+        expr_ty str = make_str_node_and_del(&state->last_str, c, n);
+        if (!str || ExprList_Append(&state->expr_list, str) < 0)
+            goto error;
+    }
+    /* This has already been freed. */
+    assert(state->last_str == NULL);
+
+    seq = ExprList_Finish(&state->expr_list, c->c_arena);
+    if (!seq)
+        goto error;
+
+    /* If there's only one expression, return it. Otherwise, we need
+       to join them together. */
+    if (seq->size == 1)
+        return seq->elements[0];
+
+    return JoinedStr(seq, LINENO(n), n->n_col_offset, c->c_arena);
+
+error:
+    FstringParser_Dealloc(state);
+    return NULL;
+}
+
+/* Given an f-string (with no 'f' or quotes) that's in str starting at
+   ofs, parse it into an expr_ty. Return NULL on error. Does not
+   decref str. */
+static expr_ty
+fstring_parse(PyObject *str, Py_ssize_t *ofs, int recurse_lvl,
+              struct compiling *c, const node *n)
+{
+    FstringParser state;
+
+    FstringParser_Init(&state);
+    if (FstringParser_ConcatFstring(&state, str, ofs, recurse_lvl,
+                                    c, n) < 0) {
+        FstringParser_Dealloc(&state);
+        return NULL;
+    }
+
+    return FstringParser_Finish(&state, c, n);
+}
+
+/* n is a Python string literal, including the bracketing quote
+   characters, and r, b, u, &/or f prefixes (if any), and embedded
+   escape sequences (if any). parsestr parses it, and returns the
+   decoded Python string object.  If the string is an f-string, set
+   *fmode and return the unparsed string object.
+*/
 static PyObject *
-parsestr(struct compiling *c, const node *n, int *bytesmode)
+parsestr(struct compiling *c, const node *n, int *bytesmode, int *fmode)
 {
     size_t len;
     const char *s = STR(n);
@@ -3781,15 +4884,24 @@ parsestr(struct compiling *c, const node *n, int *bytesmode)
                 quote = *++s;
                 rawmode = 1;
             }
+            else if (quote == 'f' || quote == 'F') {
+                quote = *++s;
+                *fmode = 1;
+            }
             else {
                 break;
             }
         }
     }
+    if (*fmode && *bytesmode) {
+        PyErr_BadInternalCall();
+        return NULL;
+    }
     if (quote != '\'' && quote != '\"') {
         PyErr_BadInternalCall();
         return NULL;
     }
+    /* Skip the leading quote char. */
     s++;
     len = strlen(s);
     if (len > INT_MAX) {
@@ -3798,19 +4910,24 @@ parsestr(struct compiling *c, const node *n, int *bytesmode)
         return NULL;
     }
     if (s[--len] != quote) {
+        /* Last quote char must match the first. */
         PyErr_BadInternalCall();
         return NULL;
     }
     if (len >= 4 && s[0] == quote && s[1] == quote) {
+        /* A triple quoted string. We've already skipped one quote at
+           the start and one at the end of the string. Now skip the
+           two at the start. */
         s += 2;
         len -= 2;
+        /* And check that the last two match. */
         if (s[--len] != quote || s[--len] != quote) {
             PyErr_BadInternalCall();
             return NULL;
         }
     }
     if (!*bytesmode && !rawmode) {
-        return decode_unicode(c, s, len, rawmode, c->c_encoding);
+        return decode_unicode(c, s, len, c->c_encoding);
     }
     if (*bytesmode) {
         /* Disallow non-ascii characters (but not escapes) */
@@ -3842,51 +4959,84 @@ parsestr(struct compiling *c, const node *n, int *bytesmode)
         }
     }
     return PyBytes_DecodeEscape(s, len, NULL, 1,
-                                 need_encoding ? c->c_encoding : NULL);
+                                need_encoding ? c->c_encoding : NULL);
 }
 
-/* Build a Python string object out of a STRING+ atom.  This takes care of
- * compile-time literal catenation, calling parsestr() on each piece, and
- * pasting the intermediate results together.
- */
-static PyObject *
-parsestrplus(struct compiling *c, const node *n, int *bytesmode)
+/* Accepts a STRING+ atom, and produces an expr_ty node. Run through
+   each STRING atom, and process it as needed. For bytes, just
+   concatenate them together, and the result will be a Bytes node. For
+   normal strings and f-strings, concatenate them together. The result
+   will be a Str node if there were no f-strings; a FormattedValue
+   node if there's just an f-string (with no leading or trailing
+   literals), or a JoinedStr node if there are multiple f-strings or
+   any literals involved. */
+static expr_ty
+parsestrplus(struct compiling *c, const node *n)
 {
-    PyObject *v;
+    int bytesmode = 0;
+    PyObject *bytes_str = NULL;
     int i;
-    REQ(CHILD(n, 0), STRING);
-    v = parsestr(c, CHILD(n, 0), bytesmode);
-    if (v != NULL) {
-        /* String literal concatenation */
-        for (i = 1; i < NCH(n); i++) {
-            PyObject *s;
-            int subbm = 0;
-            s = parsestr(c, CHILD(n, i), &subbm);
-            if (s == NULL)
-                goto onError;
-            if (*bytesmode != subbm) {
-                ast_error(c, n, "cannot mix bytes and nonbytes literals");
-                Py_DECREF(s);
-                goto onError;
+
+    FstringParser state;
+    FstringParser_Init(&state);
+
+    for (i = 0; i < NCH(n); i++) {
+        int this_bytesmode = 0;
+        int this_fmode = 0;
+        PyObject *s;
+
+        REQ(CHILD(n, i), STRING);
+        s = parsestr(c, CHILD(n, i), &this_bytesmode, &this_fmode);
+        if (!s)
+            goto error;
+
+        /* Check that we're not mixing bytes with unicode. */
+        if (i != 0 && bytesmode != this_bytesmode) {
+            ast_error(c, n, "cannot mix bytes and nonbytes literals");
+            Py_DECREF(s);
+            goto error;
+        }
+        bytesmode = this_bytesmode;
+
+        assert(bytesmode ? PyBytes_CheckExact(s) : PyUnicode_CheckExact(s));
+
+        if (bytesmode) {
+            /* For bytes, concat as we go. */
+            if (i == 0) {
+                /* First time, just remember this value. */
+                bytes_str = s;
+            } else {
+                PyBytes_ConcatAndDel(&bytes_str, s);
+                if (!bytes_str)
+                    goto error;
             }
-            if (PyBytes_Check(v) && PyBytes_Check(s)) {
-                PyBytes_ConcatAndDel(&v, s);
-                if (v == NULL)
-                    goto onError;
-            }
-            else {
-                PyObject *temp = PyUnicode_Concat(v, s);
-                Py_DECREF(s);
-                Py_DECREF(v);
-                v = temp;
-                if (v == NULL)
-                    goto onError;
-            }
+        } else if (this_fmode) {
+            /* This is an f-string. Concatenate and decref it. */
+            Py_ssize_t ofs = 0;
+            int result = FstringParser_ConcatFstring(&state, s, &ofs, 0, c, n);
+            Py_DECREF(s);
+            if (result < 0)
+                goto error;
+        } else {
+            /* This is a regular string. Concatenate it. */
+            if (FstringParser_ConcatAndDel(&state, s) < 0)
+                goto error;
         }
     }
-    return v;
+    if (bytesmode) {
+        /* Just return the bytes object and we're done. */
+        if (PyArena_AddPyObject(c->c_arena, bytes_str) < 0)
+            goto error;
+        return Bytes(bytes_str, LINENO(n), n->n_col_offset, c->c_arena);
+    }
 
-  onError:
-    Py_XDECREF(v);
+    /* We're not a bytes string, bytes_str should never have been set. */
+    assert(bytes_str == NULL);
+
+    return FstringParser_Finish(&state, c, n);
+
+error:
+    Py_XDECREF(bytes_str);
+    FstringParser_Dealloc(&state);
     return NULL;
 }

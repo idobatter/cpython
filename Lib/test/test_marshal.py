@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from test import support
 import array
 import io
@@ -8,6 +6,11 @@ import sys
 import unittest
 import os
 import types
+
+try:
+    import _testcapi
+except ImportError:
+    _testcapi = None
 
 class HelperMixin:
     def helper(self, sample, *extra):
@@ -190,7 +193,7 @@ class BugsTestCase(unittest.TestCase):
         head = last = []
         # The max stack depth should match the value in Python/marshal.c.
         if os.name == 'nt' and hasattr(sys, 'gettotalrefcount'):
-            MAX_MARSHAL_STACK_DEPTH = 1500
+            MAX_MARSHAL_STACK_DEPTH = 1000
         else:
             MAX_MARSHAL_STACK_DEPTH = 2000
         for i in range(MAX_MARSHAL_STACK_DEPTH - 2):
@@ -288,19 +291,19 @@ class LargeValuesTestCase(unittest.TestCase):
     def check_unmarshallable(self, data):
         self.assertRaises(ValueError, marshal.dump, data, NullWriter())
 
-    @support.bigmemtest(size=LARGE_SIZE, memuse=1, dry_run=False)
+    @support.bigmemtest(size=LARGE_SIZE, memuse=2, dry_run=False)
     def test_bytes(self, size):
         self.check_unmarshallable(b'x' * size)
 
-    @support.bigmemtest(size=LARGE_SIZE, memuse=1, dry_run=False)
+    @support.bigmemtest(size=LARGE_SIZE, memuse=2, dry_run=False)
     def test_str(self, size):
         self.check_unmarshallable('x' * size)
 
-    @support.bigmemtest(size=LARGE_SIZE, memuse=pointer_size, dry_run=False)
+    @support.bigmemtest(size=LARGE_SIZE, memuse=pointer_size + 1, dry_run=False)
     def test_tuple(self, size):
         self.check_unmarshallable((None,) * size)
 
-    @support.bigmemtest(size=LARGE_SIZE, memuse=pointer_size, dry_run=False)
+    @support.bigmemtest(size=LARGE_SIZE, memuse=pointer_size + 1, dry_run=False)
     def test_list(self, size):
         self.check_unmarshallable([None] * size)
 
@@ -316,7 +319,7 @@ class LargeValuesTestCase(unittest.TestCase):
     def test_frozenset(self, size):
         self.check_unmarshallable(frozenset(range(size)))
 
-    @support.bigmemtest(size=LARGE_SIZE, memuse=1, dry_run=False)
+    @support.bigmemtest(size=LARGE_SIZE, memuse=2, dry_run=False)
     def test_bytearray(self, size):
         self.check_unmarshallable(bytearray(size))
 
@@ -436,18 +439,88 @@ class InterningTestCase(unittest.TestCase, HelperMixin):
         s2 = sys.intern(s)
         self.assertNotEqual(id(s2), id(s))
 
+@support.cpython_only
+@unittest.skipUnless(_testcapi, 'requires _testcapi')
+class CAPI_TestCase(unittest.TestCase, HelperMixin):
 
-def test_main():
-    support.run_unittest(IntTestCase,
-                         FloatTestCase,
-                         StringTestCase,
-                         CodeTestCase,
-                         ContainerTestCase,
-                         ExceptionTestCase,
-                         BufferTestCase,
-                         BugsTestCase,
-                         LargeValuesTestCase,
-                        )
+    def test_write_long_to_file(self):
+        for v in range(marshal.version + 1):
+            _testcapi.pymarshal_write_long_to_file(0x12345678, support.TESTFN, v)
+            with open(support.TESTFN, 'rb') as f:
+                data = f.read()
+            support.unlink(support.TESTFN)
+            self.assertEqual(data, b'\x78\x56\x34\x12')
+
+    def test_write_object_to_file(self):
+        obj = ('\u20ac', b'abc', 123, 45.6, 7+8j, 'long line '*1000)
+        for v in range(marshal.version + 1):
+            _testcapi.pymarshal_write_object_to_file(obj, support.TESTFN, v)
+            with open(support.TESTFN, 'rb') as f:
+                data = f.read()
+            support.unlink(support.TESTFN)
+            self.assertEqual(marshal.loads(data), obj)
+
+    def test_read_short_from_file(self):
+        with open(support.TESTFN, 'wb') as f:
+            f.write(b'\x34\x12xxxx')
+        r, p = _testcapi.pymarshal_read_short_from_file(support.TESTFN)
+        support.unlink(support.TESTFN)
+        self.assertEqual(r, 0x1234)
+        self.assertEqual(p, 2)
+
+        with open(support.TESTFN, 'wb') as f:
+            f.write(b'\x12')
+        with self.assertRaises(EOFError):
+            _testcapi.pymarshal_read_short_from_file(support.TESTFN)
+        support.unlink(support.TESTFN)
+
+    def test_read_long_from_file(self):
+        with open(support.TESTFN, 'wb') as f:
+            f.write(b'\x78\x56\x34\x12xxxx')
+        r, p = _testcapi.pymarshal_read_long_from_file(support.TESTFN)
+        support.unlink(support.TESTFN)
+        self.assertEqual(r, 0x12345678)
+        self.assertEqual(p, 4)
+
+        with open(support.TESTFN, 'wb') as f:
+            f.write(b'\x56\x34\x12')
+        with self.assertRaises(EOFError):
+            _testcapi.pymarshal_read_long_from_file(support.TESTFN)
+        support.unlink(support.TESTFN)
+
+    def test_read_last_object_from_file(self):
+        obj = ('\u20ac', b'abc', 123, 45.6, 7+8j)
+        for v in range(marshal.version + 1):
+            data = marshal.dumps(obj, v)
+            with open(support.TESTFN, 'wb') as f:
+                f.write(data + b'xxxx')
+            r, p = _testcapi.pymarshal_read_last_object_from_file(support.TESTFN)
+            support.unlink(support.TESTFN)
+            self.assertEqual(r, obj)
+
+            with open(support.TESTFN, 'wb') as f:
+                f.write(data[:1])
+            with self.assertRaises(EOFError):
+                _testcapi.pymarshal_read_last_object_from_file(support.TESTFN)
+            support.unlink(support.TESTFN)
+
+    def test_read_object_from_file(self):
+        obj = ('\u20ac', b'abc', 123, 45.6, 7+8j)
+        for v in range(marshal.version + 1):
+            data = marshal.dumps(obj, v)
+            with open(support.TESTFN, 'wb') as f:
+                f.write(data + b'xxxx')
+            r, p = _testcapi.pymarshal_read_object_from_file(support.TESTFN)
+            support.unlink(support.TESTFN)
+            self.assertEqual(r, obj)
+            self.assertEqual(p, len(data))
+
+            with open(support.TESTFN, 'wb') as f:
+                f.write(data[:1])
+            with self.assertRaises(EOFError):
+                _testcapi.pymarshal_read_object_from_file(support.TESTFN)
+            support.unlink(support.TESTFN)
+
 
 if __name__ == "__main__":
-    test_main()
+    unittest.main()

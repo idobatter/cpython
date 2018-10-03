@@ -12,10 +12,11 @@ always available.
 
 .. data:: abiflags
 
-   On POSIX systems where Python is build with the standard ``configure``
+   On POSIX systems where Python was built with the standard ``configure``
    script, this contains the ABI flags as specified by :pep:`3149`.
 
    .. versionadded:: 3.2
+
 
 .. data:: argv
 
@@ -166,7 +167,7 @@ always available.
 
 .. data:: dont_write_bytecode
 
-   If this is true, Python won't try to write ``.pyc`` or ``.pyo`` files on the
+   If this is true, Python won't try to write ``.pyc`` files on the
    import of source modules.  This value is initially set to ``True`` or
    ``False`` depending on the :option:`-B` command line option and the
    :envvar:`PYTHONDONTWRITEBYTECODE` environment variable, but you can set it
@@ -227,7 +228,9 @@ always available.
    installed in :file:`{exec_prefix}/lib/python{X.Y}/lib-dynload`, where *X.Y*
    is the version number of Python, for example ``3.2``.
 
-   .. note:: If a :ref:`virtual environment <venv-def>` is in effect, this
+   .. note::
+
+      If a :ref:`virtual environment <venv-def>` is in effect, this
       value will be changed in ``site.py`` to point to the virtual environment.
       The value for the Python installation will still be available, via
       :data:`base_exec_prefix`.
@@ -252,7 +255,7 @@ always available.
    (defaulting to zero), or another type of object.  If it is an integer, zero
    is considered "successful termination" and any nonzero value is considered
    "abnormal termination" by shells and the like.  Most systems require it to be
-   in the range 0-127, and produce undefined results otherwise.  Some systems
+   in the range 0--127, and produce undefined results otherwise.  Some systems
    have a convention for assigning specific meanings to specific exit codes, but
    these are generally underdeveloped; Unix programs generally use 2 for command
    line syntax errors and 1 for all other kind of errors.  If another type of
@@ -264,6 +267,11 @@ always available.
    Since :func:`exit` ultimately "only" raises an exception, it will only exit
    the process when called from the main thread, and the exception is not
    intercepted.
+
+   .. versionchanged:: 3.6
+      If an error occurs in the cleanup after the Python interpreter
+      has caught :exc:`SystemExit` (such as an error flushing buffered data
+      in the standard streams), the exit status is changed to 120.
 
 
 .. data:: flags
@@ -573,6 +581,18 @@ always available.
       *service_pack_major*, *suite_mask*, and *product_type*.
 
 
+.. function:: get_coroutine_wrapper()
+
+   Returns ``None``, or a wrapper set by :func:`set_coroutine_wrapper`.
+
+   .. versionadded:: 3.5
+      See :pep:`492` for more details.
+
+   .. note::
+      This function has been added on a provisional basis (see :pep:`411`
+      for details.)  Use it only for debugging purposes.
+
+
 .. data:: hash_info
 
    A :term:`struct sequence` giving parameters of the numeric hash
@@ -604,7 +624,7 @@ always available.
 
    .. versionadded:: 3.2
 
-   .. versionchanged: 3.4
+   .. versionchanged:: 3.4
       Added *algorithm*, *hash_bits* and *seed_bits*
 
 
@@ -626,7 +646,7 @@ always available.
    :term:`struct sequence`  :data:`sys.version_info` may be used for a more
    human-friendly encoding of the same information.
 
-   More details of ``hexversion`` can be found at :ref:`apiabiversion`
+   More details of ``hexversion`` can be found at :ref:`apiabiversion`.
 
 
 .. data:: implementation
@@ -664,7 +684,7 @@ always available.
    an underscore, and are not described here.  Regardless of its contents,
    :data:`sys.implementation` will not change during a run of the interpreter,
    nor between implementation versions.  (It may change between Python
-   language versions, however.)  See `PEP 421` for more information.
+   language versions, however.)  See :pep:`421` for more information.
 
    .. versionadded:: 3.3
 
@@ -692,10 +712,11 @@ always available.
 
 .. data:: __interactivehook__
 
-   When present, this function is automatically called (with no arguments)
-   when the interpreter is launched in :ref:`interactive mode <tut-interactive>`.
-   This is done after the :envvar:`PYTHONSTARTUP` file is read, so that you
-   can set this hook there.
+   When this attribute exists, its value is automatically called (with no
+   arguments) when the interpreter is launched in :ref:`interactive mode
+   <tut-interactive>`.  This is done after the :envvar:`PYTHONSTARTUP` file is
+   read, so that you can set this hook there.  The :mod:`site` module
+   :ref:`sets this <rlcompleter-config>`.
 
    .. versionadded:: 3.4
 
@@ -712,6 +733,14 @@ always available.
 
    Interned strings are not immortal; you must keep a reference to the return
    value of :func:`intern` around to benefit from it.
+
+
+.. function:: is_finalizing()
+
+   Return :const:`True` if the Python interpreter is
+   :term:`shutting down <interpreter shutdown>`, :const:`False` otherwise.
+
+   .. versionadded:: 3.5
 
 
 .. data:: last_type
@@ -750,19 +779,32 @@ always available.
 
 .. data:: meta_path
 
-    A list of :term:`finder` objects that have their :meth:`find_module`
-    methods called to see if one of the objects can find the module to be
-    imported. The :meth:`find_module` method is called at least with the
-    absolute name of the module being imported. If the module to be imported is
-    contained in package then the parent package's :attr:`__path__` attribute
-    is passed in as a second argument. The method returns ``None`` if
-    the module cannot be found, else returns a :term:`loader`.
+    A list of :term:`meta path finder` objects that have their
+    :meth:`~importlib.abc.MetaPathFinder.find_spec` methods called to see if one
+    of the objects can find the module to be imported. The
+    :meth:`~importlib.abc.MetaPathFinder.find_spec` method is called with at
+    least the absolute name of the module being imported. If the module to be
+    imported is contained in a package, then the parent package's :attr:`__path__`
+    attribute is passed in as a second argument. The method returns a
+    :term:`module spec`, or ``None`` if the module cannot be found.
 
-    :data:`sys.meta_path` is searched before any implicit default finders or
-    :data:`sys.path`.
+    .. seealso::
 
-    See :pep:`302` for the original specification.
+        :class:`importlib.abc.MetaPathFinder`
+          The abstract base class defining the interface of finder objects on
+          :data:`meta_path`.
+        :class:`importlib.machinery.ModuleSpec`
+          The concrete class which
+          :meth:`~importlib.abc.MetaPathFinder.find_spec` should return
+          instances of.
 
+    .. versionchanged:: 3.4
+
+        :term:`Module specs <module spec>` were introduced in Python 3.4, by
+        :pep:`451`. Earlier versions of Python looked for a method called
+        :meth:`~importlib.abc.MetaPathFinder.find_module`.
+        This is still called as a fallback if a :data:`meta_path` entry doesn't
+        have a :meth:`~importlib.abc.MetaPathFinder.find_spec` method.
 
 .. data:: modules
 
@@ -951,6 +993,13 @@ always available.
    that supports a higher limit.  This should be done with care, because a too-high
    limit can lead to a crash.
 
+   If the new limit is too low at the current recursion depth, a
+   :exc:`RecursionError` exception is raised.
+
+   .. versionchanged:: 3.5.1
+      A :exc:`RecursionError` exception is now raised if the new limit is too
+      low at the current recursion depth.
+
 
 .. function:: setswitchinterval(interval)
 
@@ -1049,6 +1098,46 @@ always available.
       thus not likely to be implemented elsewhere.
 
 
+.. function:: set_coroutine_wrapper(wrapper)
+
+   Allows intercepting creation of :term:`coroutine` objects (only ones that
+   are created by an :keyword:`async def` function; generators decorated with
+   :func:`types.coroutine` or :func:`asyncio.coroutine` will not be
+   intercepted).
+
+   The *wrapper* argument must be either:
+
+   * a callable that accepts one argument (a coroutine object);
+   * ``None``, to reset the wrapper.
+
+   If called twice, the new wrapper replaces the previous one.  The function
+   is thread-specific.
+
+   The *wrapper* callable cannot define new coroutines directly or indirectly::
+
+        def wrapper(coro):
+            async def wrap(coro):
+                return await coro
+            return wrap(coro)
+        sys.set_coroutine_wrapper(wrapper)
+
+        async def foo():
+            pass
+
+        # The following line will fail with a RuntimeError, because
+        # ``wrapper`` creates a ``wrap(coro)`` coroutine:
+        foo()
+
+   See also :func:`get_coroutine_wrapper`.
+
+   .. versionadded:: 3.5
+      See :pep:`492` for more details.
+
+   .. note::
+      This function has been added on a provisional basis (see :pep:`411`
+      for details.)  Use it only for debugging purposes.
+
+
 .. data:: stdin
           stdout
           stderr
@@ -1062,8 +1151,9 @@ always available.
      statements and for the prompts of :func:`input`;
    * The interpreter's own prompts and its error messages go to ``stderr``.
 
-   By default, these streams are regular text streams as returned by the
-   :func:`open` function.  Their parameters are chosen as follows:
+   These streams are regular :term:`text files <text file>` like those
+   returned by the :func:`open` function.  Their parameters are chosen as
+   follows:
 
    * The character encoding is platform-dependent.  Under Windows, if the stream
      is interactive (that is, if its :meth:`isatty` method returns ``True``), the
@@ -1071,26 +1161,22 @@ always available.
      platforms, the locale encoding is used (see :meth:`locale.getpreferredencoding`).
 
      Under all platforms though, you can override this value by setting the
-     :envvar:`PYTHONIOENCODING` environment variable.
+     :envvar:`PYTHONIOENCODING` environment variable before starting Python.
 
    * When interactive, standard streams are line-buffered.  Otherwise, they
      are block-buffered like regular text files.  You can override this
      value with the :option:`-u` command-line option.
 
-   To write or read binary data from/to the standard streams, use the
-   underlying binary :data:`~io.TextIOBase.buffer`.  For example, to write
-   bytes to :data:`stdout`, use ``sys.stdout.buffer.write(b'abc')``.  Using
-   :meth:`io.TextIOBase.detach`, streams can be made binary by default.  This
-   function sets :data:`stdin` and :data:`stdout` to binary::
+   .. note::
 
-      def make_streams_binary():
-          sys.stdin = sys.stdin.detach()
-          sys.stdout = sys.stdout.detach()
+      To write or read binary data from/to the standard streams, use the
+      underlying binary :data:`~io.TextIOBase.buffer` object.  For example, to
+      write bytes to :data:`stdout`, use ``sys.stdout.buffer.write(b'abc')``.
 
-   Note that the streams may be replaced with objects (like :class:`io.StringIO`)
-   that do not support the :attr:`~io.BufferedIOBase.buffer` attribute or the
-   :meth:`~io.BufferedIOBase.detach` method and can raise :exc:`AttributeError`
-   or :exc:`io.UnsupportedOperation`.
+      However, if you are writing a library (and do not control in which
+      context its code will be executed), be aware that the standard streams
+      may be replaced with file-like objects like :class:`io.StringIO` which
+      do not support the :attr:`~io.BufferedIOBase.buffer` attribute.
 
 
 .. data:: __stdin__
@@ -1221,5 +1307,4 @@ always available.
 
 .. rubric:: Citations
 
-.. [C99] ISO/IEC 9899:1999.  "Programming languages -- C."  A public draft of this standard is available at http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1256.pdf .
-
+.. [C99] ISO/IEC 9899:1999.  "Programming languages -- C."  A public draft of this standard is available at http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1256.pdf\ .

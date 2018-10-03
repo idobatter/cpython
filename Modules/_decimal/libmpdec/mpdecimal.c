@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2012 Stefan Krah. All rights reserved.
+ * Copyright (c) 2008-2016 Stefan Krah. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -43,6 +43,7 @@
 #ifdef PPRO
   #if defined(_MSC_VER)
     #include <float.h>
+    #pragma float_control(precise, on)
     #pragma fenv_access(on)
   #elif !defined(__OpenBSD__) && !defined(__NetBSD__)
     /* C99 */
@@ -392,42 +393,42 @@ mpd_radix(void)
 
 /* Dynamic decimal */
 ALWAYS_INLINE int
-mpd_isdynamic(mpd_t *dec)
+mpd_isdynamic(const mpd_t *dec)
 {
     return !(dec->flags & MPD_STATIC);
 }
 
 /* Static decimal */
 ALWAYS_INLINE int
-mpd_isstatic(mpd_t *dec)
+mpd_isstatic(const mpd_t *dec)
 {
     return dec->flags & MPD_STATIC;
 }
 
 /* Data of decimal is dynamic */
 ALWAYS_INLINE int
-mpd_isdynamic_data(mpd_t *dec)
+mpd_isdynamic_data(const mpd_t *dec)
 {
     return !(dec->flags & MPD_DATAFLAGS);
 }
 
 /* Data of decimal is static */
 ALWAYS_INLINE int
-mpd_isstatic_data(mpd_t *dec)
+mpd_isstatic_data(const mpd_t *dec)
 {
     return dec->flags & MPD_STATIC_DATA;
 }
 
 /* Data of decimal is shared */
 ALWAYS_INLINE int
-mpd_isshared_data(mpd_t *dec)
+mpd_isshared_data(const mpd_t *dec)
 {
     return dec->flags & MPD_SHARED_DATA;
 }
 
 /* Data of decimal is const */
 ALWAYS_INLINE int
-mpd_isconst_data(mpd_t *dec)
+mpd_isconst_data(const mpd_t *dec)
 {
     return dec->flags & MPD_CONST_DATA;
 }
@@ -597,7 +598,7 @@ mpd_set_sign(mpd_t *result, uint8_t sign)
 
 /* Copy sign from another decimal */
 ALWAYS_INLINE void
-mpd_signcpy(mpd_t *result, mpd_t *a)
+mpd_signcpy(mpd_t *result, const mpd_t *a)
 {
     uint8_t sign = a->flags&MPD_NEG;
 
@@ -3202,9 +3203,9 @@ mpd_qabs(mpd_t *result, const mpd_t *a, const mpd_context_t *ctx,
 }
 
 static inline void
-_mpd_ptrswap(mpd_t **a, mpd_t **b)
+_mpd_ptrswap(const mpd_t **a, const mpd_t **b)
 {
-    mpd_t *t = *a;
+    const mpd_t *t = *a;
     *a = *b;
     *b = t;
 }
@@ -3232,7 +3233,7 @@ static void
 _mpd_qaddsub(mpd_t *result, const mpd_t *a, const mpd_t *b, uint8_t sign_b,
              const mpd_context_t *ctx, uint32_t *status)
 {
-    mpd_t *big, *small;
+    const mpd_t *big, *small;
     MPD_NEW_STATIC(big_aligned,0,0,0,0);
     MPD_NEW_CONST(tiny,0,0,1,1,1,1);
     mpd_uint_t carry;
@@ -3242,7 +3243,7 @@ _mpd_qaddsub(mpd_t *result, const mpd_t *a, const mpd_t *b, uint8_t sign_b,
 
 
     /* compare exponents */
-    big = (mpd_t *)a; small = (mpd_t *)b;
+    big = a; small = b;
     if (big->exp != small->exp) {
         if (small->exp > big->exp) {
             _mpd_ptrswap(&big, &small);
@@ -4421,21 +4422,22 @@ mpd_qfma(mpd_t *result, const mpd_t *a, const mpd_t *b, const mpd_t *c,
          const mpd_context_t *ctx, uint32_t *status)
 {
     uint32_t workstatus = 0;
-    mpd_t *cc = (mpd_t *)c;
+    mpd_t *cc = NULL;
 
     if (result == c) {
         if ((cc = mpd_qncopy(c)) == NULL) {
             mpd_seterror(result, MPD_Malloc_error, status);
             return;
         }
+        c = cc;
     }
 
     _mpd_qmul(result, a, b, ctx, &workstatus);
     if (!(workstatus&MPD_Invalid_operation)) {
-        mpd_qadd(result, result, cc, ctx, &workstatus);
+        mpd_qadd(result, result, c, ctx, &workstatus);
     }
 
-    if (cc != c) mpd_del(cc);
+    if (cc) mpd_del(cc);
     *status |= workstatus;
 }
 
@@ -5727,7 +5729,7 @@ static inline void
 _mpd_qmul(mpd_t *result, const mpd_t *a, const mpd_t *b,
           const mpd_context_t *ctx, uint32_t *status)
 {
-    mpd_t *big = (mpd_t *)a, *small = (mpd_t *)b;
+    const mpd_t *big = a, *small = b;
     mpd_uint_t *rdata = NULL;
     mpd_uint_t rbuf[MPD_MINALLOC_MAX];
     mpd_size_t rsize, i;

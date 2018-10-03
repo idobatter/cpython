@@ -4,6 +4,7 @@
 .. module:: code
    :synopsis: Facilities to implement read-eval-print loops.
 
+**Source code:** :source:`Lib/code.py`
 
 The ``code`` module provides facilities to implement read-eval-print loops in
 Python.  Two classes and convenience functions are included which can be used to
@@ -113,6 +114,9 @@ Interactive Interpreter Objects
    because it is within the interpreter object implementation. The output is
    written by the :meth:`write` method.
 
+   .. versionchanged:: 3.5 The full chained traceback is displayed instead
+      of just the primary traceback.
+
 
 .. method:: InteractiveInterpreter.write(data)
 
@@ -165,4 +169,3 @@ interpreter objects as well as the following additions.
    newline.  When the user enters the EOF key sequence, :exc:`EOFError` is raised.
    The base implementation reads from ``sys.stdin``; a subclass may replace this
    with a different implementation.
-

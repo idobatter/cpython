@@ -24,6 +24,9 @@ L = [
         ("\u0200", ValueError)
 ]
 
+class IntSubclass(int):
+    pass
+
 class IntTestCases(unittest.TestCase):
 
     def test_basic(self):
@@ -276,16 +279,40 @@ class IntTestCases(unittest.TestCase):
         class CustomBytes(bytes): pass
         class CustomByteArray(bytearray): pass
 
-        values = [b'100',
-                  bytearray(b'100'),
-                  CustomStr('100'),
-                  CustomBytes(b'100'),
-                  CustomByteArray(b'100')]
+        factories = [
+            bytes,
+            bytearray,
+            lambda b: CustomStr(b.decode()),
+            CustomBytes,
+            CustomByteArray,
+            memoryview,
+        ]
+        try:
+            from array import array
+        except ImportError:
+            pass
+        else:
+            factories.append(lambda b: array('B', b))
 
-        for x in values:
-            msg = 'x has type %s' % type(x).__name__
-            self.assertEqual(int(x), 100, msg=msg)
-            self.assertEqual(int(x, 2), 4, msg=msg)
+        for f in factories:
+            x = f(b'100')
+            with self.subTest(type(x)):
+                self.assertEqual(int(x), 100)
+                if isinstance(x, (str, bytes, bytearray)):
+                    self.assertEqual(int(x, 2), 4)
+                else:
+                    msg = "can't convert non-string"
+                    with self.assertRaisesRegex(TypeError, msg):
+                        int(x, 2)
+                with self.assertRaisesRegex(ValueError, 'invalid literal'):
+                    int(f(b'A' * 0x10))
+
+    def test_int_memoryview(self):
+        self.assertEqual(int(memoryview(b'123')[1:3]), 23)
+        self.assertEqual(int(memoryview(b'123\x00')[1:3]), 23)
+        self.assertEqual(int(memoryview(b'123 ')[1:3]), 23)
+        self.assertEqual(int(memoryview(b'123A')[1:3]), 23)
+        self.assertEqual(int(memoryview(b'1234')[1:3]), 23)
 
     def test_string_float(self):
         self.assertRaises(ValueError, int, '1.2')
@@ -304,32 +331,7 @@ class IntTestCases(unittest.TestCase):
             def __int__(self):
                 return 42
 
-        class Foo1(object):
-            def __int__(self):
-                return 42
-
-        class Foo2(int):
-            def __int__(self):
-                return 42
-
-        class Foo3(int):
-            def __int__(self):
-                return self
-
-        class Foo4(int):
-            def __int__(self):
-                return 42
-
-        class Foo5(int):
-            def __int__(self):
-                return 42.
-
         self.assertEqual(int(Foo0()), 42)
-        self.assertEqual(int(Foo1()), 42)
-        self.assertEqual(int(Foo2()), 42)
-        self.assertEqual(int(Foo3()), 0)
-        self.assertEqual(int(Foo4()), 42)
-        self.assertRaises(TypeError, int, Foo5())
 
         class Classic:
             pass
@@ -392,6 +394,61 @@ class IntTestCases(unittest.TestCase):
                 with self.assertRaises(TypeError):
                     int(TruncReturnsBadInt())
 
+    def test_int_subclass_with_int(self):
+        class MyInt(int):
+            def __int__(self):
+                return 42
+
+        class BadInt(int):
+            def __int__(self):
+                return 42.0
+
+        my_int = MyInt(7)
+        self.assertEqual(my_int, 7)
+        self.assertEqual(int(my_int), 42)
+
+        self.assertRaises(TypeError, int, BadInt())
+
+    def test_int_returns_int_subclass(self):
+        class BadInt:
+            def __int__(self):
+                return True
+
+        class BadInt2(int):
+            def __int__(self):
+                return True
+
+        class TruncReturnsBadInt:
+            def __trunc__(self):
+                return BadInt()
+
+        class TruncReturnsIntSubclass:
+            def __trunc__(self):
+                return True
+
+        bad_int = BadInt()
+        with self.assertWarns(DeprecationWarning):
+            n = int(bad_int)
+        self.assertEqual(n, 1)
+
+        bad_int = BadInt2()
+        with self.assertWarns(DeprecationWarning):
+            n = int(bad_int)
+        self.assertEqual(n, 1)
+
+        bad_int = TruncReturnsBadInt()
+        with self.assertWarns(DeprecationWarning):
+            n = int(bad_int)
+        self.assertEqual(n, 1)
+
+        good_int = TruncReturnsIntSubclass()
+        n = int(good_int)
+        self.assertEqual(n, 1)
+        self.assertIs(type(n), bool)
+        n = IntSubclass(good_int)
+        self.assertEqual(n, 1)
+        self.assertIs(type(n), IntSubclass)
+
     def test_error_message(self):
         def check(s, base=None):
             with self.assertRaises(ValueError,
@@ -425,8 +482,5 @@ class IntTestCases(unittest.TestCase):
         check('123\ud800')
         check('123\ud800', 10)
 
-def test_main():
-    support.run_unittest(IntTestCases)
-
 if __name__ == "__main__":
-    test_main()
+    unittest.main()

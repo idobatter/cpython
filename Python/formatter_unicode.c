@@ -156,8 +156,9 @@ parse_internal_render_format_spec(PyObject *format_spec,
 
     Py_ssize_t consumed;
     int align_specified = 0;
+    int fill_char_specified = 0;
 
-    format->fill_char = '\0';
+    format->fill_char = ' ';
     format->align = default_align;
     format->alternate = 0;
     format->sign = '\0';
@@ -171,6 +172,7 @@ parse_internal_render_format_spec(PyObject *format_spec,
     if (end-pos >= 2 && is_alignment_token(READ_spec(pos+1))) {
         format->align = READ_spec(pos+1);
         format->fill_char = READ_spec(pos);
+        fill_char_specified = 1;
         align_specified = 1;
         pos += 2;
     }
@@ -194,7 +196,7 @@ parse_internal_render_format_spec(PyObject *format_spec,
     }
 
     /* The special case for 0-padding (backwards compat) */
-    if (format->fill_char == '\0' && end-pos >= 1 && READ_spec(pos) == '0') {
+    if (!fill_char_specified && end-pos >= 1 && READ_spec(pos) == '0') {
         format->fill_char = '0';
         if (!align_specified) {
             format->align = '=';
@@ -654,7 +656,7 @@ fill_number(_PyUnicodeWriter *writer, const NumberFieldWidths *spec,
     return 0;
 }
 
-static char no_grouping[1] = {CHAR_MAX};
+static const char no_grouping[1] = {CHAR_MAX};
 
 /* Find the decimal point character(s?), thousands_separator(s?), and
    grouping description, either for the current locale if type is
@@ -784,9 +786,7 @@ format_string_internal(PyObject *value, const InternalFormatSpec *format,
         goto done;
 
     /* Write into that space. First the padding. */
-    result = fill_padding(writer, len,
-                          format->fill_char=='\0'?' ':format->fill_char,
-                          lpad, rpad);
+    result = fill_padding(writer, len, format->fill_char, lpad, rpad);
     if (result == -1)
         goto done;
 
@@ -843,6 +843,13 @@ format_long_internal(PyObject *value, const InternalFormatSpec *format,
         if (format->sign != '\0') {
             PyErr_SetString(PyExc_ValueError,
                             "Sign not allowed with integer"
+                            " format specifier 'c'");
+            goto done;
+        }
+        /* error to request alternate format */
+        if (format->alternate) {
+            PyErr_SetString(PyExc_ValueError,
+                            "Alternate form (#) not allowed with integer"
                             " format specifier 'c'");
             goto done;
         }
@@ -956,8 +963,7 @@ format_long_internal(PyObject *value, const InternalFormatSpec *format,
     /* Populate the memory. */
     result = fill_number(writer, &spec,
                          tmp, inumeric_chars, inumeric_chars + n_digits,
-                         tmp, prefix,
-                         format->fill_char == '\0' ? ' ' : format->fill_char,
+                         tmp, prefix, format->fill_char,
                          &locale, format->type == 'X');
 
 done:
@@ -1104,8 +1110,7 @@ format_float_internal(PyObject *value,
     /* Populate the memory. */
     result = fill_number(writer, &spec,
                          unicode_tmp, index, index + n_digits,
-                         NULL, 0,
-                         format->fill_char == '\0' ? ' ' : format->fill_char,
+                         NULL, 0, format->fill_char,
                          &locale, 0);
 
 done:
@@ -1311,8 +1316,7 @@ format_complex_internal(PyObject *value,
     /* Populate the memory. First, the padding. */
     result = fill_padding(writer,
                           n_re_total + n_im_total + 1 + add_parens * 2,
-                          format->fill_char=='\0' ? ' ' : format->fill_char,
-                          lpad, rpad);
+                          format->fill_char, lpad, rpad);
     if (result == -1)
         goto done;
 

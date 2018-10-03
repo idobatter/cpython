@@ -39,8 +39,8 @@
 #include "memory.h"
 
 
-#if MPD_MAJOR_VERSION != 2
-  #error "libmpdec major version 2 required"
+#if !defined(MPD_VERSION_HEX) || MPD_VERSION_HEX < 0x02040100
+  #error "libmpdec version >= 2.4.1 required"
 #endif
 
 
@@ -3380,6 +3380,106 @@ dec_as_long(PyObject *dec, PyObject *context, int round)
     return (PyObject *) pylong;
 }
 
+/* Convert a Decimal to its exact integer ratio representation. */
+static PyObject *
+dec_as_integer_ratio(PyObject *self, PyObject *args UNUSED)
+{
+    PyObject *numerator = NULL;
+    PyObject *denominator = NULL;
+    PyObject *exponent = NULL;
+    PyObject *result = NULL;
+    PyObject *tmp;
+    mpd_ssize_t exp;
+    PyObject *context;
+    uint32_t status = 0;
+    PyNumberMethods *long_methods = PyLong_Type.tp_as_number;
+
+    if (mpd_isspecial(MPD(self))) {
+        if (mpd_isnan(MPD(self))) {
+            PyErr_SetString(PyExc_ValueError,
+                "cannot convert NaN to integer ratio");
+        }
+        else {
+            PyErr_SetString(PyExc_OverflowError,
+                "cannot convert Infinity to integer ratio");
+        }
+        return NULL;
+    }
+
+    CURRENT_CONTEXT(context);
+
+    tmp = dec_alloc();
+    if (tmp == NULL) {
+        return NULL;
+    }
+
+    if (!mpd_qcopy(MPD(tmp), MPD(self), &status)) {
+        Py_DECREF(tmp);
+        PyErr_NoMemory();
+        return NULL;
+    }
+
+    exp = mpd_iszero(MPD(tmp)) ? 0 : MPD(tmp)->exp;
+    MPD(tmp)->exp = 0;
+
+    /* context and rounding are unused here: the conversion is exact */
+    numerator = dec_as_long(tmp, context, MPD_ROUND_FLOOR);
+    Py_DECREF(tmp);
+    if (numerator == NULL) {
+        goto error;
+    }
+
+    exponent = PyLong_FromSsize_t(exp < 0 ? -exp : exp);
+    if (exponent == NULL) {
+        goto error;
+    }
+
+    tmp = PyLong_FromLong(10);
+    if (tmp == NULL) {
+        goto error;
+    }
+
+    Py_SETREF(exponent, long_methods->nb_power(tmp, exponent, Py_None));
+    Py_DECREF(tmp);
+    if (exponent == NULL) {
+        goto error;
+    }
+
+    if (exp >= 0) {
+        Py_SETREF(numerator, long_methods->nb_multiply(numerator, exponent));
+        if (numerator == NULL) {
+            goto error;
+        }
+        denominator = PyLong_FromLong(1);
+        if (denominator == NULL) {
+            goto error;
+        }
+    }
+    else {
+        denominator = exponent;
+        exponent = NULL;
+        tmp = _PyLong_GCD(numerator, denominator);
+        if (tmp == NULL) {
+            goto error;
+        }
+        Py_SETREF(numerator, long_methods->nb_floor_divide(numerator, tmp));
+        Py_SETREF(denominator, long_methods->nb_floor_divide(denominator, tmp));
+        Py_DECREF(tmp);
+        if (numerator == NULL || denominator == NULL) {
+            goto error;
+        }
+    }
+
+    result = PyTuple_Pack(2, numerator, denominator);
+
+
+error:
+    Py_XDECREF(exponent);
+    Py_XDECREF(denominator);
+    Py_XDECREF(numerator);
+    return result;
+}
+
 static PyObject *
 PyDec_ToIntegralValue(PyObject *dec, PyObject *args, PyObject *kwds)
 {
@@ -3542,7 +3642,7 @@ PyDec_Round(PyObject *dec, PyObject *args)
     }
 }
 
-static PyObject *DecimalTuple = NULL;
+static PyTypeObject *DecimalTuple = NULL;
 /* Return the DecimalTuple representation of a PyDecObject. */
 static PyObject *
 PyDec_AsTuple(PyObject *dec, PyObject *dummy UNUSED)
@@ -3625,7 +3725,7 @@ PyDec_AsTuple(PyObject *dec, PyObject *dummy UNUSED)
         }
     }
 
-    result = PyObject_CallFunctionObjArgs(DecimalTuple,
+    result = PyObject_CallFunctionObjArgs((PyObject *)DecimalTuple,
                                           sign, coeff, expt, NULL);
 
 out:
@@ -3927,9 +4027,6 @@ nm_mpd_qdivmod(PyObject *v, PyObject *w)
     Py_DECREF(q);
     return ret;
 }
-
-static mpd_uint_t data_zero[1] = {0};
-static const mpd_t zero = {MPD_STATIC|MPD_CONST_DATA, 0, 1, 1, 1, data_zero};
 
 static PyObject *
 nm_mpd_qpow(PyObject *base, PyObject *exp, PyObject *mod)
@@ -4532,7 +4629,7 @@ dec_sizeof(PyObject *v, PyObject *dummy UNUSED)
 {
     Py_ssize_t res;
 
-    res = sizeof(PyDecObject);
+    res = _PyObject_SIZE(Py_TYPE(v));
     if (mpd_isdynamic_data(MPD(v))) {
         res += MPD(v)->alloc * sizeof(mpd_uint_t);
     }
@@ -4691,6 +4788,7 @@ static PyMethodDef dec_methods [] =
   /* Miscellaneous */
   { "from_float", dec_from_float, METH_O|METH_CLASS, doc_from_float },
   { "as_tuple", PyDec_AsTuple, METH_NOARGS, doc_as_tuple },
+  { "as_integer_ratio", dec_as_integer_ratio, METH_NOARGS, doc_as_integer_ratio },
 
   /* Special methods */
   { "__copy__", dec_copy, METH_NOARGS, NULL },
@@ -5565,9 +5663,14 @@ PyInit__decimal(void)
 
     /* DecimalTuple */
     ASSIGN_PTR(collections, PyImport_ImportModule("collections"));
-    ASSIGN_PTR(DecimalTuple, PyObject_CallMethod(collections,
+    ASSIGN_PTR(DecimalTuple, (PyTypeObject *)PyObject_CallMethod(collections,
                                  "namedtuple", "(ss)", "DecimalTuple",
                                  "sign digits exponent"));
+
+    ASSIGN_PTR(obj, PyUnicode_FromString("decimal"));
+    CHECK_INT(PyDict_SetItemString(DecimalTuple->tp_dict, "__module__", obj));
+    Py_CLEAR(obj);
+
     /* MutableMapping */
     ASSIGN_PTR(MutableMapping, PyObject_GetAttrString(collections,
                                                       "MutableMapping"));
@@ -5594,7 +5697,7 @@ PyInit__decimal(void)
     CHECK_INT(PyModule_AddObject(m, "Context",
                                  (PyObject *)&PyDecContext_Type));
     Py_INCREF(DecimalTuple);
-    CHECK_INT(PyModule_AddObject(m, "DecimalTuple", DecimalTuple));
+    CHECK_INT(PyModule_AddObject(m, "DecimalTuple", (PyObject *)DecimalTuple));
 
 
     /* Create top level exception */
@@ -5638,7 +5741,7 @@ PyInit__decimal(void)
             goto error; /* GCOV_NOT_REACHED */
         }
 
-        ASSIGN_PTR(cm->ex, PyErr_NewException((char *)cm->fqname, base, NULL));
+        ASSIGN_PTR(cm->ex, PyErr_NewException(cm->fqname, base, NULL));
         Py_DECREF(base);
 
         /* add to module */
@@ -5670,7 +5773,7 @@ PyInit__decimal(void)
             goto error; /* GCOV_NOT_REACHED */
         }
 
-        ASSIGN_PTR(cm->ex, PyErr_NewException((char *)cm->fqname, base, NULL));
+        ASSIGN_PTR(cm->ex, PyErr_NewException(cm->fqname, base, NULL));
         Py_DECREF(base);
 
         Py_INCREF(cm->ex);

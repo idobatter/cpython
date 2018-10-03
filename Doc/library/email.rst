@@ -91,14 +91,18 @@ table also describes the Python compatibility of each version of the package.
 +---------------+------------------------------+-----------------------+
 | :const:`2.5`  | Python 2.2.2+ and Python 2.3 | Python 2.1 to 2.5     |
 +---------------+------------------------------+-----------------------+
-| :const:`3.0`  | Python 2.4                   | Python 2.3 to 2.5     |
+| :const:`3.0`  | Python 2.4 and Python 2.5    | Python 2.3 to 2.6     |
 +---------------+------------------------------+-----------------------+
-| :const:`4.0`  | Python 2.5                   | Python 2.3 to 2.5     |
+| :const:`4.0`  | Python 2.5 to Python 2.7     | Python 2.3 to 2.7     |
 +---------------+------------------------------+-----------------------+
 | :const:`5.0`  | Python 3.0 and Python 3.1    | Python 3.0 to 3.2     |
 +---------------+------------------------------+-----------------------+
-| :const:`5.1`  | Python 3.2                   | Python 3.0 to 3.2     |
+| :const:`5.1`  | Python 3.2                   | Python 3.2            |
 +---------------+------------------------------+-----------------------+
+
+After Version 5.1 (Python 3.2), the email package no longer has a version that
+is separate from the Python version.  (See the :ref:`whatsnew-index` documents
+for the respective Python versions for details on changes.)
 
 Here are the major differences between :mod:`email` version 5.1 and
 version 5.0:
@@ -258,7 +262,7 @@ Differences from :mod:`mimelib`
 -------------------------------
 
 The :mod:`email` package was originally prototyped as a separate library called
-`mimelib <http://mimelib.sf.net/>`_. Changes have been made so that method names
+`mimelib <http://mimelib.sourceforge.net/>`_. Changes have been made so that method names
 are more consistent, and some methods or modules have either been added or
 removed.  The semantics of some of the methods have also changed.  For the most
 part, any functionality available in :mod:`mimelib` is still available in the

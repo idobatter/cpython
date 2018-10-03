@@ -3,11 +3,8 @@ JavaScript syntax (ECMA-262 3rd edition) used as a lightweight data
 interchange format.
 
 :mod:`json` exposes an API familiar to users of the standard library
-:mod:`marshal` and :mod:`pickle` modules. It is the externally maintained
-version of the :mod:`json` library contained in Python 2.6, but maintains
-compatibility with Python 2.4 and Python 2.5 and (currently) has
-significant performance advantages, even without using the optional C
-extension for speedups.
+:mod:`marshal` and :mod:`pickle` modules.  It is derived from a
+version of the externally maintained simplejson library.
 
 Encoding basic Python object hierarchies::
 
@@ -101,12 +98,12 @@ Using json.tool from the shell to validate and pretty-print::
 __version__ = '2.0.9'
 __all__ = [
     'dump', 'dumps', 'load', 'loads',
-    'JSONDecoder', 'JSONEncoder',
+    'JSONDecoder', 'JSONDecodeError', 'JSONEncoder',
 ]
 
 __author__ = 'Bob Ippolito <bob@redivi.com>'
 
-from .decoder import JSONDecoder
+from .decoder import JSONDecoder, JSONDecodeError
 from .encoder import JSONEncoder
 
 _default_encoder = JSONEncoder(
@@ -187,7 +184,7 @@ def dumps(obj, skipkeys=False, ensure_ascii=True, check_circular=True,
         default=None, sort_keys=False, **kw):
     """Serialize ``obj`` to a JSON formatted ``str``.
 
-    If ``skipkeys`` is false then ``dict`` keys that are not basic types
+    If ``skipkeys`` is true then ``dict`` keys that are not basic types
     (``str``, ``int``, ``float``, ``bool``, ``None``) will be skipped
     instead of raising a ``TypeError``.
 
@@ -314,7 +311,8 @@ def loads(s, encoding=None, cls=None, object_hook=None, parse_float=None,
         raise TypeError('the JSON object must be str, not {!r}'.format(
                             s.__class__.__name__))
     if s.startswith(u'\ufeff'):
-        raise ValueError("Unexpected UTF-8 BOM (decode using utf-8-sig)")
+        raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                              s, 0)
     if (cls is None and object_hook is None and
             parse_int is None and parse_float is None and
             parse_constant is None and object_pairs_hook is None and not kw):

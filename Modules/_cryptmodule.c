@@ -5,40 +5,43 @@
 
 #include <sys/types.h>
 
-#ifdef __VMS
-#include <openssl/des.h>
-#endif
-
 /* Module crypt */
 
+/*[clinic input]
+module crypt
+[clinic start generated code]*/
+/*[clinic end generated code: output=da39a3ee5e6b4b0d input=c6252cf4f2f2ae81]*/
 
-static PyObject *crypt_crypt(PyObject *self, PyObject *args)
+#include "clinic/_cryptmodule.c.h"
+
+/*[clinic input]
+crypt.crypt
+
+    word: str
+    salt: str
+    /
+
+Hash a *word* with the given *salt* and return the hashed password.
+
+*word* will usually be a user's password.  *salt* (either a random 2 or 16
+character string, possibly prefixed with $digit$ to indicate the method)
+will be used to perturb the encryption algorithm and produce distinct
+results for a given *word*.
+
+[clinic start generated code]*/
+
+static PyObject *
+crypt_crypt_impl(PyModuleDef *module, const char *word, const char *salt)
+/*[clinic end generated code: output=995ad1e854d83069 input=0e8edec9c364352b]*/
 {
-    char *word, *salt;
-#ifndef __VMS
-    extern char * crypt(const char *, const char *);
-#endif
-
-    if (!PyArg_ParseTuple(args, "ss:crypt", &word, &salt)) {
-        return NULL;
-    }
     /* On some platforms (AtheOS) crypt returns NULL for an invalid
        salt. Return None in that case. XXX Maybe raise an exception?  */
     return Py_BuildValue("s", crypt(word, salt));
-
 }
-
-PyDoc_STRVAR(crypt_crypt__doc__,
-"crypt(word, salt) -> string\n\
-word will usually be a user's password. salt is a 2-character string\n\
-which will be used to select one of 4096 variations of DES. The characters\n\
-in salt must be either \".\", \"/\", or an alphanumeric character. Returns\n\
-the hashed password as a string, which will be composed of characters from\n\
-the same alphabet as the salt.");
 
 
 static PyMethodDef crypt_methods[] = {
-    {"crypt",           crypt_crypt, METH_VARARGS, crypt_crypt__doc__},
+    CRYPT_CRYPT_METHODDEF
     {NULL,              NULL}           /* sentinel */
 };
 

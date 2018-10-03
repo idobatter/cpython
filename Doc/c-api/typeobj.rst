@@ -94,7 +94,7 @@ type objects) *must* have the :attr:`ob_size` field.
    This field is not inherited by subtypes.
 
 
-.. c:member:: char* PyTypeObject.tp_name
+.. c:member:: const char* PyTypeObject.tp_name
 
    Pointer to a NUL-terminated string containing the name of the type. For types
    that are accessible as module globals, the string should be the full module
@@ -189,31 +189,7 @@ type objects) *must* have the :attr:`ob_size` field.
 
 .. c:member:: printfunc PyTypeObject.tp_print
 
-   An optional pointer to the instance print function.
-
-   The print function is only called when the instance is printed to a *real* file;
-   when it is printed to a pseudo-file (like a :class:`io.StringIO` instance), the
-   instance's :c:member:`~PyTypeObject.tp_repr` or :c:member:`~PyTypeObject.tp_str` function is called to convert it to
-   a string.  These are also called when the type's :c:member:`~PyTypeObject.tp_print` field is
-   *NULL*.  A type should never implement :c:member:`~PyTypeObject.tp_print` in a way that produces
-   different output than :c:member:`~PyTypeObject.tp_repr` or :c:member:`~PyTypeObject.tp_str` would.
-
-   The print function is called with the same signature as :c:func:`PyObject_Print`:
-   ``int tp_print(PyObject *self, FILE *file, int flags)``.  The *self* argument is
-   the instance to be printed.  The *file* argument is the stdio file to which it
-   is to be printed.  The *flags* argument is composed of flag bits. The only flag
-   bit currently defined is :const:`Py_PRINT_RAW`. When the :const:`Py_PRINT_RAW`
-   flag bit is set, the instance should be printed the same way as :c:member:`~PyTypeObject.tp_str`
-   would format it; when the :const:`Py_PRINT_RAW` flag bit is clear, the instance
-   should be printed the same was as :c:member:`~PyTypeObject.tp_repr` would format it. It should
-   return ``-1`` and set an exception condition when an error occurred during the
-   comparison.
-
-   It is possible that the :c:member:`~PyTypeObject.tp_print` field will be deprecated. In any case,
-   it is recommended not to define :c:member:`~PyTypeObject.tp_print`, but instead to rely on
-   :c:member:`~PyTypeObject.tp_repr` and :c:member:`~PyTypeObject.tp_str` for printing.
-
-   This field is inherited by subtypes.
+   Reserved slot, formerly used for print formatting in Python 2.x.
 
 
 .. c:member:: getattrfunc PyTypeObject.tp_getattr
@@ -232,21 +208,27 @@ type objects) *must* have the :attr:`ob_size` field.
 
 .. c:member:: setattrfunc PyTypeObject.tp_setattr
 
-   An optional pointer to the set-attribute-string function.
+   An optional pointer to the function for setting and deleting attributes.
 
    This field is deprecated.  When it is defined, it should point to a function
    that acts the same as the :c:member:`~PyTypeObject.tp_setattro` function, but taking a C string
    instead of a Python string object to give the attribute name.  The signature is
-   the same as for :c:func:`PyObject_SetAttrString`.
+   the same as for :c:func:`PyObject_SetAttrString`, but setting
+   *v* to *NULL* to delete an attribute must be supported.
 
    This field is inherited by subtypes together with :c:member:`~PyTypeObject.tp_setattro`: a subtype
    inherits both :c:member:`~PyTypeObject.tp_setattr` and :c:member:`~PyTypeObject.tp_setattro` from its base type when
    the subtype's :c:member:`~PyTypeObject.tp_setattr` and :c:member:`~PyTypeObject.tp_setattro` are both *NULL*.
 
 
-.. c:member:: void* PyTypeObject.tp_reserved
+.. c:member:: PyAsyncMethods* tp_as_async
 
-   Reserved slot, formerly known as tp_compare.
+   Pointer to an additional structure that contains fields relevant only to
+   objects which implement :term:`awaitable` and :term:`asynchronous iterator`
+   protocols at the C-level.  See :ref:`async-structs` for details.
+
+   .. versionadded:: 3.5
+      Formerly known as ``tp_compare`` and ``tp_reserved``.
 
 
 .. c:member:: reprfunc PyTypeObject.tp_repr
@@ -370,9 +352,10 @@ type objects) *must* have the :attr:`ob_size` field.
 
 .. c:member:: setattrofunc PyTypeObject.tp_setattro
 
-   An optional pointer to the set-attribute function.
+   An optional pointer to the function for setting and deleting attributes.
 
-   The signature is the same as for :c:func:`PyObject_SetAttr`.  It is usually
+   The signature is the same as for :c:func:`PyObject_SetAttr`, but setting
+   *v* to *NULL* to delete an attribute must be supported.  It is usually
    convenient to set this field to :c:func:`PyObject_GenericSetAttr`, which
    implements the normal way of setting object attributes.
 
@@ -391,7 +374,7 @@ type objects) *must* have the :attr:`ob_size` field.
    inherited individually.
 
 
-.. c:member:: long PyTypeObject.tp_flags
+.. c:member:: unsigned long PyTypeObject.tp_flags
 
    This field is a bit mask of various flags.  Some flags indicate variant
    semantics for certain situations; others are used to indicate that certain
@@ -465,6 +448,24 @@ type objects) *must* have the :attr:`ob_size` field.
       :const:`Py_TPFLAGS_HAVE_VERSION_TAG`.
 
 
+   .. data:: Py_TPFLAGS_LONG_SUBCLASS
+   .. data:: Py_TPFLAGS_LIST_SUBCLASS
+   .. data:: Py_TPFLAGS_TUPLE_SUBCLASS
+   .. data:: Py_TPFLAGS_BYTES_SUBCLASS
+   .. data:: Py_TPFLAGS_UNICODE_SUBCLASS
+   .. data:: Py_TPFLAGS_DICT_SUBCLASS
+   .. data:: Py_TPFLAGS_BASE_EXC_SUBCLASS
+   .. data:: Py_TPFLAGS_TYPE_SUBCLASS
+
+      These flags are used by functions such as
+      :c:func:`PyLong_Check` to quickly determine if a type is a subclass
+      of a built-in type; such specific checks are faster than a generic
+      check, like :c:func:`PyObject_IsInstance`. Custom types that inherit
+      from built-ins should have their :c:member:`~PyTypeObject.tp_flags`
+      set appropriately, or the code that interacts with such types
+      will behave differently depending on what kind of check is used.
+
+
    .. data:: Py_TPFLAGS_HAVE_FINALIZE
 
       This bit is set when the :c:member:`~PyTypeObject.tp_finalize` slot is present in the
@@ -473,7 +474,7 @@ type objects) *must* have the :attr:`ob_size` field.
       .. versionadded:: 3.4
 
 
-.. c:member:: char* PyTypeObject.tp_doc
+.. c:member:: const char* PyTypeObject.tp_doc
 
    An optional pointer to a NUL-terminated C string giving the docstring for this
    type object.  This is exposed as the :attr:`__doc__` attribute on the type and
@@ -580,7 +581,9 @@ type objects) *must* have the :attr:`ob_size` field.
 .. c:member:: richcmpfunc PyTypeObject.tp_richcompare
 
    An optional pointer to the rich comparison function, whose signature is
-   ``PyObject *tp_richcompare(PyObject *a, PyObject *b, int op)``.
+   ``PyObject *tp_richcompare(PyObject *a, PyObject *b, int op)``. The first
+   parameter is guaranteed to be an instance of the type that is defined
+   by :c:type:`PyTypeObject`.
 
    The function should return the result of the comparison (usually ``Py_True``
    or ``Py_False``).  If the comparison is undefined, it must return
@@ -618,7 +621,7 @@ type objects) *must* have the :attr:`ob_size` field.
    +----------------+------------+
 
 
-.. c:member:: long PyTypeObject.tp_weaklistoffset
+.. c:member:: Py_ssize_t PyTypeObject.tp_weaklistoffset
 
    If the instances of this type are weakly referenceable, this field is greater
    than zero and contains the offset in the instance structure of the weak
@@ -723,7 +726,7 @@ type objects) *must* have the :attr:`ob_size` field.
       typedef struct PyGetSetDef {
           char *name;    /* attribute name */
           getter get;    /* C function to get the attribute */
-          setter set;    /* C function to set the attribute */
+          setter set;    /* C function to set or delete the attribute */
           char *doc;     /* optional doc string */
           void *closure; /* optional additional data for getter and setter */
       } PyGetSetDef;
@@ -774,18 +777,20 @@ type objects) *must* have the :attr:`ob_size` field.
 
 .. c:member:: descrsetfunc PyTypeObject.tp_descr_set
 
-   An optional pointer to a "descriptor set" function.
+   An optional pointer to a function for setting and deleting
+   a descriptor's value.
 
    The function signature is ::
 
       int tp_descr_set(PyObject *self, PyObject *obj, PyObject *value);
 
+   The *value* argument is set to *NULL* to delete the value.
    This field is inherited by subtypes.
 
    .. XXX explain.
 
 
-.. c:member:: long PyTypeObject.tp_dictoffset
+.. c:member:: Py_ssize_t PyTypeObject.tp_dictoffset
 
    If the instances of this type have a dictionary containing instance variables,
    this field is non-zero and contains the offset in the instances of the type of
@@ -1122,6 +1127,9 @@ Number Object Structures
             binaryfunc nb_inplace_true_divide;
 
             unaryfunc nb_index;
+
+            binaryfunc nb_matrix_multiply;
+            binaryfunc nb_inplace_matrix_multiply;
        } PyNumberMethods;
 
    .. note::
@@ -1167,9 +1175,11 @@ Mapping Object Structures
 
 .. c:member:: objobjargproc PyMappingMethods.mp_ass_subscript
 
-   This function is used by :c:func:`PyObject_SetItem` and has the same
-   signature.  If this slot is *NULL*, the object does not support item
-   assignment.
+   This function is used by :c:func:`PyObject_SetItem` and
+   :c:func:`PyObject_DelItem`.  It has the same signature as
+   :c:func:`PyObject_SetItem`, but *v* can also be set to *NULL* to delete
+   an item.  If this slot is *NULL*, the object does not support item
+   assignment and deletion.
 
 
 .. _sequence-structs:
@@ -1200,7 +1210,8 @@ Sequence Object Structures
 
    This function is used by :c:func:`PySequence_Repeat` and has the same
    signature.  It is also used by the ``*`` operator, after trying numeric
-   multiplication via the :c:member:`~PyTypeObject.tp_as_number.nb_mul` slot.
+   multiplication via the :c:member:`~PyTypeObject.tp_as_number.nb_multiply`
+   slot.
 
 .. c:member:: ssizeargfunc PySequenceMethods.sq_item
 
@@ -1217,7 +1228,7 @@ Sequence Object Structures
 
    This function is used by :c:func:`PySequence_SetItem` and has the same
    signature.  This slot may be left to *NULL* if the object does not support
-   item assignment.
+   item assignment and deletion.
 
 .. c:member:: objobjproc PySequenceMethods.sq_contains
 
@@ -1332,3 +1343,58 @@ Buffer Object Structures
 
    :c:func:`PyBuffer_Release` is the interface for the consumer that
    wraps this function.
+
+
+.. _async-structs:
+
+
+Async Object Structures
+=======================
+
+.. sectionauthor:: Yury Selivanov <yselivanov@sprymix.com>
+
+.. versionadded:: 3.5
+
+.. c:type:: PyAsyncMethods
+
+   This structure holds pointers to the functions required to implement
+   :term:`awaitable` and :term:`asynchronous iterator` objects.
+
+   Here is the structure definition::
+
+        typedef struct {
+            unaryfunc am_await;
+            unaryfunc am_aiter;
+            unaryfunc am_anext;
+        } PyAsyncMethods;
+
+.. c:member:: unaryfunc PyAsyncMethods.am_await
+
+   The signature of this function is::
+
+      PyObject *am_await(PyObject *self)
+
+   The returned object must be an iterator, i.e. :c:func:`PyIter_Check` must
+   return ``1`` for it.
+
+   This slot may be set to *NULL* if an object is not an :term:`awaitable`.
+
+.. c:member:: unaryfunc PyAsyncMethods.am_aiter
+
+   The signature of this function is::
+
+      PyObject *am_aiter(PyObject *self)
+
+   Must return an :term:`awaitable` object.  See :meth:`__anext__` for details.
+
+   This slot may be set to *NULL* if an object does not implement
+   asynchronous iteration protocol.
+
+.. c:member:: unaryfunc PyAsyncMethods.am_anext
+
+   The signature of this function is::
+
+      PyObject *am_anext(PyObject *self)
+
+   Must return an :term:`awaitable` object.  See :meth:`__anext__` for details.
+   This slot may be set to *NULL*.

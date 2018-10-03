@@ -45,7 +45,7 @@ this module for those platforms.
 
 .. data:: RLIM_INFINITY
 
-   Constant used to represent the the limit for an unlimited resource.
+   Constant used to represent the limit for an unlimited resource.
 
 
 .. function:: getrlimit(resource)
@@ -217,6 +217,34 @@ platform.
 
    .. versionadded:: 3.4
 
+.. data:: RLIMIT_SBSIZE
+
+   The maximum size (in bytes) of socket buffer usage for this user.
+   This limits the amount of network memory, and hence the amount of mbufs,
+   that this user may hold at any time.
+
+   Availability: FreeBSD 9 or later.
+
+   .. versionadded:: 3.4
+
+.. data:: RLIMIT_SWAP
+
+   The maximum size (in bytes) of the swap space that may be reserved or
+   used by all of this user id's processes.
+   This limit is enforced only if bit 1 of the vm.overcommit sysctl is set.
+   Please see :manpage:`tuning(7)` for a complete description of this sysctl.
+
+   Availability: FreeBSD 9 or later.
+
+   .. versionadded:: 3.4
+
+.. data:: RLIMIT_NPTS
+
+   The maximum number of pseudo-terminals created by this user id.
+
+   Availability: FreeBSD 9 or later.
+
+   .. versionadded:: 3.4
 
 Resource Usage
 --------------
@@ -288,10 +316,7 @@ These functions are used to retrieve resource usage information:
 .. function:: getpagesize()
 
    Returns the number of bytes in a system page. (This need not be the same as the
-   hardware page size.) This function is useful for determining the number of bytes
-   of memory a process is using. The third element of the tuple returned by
-   :func:`getrusage` describes memory usage in pages; multiplying by page size
-   produces number of bytes.
+   hardware page size.)
 
 The following :const:`RUSAGE_\*` symbols are passed to the :func:`getrusage`
 function to specify which processes information should be provided for.

@@ -9,13 +9,6 @@
 
 --------------
 
-.. note::
-
-   The ``ipaddress`` module has been included in the standard library on a
-   :term:`provisional basis <provisional package>`. Backwards incompatible
-   changes (up to and including removal of the package) may occur if deemed
-   necessary by the core developers.
-
 :mod:`ipaddress` provides the capabilities to create, manipulate and
 operate on IPv4 and IPv6 addresses and networks.
 
@@ -25,8 +18,8 @@ hosts are on the same subnet, iterating over all hosts in a particular
 subnet, checking whether or not a string represents a valid IP address or
 network definition, and so on.
 
-This is the full module API reference - for an overview and introduction,
-see :ref:`ipaddress-howto`.
+This is the full module API reference—for an overview and introduction, see
+:ref:`ipaddress-howto`.
 
 .. versionadded:: 3.3
 
@@ -110,7 +103,7 @@ write code that handles both IP versions correctly.
    1. A string in decimal-dot notation, consisting of four decimal integers in
       the inclusive range 0-255, separated by dots (e.g. ``192.168.0.1``). Each
       integer represents an octet (byte) in the address. Leading zeroes are
-      tolerated only for values less then 8 (as there is no ambiguity
+      tolerated only for values less than 8 (as there is no ambiguity
       between the decimal and octal interpretations of such strings).
    2. An integer that fits into 32 bits.
    3. An integer packed into a :class:`bytes` object of length 4 (most
@@ -153,6 +146,20 @@ write code that handles both IP versions correctly.
       the appropriate length (most significant octet first). This is 4 bytes
       for IPv4 and 16 bytes for IPv6.
 
+   .. attribute:: reverse_pointer
+
+      The name of the reverse DNS PTR record for the IP address, e.g.::
+
+          >>> ipaddress.ip_address("127.0.0.1").reverse_pointer
+          '1.0.0.127.in-addr.arpa'
+          >>> ipaddress.ip_address("2001:db8::1").reverse_pointer
+          '1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa'
+
+      This is the name that could be used for performing a PTR lookup, not the
+      resolved hostname itself.
+
+   .. versionadded:: 3.5
+
    .. attribute:: is_multicast
 
       ``True`` if the address is reserved for multicast use.  See
@@ -161,20 +168,20 @@ write code that handles both IP versions correctly.
    .. attribute:: is_private
 
       ``True`` if the address is allocated for private networks.  See
-      iana-ipv4-special-registry (for IPv4) or iana-ipv6-special-registry
+      iana-ipv4-special-registry_ (for IPv4) or iana-ipv6-special-registry_
       (for IPv6).
 
    .. attribute:: is_global
 
       ``True`` if the address is allocated for public networks.  See
-      iana-ipv4-special-registry (for IPv4) or iana-ipv6-special-registry
+      iana-ipv4-special-registry_ (for IPv4) or iana-ipv6-special-registry_
       (for IPv6).
 
-   .. versionadded:: 3.4
+      .. versionadded:: 3.4
 
    .. attribute:: is_unspecified
 
-      ``True`` if the address is unspecified.  See :RFC:`5375` (for IPv4)
+      ``True`` if the address is unspecified.  See :RFC:`5735` (for IPv4)
       or :RFC:`2373` (for IPv6).
 
    .. attribute:: is_reserved
@@ -190,6 +197,9 @@ write code that handles both IP versions correctly.
 
       ``True`` if the address is reserved for link-local usage.  See
       :RFC:`3927`.
+
+.. _iana-ipv4-special-registry: http://www.iana.org/assignments/iana-ipv4-special-registry/iana-ipv4-special-registry.xhtml
+.. _iana-ipv6-special-registry: http://www.iana.org/assignments/iana-ipv6-special-registry/iana-ipv6-special-registry.xhtml
 
 
 .. class:: IPv6Address(address)
@@ -225,18 +235,24 @@ write code that handles both IP versions correctly.
    The long form of the address representation, with all leading zeroes and
    groups consisting entirely of zeroes included.
 
+
+   For the following attributes, see the corresponding documention of the
+   :class:`IPv4Address` class:
+
    .. attribute:: packed
+   .. attribute:: reverse_pointer
    .. attribute:: version
    .. attribute:: max_prefixlen
    .. attribute:: is_multicast
    .. attribute:: is_private
+   .. attribute:: is_global
    .. attribute:: is_unspecified
    .. attribute:: is_reserved
    .. attribute:: is_loopback
    .. attribute:: is_link_local
 
-      Refer to the corresponding attribute documentation in
-      :class:`IPv4Address`
+      .. versionadded:: 3.4
+         is_global
 
    .. attribute:: is_site_local
 
@@ -376,6 +392,12 @@ so to avoid duplication they are only documented for :class:`IPv4Network`.
    3. An integer packed into a :class:`bytes` object of length 4, big-endian.
       The interpretation is similar to an integer *address*.
 
+   4. A two-tuple of an address description and a netmask, where the address
+      description is either a string, a 32-bits integer, a 4-bytes packed
+      integer, or an existing IPv4Address object; and the netmask is either
+      an integer representing the prefix length (e.g. ``24``) or a string
+      representing the prefix mask (e.g. ``255.255.255.0``).
+
    An :exc:`AddressValueError` is raised if *address* is not a valid IPv4
    address.  A :exc:`NetmaskValueError` is raised if the mask is not valid for
    an IPv4 address.
@@ -387,6 +409,10 @@ so to avoid duplication they are only documented for :class:`IPv4Network`.
    Unless stated otherwise, all network methods accepting other network/address
    objects will raise :exc:`TypeError` if the argument's IP version is
    incompatible to ``self``
+
+   .. versionchanged:: 3.5
+
+      Added the two-tuple form for the *address* constructor parameter.
 
    .. attribute:: version
    .. attribute:: max_prefixlen
@@ -414,7 +440,7 @@ so to avoid duplication they are only documented for :class:`IPv4Network`.
       The broadcast address for the network. Packets sent to the broadcast
       address should be received by every host on the network.
 
-   .. attribute:: host mask
+   .. attribute:: hostmask
 
       The host mask, as a string.
 
@@ -549,8 +575,13 @@ so to avoid duplication they are only documented for :class:`IPv4Network`.
       single-address network, with the network address being *address* and
       the mask being ``/128``.
 
-   3. An integer packed into a :class:`bytes` object of length 16, bit-endian.
+   3. An integer packed into a :class:`bytes` object of length 16, big-endian.
       The interpretation is similar to an integer *address*.
+
+   4. A two-tuple of an address description and a netmask, where the address
+      description is either a string, a 128-bits integer, a 16-bytes packed
+      integer, or an existing IPv4Address object; and the netmask is an
+      integer representing the prefix length.
 
    An :exc:`AddressValueError` is raised if *address* is not a valid IPv6
    address.  A :exc:`NetmaskValueError` is raised if the mask is not valid for
@@ -559,6 +590,10 @@ so to avoid duplication they are only documented for :class:`IPv4Network`.
    If *strict* is ``True`` and host bits are set in the supplied address,
    then :exc:`ValueError` is raised.  Otherwise, the host bits are masked out
    to determine the appropriate network address.
+
+   .. versionchanged:: 3.5
+
+      Added the two-tuple form for the *address* constructor parameter.
 
    .. attribute:: version
    .. attribute:: max_prefixlen
@@ -570,7 +605,7 @@ so to avoid duplication they are only documented for :class:`IPv4Network`.
    .. attribute:: is_link_local
    .. attribute:: network_address
    .. attribute:: broadcast_address
-   .. attribute:: host mask
+   .. attribute:: hostmask
    .. attribute:: with_prefixlen
    .. attribute:: compressed
    .. attribute:: exploded

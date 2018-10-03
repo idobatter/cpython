@@ -277,7 +277,7 @@ Return a titlecased version of B, i.e. ASCII words start with uppercase\n\
 characters, all remaining cased characters have lowercase.");
 
 void
-_Py_bytes_title(char *result, char *s, Py_ssize_t len)
+_Py_bytes_title(char *result, const char *s, Py_ssize_t len)
 {
     Py_ssize_t i;
     int previous_is_cased = 0;
@@ -306,7 +306,7 @@ Return a copy of B with only its first character capitalized (ASCII)\n\
 and the rest lower-cased.");
 
 void
-_Py_bytes_capitalize(char *result, char *s, Py_ssize_t len)
+_Py_bytes_capitalize(char *result, const char *s, Py_ssize_t len)
 {
     Py_ssize_t i;
 
@@ -336,7 +336,7 @@ Return a copy of B with uppercase ASCII characters converted\n\
 to lowercase ASCII and vice versa.");
 
 void
-_Py_bytes_swapcase(char *result, char *s, Py_ssize_t len)
+_Py_bytes_swapcase(char *result, const char *s, Py_ssize_t len)
 {
     Py_ssize_t i;
 
@@ -363,61 +363,27 @@ for use in the bytes or bytearray translate method where each byte\n\
 in frm is mapped to the byte at the same position in to.\n\
 The bytes objects frm and to must be of the same length.");
 
-static Py_ssize_t
-_getbuffer(PyObject *obj, Py_buffer *view)
-{
-    PyBufferProcs *buffer = Py_TYPE(obj)->tp_as_buffer;
-
-    if (buffer == NULL || buffer->bf_getbuffer == NULL)
-    {
-        PyErr_Format(PyExc_TypeError,
-                     "Type %.100s doesn't support the buffer API",
-                     Py_TYPE(obj)->tp_name);
-        return -1;
-    }
-
-    if (buffer->bf_getbuffer(obj, view, PyBUF_SIMPLE) < 0)
-        return -1;
-    return view->len;
-}
-
 PyObject *
-_Py_bytes_maketrans(PyObject *args)
+_Py_bytes_maketrans(Py_buffer *frm, Py_buffer *to)
 {
-    PyObject *frm, *to, *res = NULL;
-    Py_buffer bfrm, bto;
+    PyObject *res = NULL;
     Py_ssize_t i;
     char *p;
 
-    bfrm.len = -1;
-    bto.len = -1;
-
-    if (!PyArg_ParseTuple(args, "OO:maketrans", &frm, &to))
-        return NULL;
-    if (_getbuffer(frm, &bfrm) < 0)
-        return NULL;
-    if (_getbuffer(to, &bto) < 0)
-        goto done;
-    if (bfrm.len != bto.len) {
+    if (frm->len != to->len) {
         PyErr_Format(PyExc_ValueError,
                      "maketrans arguments must have same length");
-        goto done;
+        return NULL;
     }
     res = PyBytes_FromStringAndSize(NULL, 256);
-    if (!res) {
-        goto done;
-    }
+    if (!res)
+        return NULL;
     p = PyBytes_AS_STRING(res);
     for (i = 0; i < 256; i++)
         p[i] = (char) i;
-    for (i = 0; i < bfrm.len; i++) {
-        p[((unsigned char *)bfrm.buf)[i]] = ((char *)bto.buf)[i];
+    for (i = 0; i < frm->len; i++) {
+        p[((unsigned char *)frm->buf)[i]] = ((char *)to->buf)[i];
     }
 
-done:
-    if (bfrm.len != -1)
-        PyBuffer_Release(&bfrm);
-    if (bto.len != -1)
-        PyBuffer_Release(&bto);
     return res;
 }

@@ -7,12 +7,10 @@ import random
 import select
 import sys
 import unittest
-from test.support import TESTFN, run_unittest
+from test.support import TESTFN, run_unittest, cpython_only
 
-try:
-    select.devpoll
-except AttributeError:
-    raise unittest.SkipTest("select.devpoll not defined")
+if not hasattr(select, 'devpoll') :
+    raise unittest.SkipTest('test works only on Solaris OS family')
 
 
 def find_ready_matching(ready, flag):
@@ -119,6 +117,26 @@ class DevPollTests(unittest.TestCase):
         devpoll = select.devpoll()
         self.addCleanup(devpoll.close)
         self.assertEqual(os.get_inheritable(devpoll.fileno()), False)
+
+    def test_events_mask_overflow(self):
+        pollster = select.devpoll()
+        w, r = os.pipe()
+        pollster.register(w)
+        # Issue #17919
+        self.assertRaises(OverflowError, pollster.register, 0, -1)
+        self.assertRaises(OverflowError, pollster.register, 0, 1 << 64)
+        self.assertRaises(OverflowError, pollster.modify, 1, -1)
+        self.assertRaises(OverflowError, pollster.modify, 1, 1 << 64)
+
+    @cpython_only
+    def test_events_mask_overflow_c_limits(self):
+        from _testcapi import USHRT_MAX
+        pollster = select.devpoll()
+        w, r = os.pipe()
+        pollster.register(w)
+        # Issue #17919
+        self.assertRaises(OverflowError, pollster.register, 0, USHRT_MAX + 1)
+        self.assertRaises(OverflowError, pollster.modify, 1, USHRT_MAX + 1)
 
 
 def test_main():

@@ -30,23 +30,20 @@ The available exception and functions in this module are:
 
 .. function:: adler32(data[, value])
 
-   Computes a Adler-32 checksum of *data*.  (An Adler-32 checksum is almost as
-   reliable as a CRC32 but can be computed much more quickly.)  If *value* is
-   present, it is used as the starting value of the checksum; otherwise, a fixed
-   default value is used.  This allows computing a running checksum over the
+   Computes an Adler-32 checksum of *data*.  (An Adler-32 checksum is almost as
+   reliable as a CRC32 but can be computed much more quickly.)  The result
+   is an unsigned 32-bit integer.  If *value* is present, it is used as
+   the starting value of the checksum; otherwise, a default value of 1
+   is used.  Passing in *value* allows computing a running checksum over the
    concatenation of several inputs.  The algorithm is not cryptographically
    strong, and should not be used for authentication or digital signatures.  Since
    the algorithm is designed for use as a checksum algorithm, it is not suitable
    for use as a general hash algorithm.
 
-   Always returns an unsigned 32-bit integer.
-
-.. note::
-   To generate the same numeric value across all Python versions and
-   platforms use adler32(data) & 0xffffffff.  If you are only using
-   the checksum in packed binary format this is not necessary as the
-   return value is the correct 32bit binary representation
-   regardless of sign.
+   .. versionchanged:: 3.0
+      Always returns an unsigned value.
+      To generate the same numeric value across all Python versions and
+      platforms, use ``adler32(data) & 0xffffffff``.
 
 
 .. function:: compress(data[, level])
@@ -58,7 +55,7 @@ The available exception and functions in this module are:
    Raises the :exc:`error` exception if any error occurs.
 
 
-.. function:: compressobj(level=-1, method=DEFLATED, wbits=15, memlevel=8, strategy=Z_DEFAULT_STRATEGY[, zdict])
+.. function:: compressobj(level=-1, method=DEFLATED, wbits=15, memLevel=8, strategy=Z_DEFAULT_STRATEGY[, zdict])
 
    Returns a compression object, to be used for compressing data streams that won't
    fit into memory at once.
@@ -75,9 +72,9 @@ The available exception and functions in this module are:
    should be an integer from ``8`` to ``15``. Higher values give better
    compression, but use more memory.
 
-   *memlevel* controls the amount of memory used for internal compression state.
-   Valid values range from ``1`` to ``9``. Higher values using more memory,
-   but are faster and produce smaller output.
+   The *memLevel* argument controls the amount of memory used for the
+   internal compression state. Valid values range from ``1`` to ``9``.
+   Higher values use more memory, but are faster and produce smaller output.
 
    *strategy* is used to tune the compression algorithm. Possible values are
    ``Z_DEFAULT_STRATEGY``, ``Z_FILTERED``, and ``Z_HUFFMAN_ONLY``.
@@ -97,23 +94,19 @@ The available exception and functions in this module are:
       single: Cyclic Redundancy Check
       single: checksum; Cyclic Redundancy Check
 
-   Computes a CRC (Cyclic Redundancy Check)  checksum of *data*. If *value* is
-   present, it is used as the starting value of the checksum; otherwise, a fixed
-   default value is used.  This allows computing a running checksum over the
+   Computes a CRC (Cyclic Redundancy Check) checksum of *data*. The
+   result is an unsigned 32-bit integer. If *value* is present, it is used
+   as the starting value of the checksum; otherwise, a default value of 0
+   is used.  Passing in *value* allows computing a running checksum over the
    concatenation of several inputs.  The algorithm is not cryptographically
    strong, and should not be used for authentication or digital signatures.  Since
    the algorithm is designed for use as a checksum algorithm, it is not suitable
    for use as a general hash algorithm.
 
-   Always returns an unsigned 32-bit integer.
-
-   .. note::
-
+   .. versionchanged:: 3.0
+      Always returns an unsigned value.
       To generate the same numeric value across all Python versions and
-      platforms, use ``crc32(data) & 0xffffffff``.  If you are only using
-      the checksum in packed binary format this is not necessary as the
-      return value is the correct 32-bit binary representation
-      regardless of sign.
+      platforms, use ``crc32(data) & 0xffffffff``.
 
 
 .. function:: decompress(data[, wbits[, bufsize]])
@@ -197,7 +190,7 @@ Decompression objects support the following methods and attributes:
 .. attribute:: Decompress.unused_data
 
    A bytes object which contains any bytes past the end of the compressed data. That is,
-   this remains ``""`` until the last byte that contains compression data is
+   this remains ``b""`` until the last byte that contains compression data is
    available.  If the whole bytestring turned out to contain compressed data, this is
    ``b""``, an empty bytes object.
 
@@ -230,7 +223,7 @@ Decompression objects support the following methods and attributes:
    :meth:`decompress` method.  Some of the input data may be preserved in internal
    buffers for later processing.
 
-   If the optional parameter *max_length* is supplied then the return value will be
+   If the optional parameter *max_length* is non-zero then the return value will be
    no longer than *max_length*. This may mean that not all of the compressed input
    can be processed; and unconsumed data will be stored in the attribute
    :attr:`unconsumed_tail`. This bytestring must be passed to a subsequent call to

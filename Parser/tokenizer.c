@@ -98,10 +98,13 @@ const char *_PyParser_TokenNames[] = {
     "DOUBLESLASH",
     "DOUBLESLASHEQUAL",
     "AT",
+    "ATEQUAL",
     "RARROW",
     "ELLIPSIS",
     /* This table must match the #defines in token.h! */
     "OP",
+    "AWAIT",
+    "ASYNC",
     "<ERRORTOKEN>",
     "<N_TOKENS>"
 };
@@ -123,6 +126,7 @@ tok_new(void)
     tok->tabsize = TABSIZE;
     tok->indent = 0;
     tok->indstack[0] = 0;
+
     tok->atbol = 1;
     tok->pendin = 0;
     tok->prompt = tok->nextprompt = NULL;
@@ -143,6 +147,11 @@ tok_new(void)
     tok->decoding_readline = NULL;
     tok->decoding_buffer = NULL;
 #endif
+
+    tok->async_def = 0;
+    tok->async_def_indent = 0;
+    tok->async_def_nl = 0;
+
     return tok;
 }
 
@@ -187,13 +196,14 @@ error_ret(struct tok_state *tok) /* XXX */
     tok->decoding_erred = 1;
     if (tok->fp != NULL && tok->buf != NULL) /* see PyTokenizer_Free */
         PyMem_FREE(tok->buf);
-    tok->buf = NULL;
+    tok->buf = tok->cur = tok->end = tok->inp = tok->start = NULL;
+    tok->done = E_DECODE;
     return NULL;                /* as if it were EOF */
 }
 
 
-static char *
-get_normal_name(char *s)        /* for utf-8 and latin-1 */
+static const char *
+get_normal_name(const char *s)  /* for utf-8 and latin-1 */
 {
     char buf[13];
     int i;
@@ -254,7 +264,7 @@ get_coding_spec(const char *s, char **spec, Py_ssize_t size, struct tok_state *t
 
             if (begin < t) {
                 char* r = new_string(begin, t - begin, tok);
-                char* q;
+                const char* q;
                 if (!r)
                     return 0;
                 q = get_normal_name(r);
@@ -283,13 +293,27 @@ check_coding_spec(const char* line, Py_ssize_t size, struct tok_state *tok,
     char *cs;
     int r = 1;
 
-    if (tok->cont_line)
+    if (tok->cont_line) {
         /* It's a continuation line, so it can't be a coding spec. */
+        tok->read_coding_spec = 1;
         return 1;
+    }
     if (!get_coding_spec(line, &cs, size, tok))
         return 0;
-    if (!cs)
+    if (!cs) {
+        Py_ssize_t i;
+        for (i = 0; i < size; i++) {
+            if (line[i] == '#' || line[i] == '\n' || line[i] == '\r')
+                break;
+            if (line[i] != ' ' && line[i] != '\t' && line[i] != '\014') {
+                /* Stop checking coding spec after a line containing
+                 * anything except a comment. */
+                tok->read_coding_spec = 1;
+                break;
+            }
+        }
         return 1;
+    }
     tok->read_coding_spec = 1;
     if (tok->encoding == NULL) {
         assert(tok->decoding_state == STATE_RAW);
@@ -476,13 +500,21 @@ fp_setreadl(struct tok_state *tok, const char* enc)
     _Py_IDENTIFIER(open);
     _Py_IDENTIFIER(readline);
     int fd;
+    long pos;
 
     io = PyImport_ImportModuleNoBlock("io");
     if (io == NULL)
         goto cleanup;
 
     fd = fileno(tok->fp);
-    if (lseek(fd, 0, SEEK_SET) == (off_t)-1) {
+    /* Due to buffering the file offset for fd can be different from the file
+     * position of tok->fp.  If tok->fp was opened in text mode on Windows,
+     * its file position counts CRLF as one char and can't be directly mapped
+     * to the file offset for fd.  Instead we step back one byte and read to
+     * the end of line.*/
+    pos = ftell(tok->fp);
+    if (pos == -1 ||
+        lseek(fd, (off_t)(pos > 0 ? pos - 1 : pos), SEEK_SET) == (off_t)-1) {
         PyErr_SetFromErrnoWithFilename(PyExc_OSError, NULL);
         goto cleanup;
     }
@@ -492,17 +524,14 @@ fp_setreadl(struct tok_state *tok, const char* enc)
     if (stream == NULL)
         goto cleanup;
 
-    Py_XDECREF(tok->decoding_readline);
     readline = _PyObject_GetAttrId(stream, &PyId_readline);
-    tok->decoding_readline = readline;
-
-    /* The file has been reopened; parsing will restart from
-     * the beginning of the file, we have to reset the line number.
-     * But this function has been called from inside tok_nextc() which
-     * will increment lineno before it returns. So we set it -1 so that
-     * the next call to tok_nextc() will start with tok->lineno == 0.
-     */
-    tok->lineno = -1;
+    Py_SETREF(tok->decoding_readline, readline);
+    if (pos > 0) {
+        if (PyObject_CallObject(readline, NULL) == NULL) {
+            readline = NULL;
+            goto cleanup;
+        }
+    }
 
   cleanup:
     Py_XDECREF(stream);
@@ -752,7 +781,7 @@ decode_str(const char *input, int single, struct tok_state *tok)
     if (newl[0]) {
         if (!check_coding_spec(str, newl[0] - str, tok, buf_setreadl))
             return error_ret(tok);
-        if (tok->enc == NULL && newl[1]) {
+        if (tok->enc == NULL && !tok->read_coding_spec && newl[1]) {
             if (!check_coding_spec(newl[0]+1, newl[1] - newl[0],
                                    tok, buf_setreadl))
                 return error_ret(tok);
@@ -923,11 +952,6 @@ tok_nextc(struct tok_state *tok)
                 }
                 buflen = PyBytes_GET_SIZE(u);
                 buf = PyBytes_AS_STRING(u);
-                if (!buf) {
-                    Py_DECREF(u);
-                    tok->done = E_DECODE;
-                    return EOF;
-                }
                 newtok = PyMem_MALLOC(buflen+1);
                 strcpy(newtok, buf);
                 Py_DECREF(u);
@@ -969,7 +993,6 @@ tok_nextc(struct tok_state *tok)
                 if (tok->buf != NULL)
                     PyMem_FREE(tok->buf);
                 tok->buf = newtok;
-                tok->line_start = tok->buf;
                 tok->cur = tok->buf;
                 tok->line_start = tok->buf;
                 tok->inp = strchr(tok->buf, '\0');
@@ -992,7 +1015,8 @@ tok_nextc(struct tok_state *tok)
                 }
                 if (decoding_fgets(tok->buf, (int)(tok->end - tok->buf),
                           tok) == NULL) {
-                    tok->done = E_EOF;
+                    if (!tok->decoding_erred)
+                        tok->done = E_EOF;
                     done = 1;
                 }
                 else {
@@ -1026,6 +1050,8 @@ tok_nextc(struct tok_state *tok)
                     return EOF;
                 }
                 tok->buf = newbuf;
+                tok->cur = tok->buf + cur;
+                tok->line_start = tok->cur;
                 tok->inp = tok->buf + curvalid;
                 tok->end = tok->buf + newsize;
                 tok->start = curstart < 0 ? NULL :
@@ -1111,7 +1137,7 @@ PyToken_OneChar(int c)
     case '}':           return RBRACE;
     case '^':           return CIRCUMFLEX;
     case '~':           return TILDE;
-    case '@':       return AT;
+    case '@':           return AT;
     default:            return OP;
     }
 }
@@ -1185,6 +1211,11 @@ PyToken_TwoChars(int c1, int c2)
     case '^':
         switch (c2) {
         case '=':               return CIRCUMFLEXEQUAL;
+        }
+        break;
+    case '@':
+        switch (c2) {
+        case '=':               return ATEQUAL;
         }
         break;
     }
@@ -1281,6 +1312,8 @@ verify_identifier(struct tok_state *tok)
 {
     PyObject *s;
     int result;
+    if (tok->decoding_erred)
+        return 0;
     s = PyUnicode_DecodeUTF8(tok->start, tok->cur - tok->start, NULL);
     if (s == NULL || PyUnicode_READY(s) == -1) {
         if (PyErr_ExceptionMatches(PyExc_UnicodeDecodeError)) {
@@ -1402,6 +1435,21 @@ tok_get(struct tok_state *tok, char **p_start, char **p_end)
         }
     }
 
+    if (tok->async_def
+        && !blankline
+        && tok->level == 0
+        /* There was a NEWLINE after ASYNC DEF,
+           so we're past the signature. */
+        && tok->async_def_nl
+        /* Current indentation level is less than where
+           the async function was defined */
+        && tok->async_def_indent >= tok->indent)
+    {
+        tok->async_def = 0;
+        tok->async_def_indent = 0;
+        tok->async_def_nl = 0;
+    }
+
  again:
     tok->start = NULL;
     /* Skip spaces */
@@ -1426,17 +1474,19 @@ tok_get(struct tok_state *tok, char **p_start, char **p_end)
     nonascii = 0;
     if (is_potential_identifier_start(c)) {
         /* Process b"", r"", u"", br"" and rb"" */
-        int saw_b = 0, saw_r = 0, saw_u = 0;
+        int saw_b = 0, saw_r = 0, saw_u = 0, saw_f = 0;
         while (1) {
-            if (!(saw_b || saw_u) && (c == 'b' || c == 'B'))
+            if (!(saw_b || saw_u || saw_f) && (c == 'b' || c == 'B'))
                 saw_b = 1;
             /* Since this is a backwards compatibility support literal we don't
                want to support it in arbitrary order like byte literals. */
-            else if (!(saw_b || saw_u || saw_r) && (c == 'u' || c == 'U'))
+            else if (!(saw_b || saw_u || saw_r || saw_f) && (c == 'u' || c == 'U'))
                 saw_u = 1;
             /* ur"" and ru"" are not supported */
             else if (!(saw_r || saw_u) && (c == 'r' || c == 'R'))
                 saw_r = 1;
+            else if (!(saw_f || saw_b || saw_u) && (c == 'f' || c == 'F'))
+                saw_f = 1;
             else
                 break;
             c = tok_nextc(tok);
@@ -1449,13 +1499,46 @@ tok_get(struct tok_state *tok, char **p_start, char **p_end)
             c = tok_nextc(tok);
         }
         tok_backup(tok, c);
-        if (nonascii &&
-            !verify_identifier(tok)) {
-            tok->done = E_IDENTIFIER;
+        if (nonascii && !verify_identifier(tok))
             return ERRORTOKEN;
-        }
         *p_start = tok->start;
         *p_end = tok->cur;
+
+        /* async/await parsing block. */
+        if (tok->cur - tok->start == 5) {
+            /* Current token length is 5. */
+            if (tok->async_def) {
+                /* We're inside an 'async def' function. */
+                if (memcmp(tok->start, "async", 5) == 0)
+                    return ASYNC;
+                if (memcmp(tok->start, "await", 5) == 0)
+                    return AWAIT;
+            }
+            else if (memcmp(tok->start, "async", 5) == 0) {
+                /* The current token is 'async'.
+                   Look ahead one token.*/
+
+                struct tok_state ahead_tok;
+                char *ahead_tok_start = NULL, *ahead_tok_end = NULL;
+                int ahead_tok_kind;
+
+                memcpy(&ahead_tok, tok, sizeof(ahead_tok));
+                ahead_tok_kind = tok_get(&ahead_tok, &ahead_tok_start,
+                                         &ahead_tok_end);
+
+                if (ahead_tok_kind == NAME
+                    && ahead_tok.cur - ahead_tok.start == 3
+                    && memcmp(ahead_tok.start, "def", 3) == 0)
+                {
+                    /* The next token is going to be 'def', so instead of
+                       returning 'async' NAME token, we return ASYNC. */
+                    tok->async_def_indent = tok->indent;
+                    tok->async_def = 1;
+                    return ASYNC;
+                }
+            }
+        }
+
         return NAME;
     }
 
@@ -1467,6 +1550,11 @@ tok_get(struct tok_state *tok, char **p_start, char **p_end)
         *p_start = tok->start;
         *p_end = tok->cur - 1; /* Leave '\n' out of the string */
         tok->cont_line = 0;
+        if (tok->async_def) {
+            /* We're somewhere inside an 'async def' function, and
+               we've encountered a NEWLINE after its signature. */
+            tok->async_def_nl = 1;
+        }
         return NEWLINE;
     }
 
@@ -1577,15 +1665,24 @@ tok_get(struct tok_state *tok, char **p_start, char **p_end)
                     } while (isdigit(c));
                 }
                 if (c == 'e' || c == 'E') {
-        exponent:
+                    int e;
+                  exponent:
+                    e = c;
                     /* Exponent part */
                     c = tok_nextc(tok);
-                    if (c == '+' || c == '-')
+                    if (c == '+' || c == '-') {
                         c = tok_nextc(tok);
-                    if (!isdigit(c)) {
-                        tok->done = E_TOKEN;
+                        if (!isdigit(c)) {
+                            tok->done = E_TOKEN;
+                            tok_backup(tok, c);
+                            return ERRORTOKEN;
+                        }
+                    } else if (!isdigit(c)) {
                         tok_backup(tok, c);
-                        return ERRORTOKEN;
+                        tok_backup(tok, e);
+                        *p_start = tok->start;
+                        *p_end = tok->cur;
+                        return NUMBER;
                     }
                     do {
                         c = tok_nextc(tok);
@@ -1643,7 +1740,7 @@ tok_get(struct tok_state *tok, char **p_start, char **p_end)
             else {
                 end_quote_size = 0;
                 if (c == '\\')
-                c = tok_nextc(tok);  /* skip escaped char */
+                    c = tok_nextc(tok);  /* skip escaped char */
             }
         }
 

@@ -852,7 +852,7 @@ keep track of the group numbers.  There are two features which help with this
 problem.  Both of them use a common syntax for regular expression extensions, so
 we'll look at that first.
 
-Perl 5 is well-known for its powerful additions to standard regular expressions.
+Perl 5 is well known for its powerful additions to standard regular expressions.
 For these new features the Perl developers couldn't choose new single-keystroke metacharacters
 or new special sequences beginning with ``\`` without making Perl's regular
 expressions confusingly different from standard REs.  If they chose ``&`` as a
@@ -1138,7 +1138,7 @@ Empty matches are replaced only when they're not adjacent to a previous match.
 
 If *replacement* is a string, any backslash escapes in it are processed.  That
 is, ``\n`` is converted to a single newline character, ``\r`` is converted to a
-carriage return, and so forth. Unknown escapes such as ``\j`` are left alone.
+carriage return, and so forth. Unknown escapes such as ``\&`` are left alone.
 Backreferences, such as ``\6``, are replaced with the substring matched by the
 corresponding group in the RE.  This lets you incorporate portions of the
 original text in the resulting replacement string.

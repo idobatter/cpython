@@ -51,11 +51,21 @@ typedef struct {
     bz_stream bzs;
     char eof;           /* T_BOOL expects a char */
     PyObject *unused_data;
+    char needs_input;
+    char *input_buffer;
+    size_t input_buffer_size;
+
+    /* bzs->avail_in is only 32 bit, so we store the true length
+       separately. Conversion and looping is encapsulated in
+       decompress_buf() */
+    size_t bzs_avail_in_real;
 #ifdef WITH_THREAD
     PyThread_type_lock lock;
 #endif
 } BZ2Decompressor;
 
+static PyTypeObject BZ2Compressor_Type;
+static PyTypeObject BZ2Decompressor_Type;
 
 /* Helper functions. */
 
@@ -109,19 +119,23 @@ catch_bz2_error(int bzerror)
 }
 
 #if BUFSIZ < 8192
-#define SMALLCHUNK 8192
+#define INITIAL_BUFFER_SIZE 8192
 #else
-#define SMALLCHUNK BUFSIZ
+#define INITIAL_BUFFER_SIZE BUFSIZ
 #endif
 
 static int
-grow_buffer(PyObject **buf)
+grow_buffer(PyObject **buf, Py_ssize_t max_length)
 {
     /* Expand the buffer by an amount proportional to the current size,
        giving us amortized linear-time behavior. Use a less-than-double
        growth factor to avoid excessive allocation. */
     size_t size = PyBytes_GET_SIZE(*buf);
     size_t new_size = size + (size >> 3) + 6;
+
+    if (max_length > 0 && new_size > (size_t) max_length)
+        new_size = (size_t) max_length;
+
     if (new_size > size) {
         return _PyBytes_Resize(buf, new_size);
     } else {  /* overflow */
@@ -140,14 +154,14 @@ compress(BZ2Compressor *c, char *data, size_t len, int action)
     size_t data_size = 0;
     PyObject *result;
 
-    result = PyBytes_FromStringAndSize(NULL, SMALLCHUNK);
+    result = PyBytes_FromStringAndSize(NULL, INITIAL_BUFFER_SIZE);
     if (result == NULL)
         return NULL;
 
     c->bzs.next_in = data;
     c->bzs.avail_in = 0;
     c->bzs.next_out = PyBytes_AS_STRING(result);
-    c->bzs.avail_out = SMALLCHUNK;
+    c->bzs.avail_out = INITIAL_BUFFER_SIZE;
     for (;;) {
         char *this_out;
         int bzerror;
@@ -166,7 +180,7 @@ compress(BZ2Compressor *c, char *data, size_t len, int action)
         if (c->bzs.avail_out == 0) {
             size_t buffer_left = PyBytes_GET_SIZE(result) - data_size;
             if (buffer_left == 0) {
-                if (grow_buffer(&result) < 0)
+                if (grow_buffer(&result, -1) < 0)
                     goto error;
                 c->bzs.next_out = PyBytes_AS_STRING(result) + data_size;
                 buffer_left = PyBytes_GET_SIZE(result) - data_size;
@@ -186,7 +200,7 @@ compress(BZ2Compressor *c, char *data, size_t len, int action)
         if (action == BZ_FINISH && bzerror == BZ_STREAM_END)
             break;
     }
-    if (data_size != PyBytes_GET_SIZE(result))
+    if (data_size != (size_t)PyBytes_GET_SIZE(result))
         if (_PyBytes_Resize(&result, data_size) < 0)
             goto error;
     return result;
@@ -196,44 +210,57 @@ error:
     return NULL;
 }
 
-PyDoc_STRVAR(BZ2Compressor_compress__doc__,
-"compress(data) -> bytes\n"
-"\n"
-"Provide data to the compressor object. Returns a chunk of\n"
-"compressed data if possible, or b'' otherwise.\n"
-"\n"
-"When you have finished providing data to the compressor, call the\n"
-"flush() method to finish the compression process.\n");
+/*[clinic input]
+module _bz2
+class _bz2.BZ2Compressor "BZ2Compressor *" "&BZ2Compressor_Type"
+class _bz2.BZ2Decompressor "BZ2Decompressor *" "&BZ2Decompressor_Type"
+[clinic start generated code]*/
+/*[clinic end generated code: output=da39a3ee5e6b4b0d input=dc7d7992a79f9cb7]*/
+
+#include "clinic/_bz2module.c.h"
+
+/*[clinic input]
+_bz2.BZ2Compressor.compress
+
+    data: Py_buffer
+    /
+
+Provide data to the compressor object.
+
+Returns a chunk of compressed data if possible, or b'' otherwise.
+
+When you have finished providing data to the compressor, call the
+flush() method to finish the compression process.
+[clinic start generated code]*/
 
 static PyObject *
-BZ2Compressor_compress(BZ2Compressor *self, PyObject *args)
+_bz2_BZ2Compressor_compress_impl(BZ2Compressor *self, Py_buffer *data)
+/*[clinic end generated code: output=59365426e941fbcc input=85c963218070fc4c]*/
 {
-    Py_buffer buffer;
     PyObject *result = NULL;
-
-    if (!PyArg_ParseTuple(args, "y*:compress", &buffer))
-        return NULL;
 
     ACQUIRE_LOCK(self);
     if (self->flushed)
         PyErr_SetString(PyExc_ValueError, "Compressor has been flushed");
     else
-        result = compress(self, buffer.buf, buffer.len, BZ_RUN);
+        result = compress(self, data->buf, data->len, BZ_RUN);
     RELEASE_LOCK(self);
-    PyBuffer_Release(&buffer);
     return result;
 }
 
-PyDoc_STRVAR(BZ2Compressor_flush__doc__,
-"flush() -> bytes\n"
-"\n"
-"Finish the compression process. Returns the compressed data left\n"
-"in internal buffers.\n"
-"\n"
-"The compressor object may not be used after this method is called.\n");
+/*[clinic input]
+_bz2.BZ2Compressor.flush
+
+Finish the compression process.
+
+Returns the compressed data left in internal buffers.
+
+The compressor object may not be used after this method is called.
+[clinic start generated code]*/
 
 static PyObject *
-BZ2Compressor_flush(BZ2Compressor *self, PyObject *noargs)
+_bz2_BZ2Compressor_flush_impl(BZ2Compressor *self)
+/*[clinic end generated code: output=3ef03fc1b092a701 input=d64405d3c6f76691]*/
 {
     PyObject *result = NULL;
 
@@ -274,14 +301,24 @@ BZ2_Free(void* ctx, void *ptr)
     PyMem_RawFree(ptr);
 }
 
+/*[clinic input]
+_bz2.BZ2Compressor.__init__
+
+    compresslevel: int = 9
+        Compression level, as a number between 1 and 9.
+    /
+
+Create a compressor object for compressing data incrementally.
+
+For one-shot compression, use the compress() function instead.
+[clinic start generated code]*/
+
 static int
-BZ2Compressor_init(BZ2Compressor *self, PyObject *args, PyObject *kwargs)
+_bz2_BZ2Compressor___init___impl(BZ2Compressor *self, int compresslevel)
+/*[clinic end generated code: output=c4e6adfd02963827 input=4e1ff7b8394b6e9a]*/
 {
-    int compresslevel = 9;
     int bzerror;
 
-    if (!PyArg_ParseTuple(args, "|i:BZ2Compressor", &compresslevel))
-        return -1;
     if (!(1 <= compresslevel && compresslevel <= 9)) {
         PyErr_SetString(PyExc_ValueError,
                         "compresslevel must be between 1 and 9");
@@ -325,22 +362,12 @@ BZ2Compressor_dealloc(BZ2Compressor *self)
 }
 
 static PyMethodDef BZ2Compressor_methods[] = {
-    {"compress",     (PyCFunction)BZ2Compressor_compress, METH_VARARGS,
-     BZ2Compressor_compress__doc__},
-    {"flush",        (PyCFunction)BZ2Compressor_flush,    METH_NOARGS,
-     BZ2Compressor_flush__doc__},
+    _BZ2_BZ2COMPRESSOR_COMPRESS_METHODDEF
+    _BZ2_BZ2COMPRESSOR_FLUSH_METHODDEF
     {"__getstate__", (PyCFunction)BZ2Compressor_getstate, METH_NOARGS},
     {NULL}
 };
 
-PyDoc_STRVAR(BZ2Compressor__doc__,
-"BZ2Compressor(compresslevel=9)\n"
-"\n"
-"Create a compressor object for compressing data incrementally.\n"
-"\n"
-"compresslevel, if given, must be a number between 1 and 9.\n"
-"\n"
-"For one-shot compression, use the compress() function instead.\n");
 
 static PyTypeObject BZ2Compressor_Type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -363,7 +390,7 @@ static PyTypeObject BZ2Compressor_Type = {
     0,                                  /* tp_setattro */
     0,                                  /* tp_as_buffer */
     Py_TPFLAGS_DEFAULT,                 /* tp_flags */
-    BZ2Compressor__doc__,               /* tp_doc */
+    _bz2_BZ2Compressor___init____doc__,  /* tp_doc */
     0,                                  /* tp_traverse */
     0,                                  /* tp_clear */
     0,                                  /* tp_richcompare */
@@ -378,7 +405,7 @@ static PyTypeObject BZ2Compressor_Type = {
     0,                                  /* tp_descr_get */
     0,                                  /* tp_descr_set */
     0,                                  /* tp_dictoffset */
-    (initproc)BZ2Compressor_init,       /* tp_init */
+    _bz2_BZ2Compressor___init__,        /* tp_init */
     0,                                  /* tp_alloc */
     PyType_GenericNew,                  /* tp_new */
 };
@@ -386,64 +413,66 @@ static PyTypeObject BZ2Compressor_Type = {
 
 /* BZ2Decompressor class. */
 
-static PyObject *
-decompress(BZ2Decompressor *d, char *data, size_t len)
+/* Decompress data of length d->bzs_avail_in_real in d->bzs.next_in.  The output
+   buffer is allocated dynamically and returned.  At most max_length bytes are
+   returned, so some of the input may not be consumed. d->bzs.next_in and
+   d->bzs_avail_in_real are updated to reflect the consumed input. */
+static PyObject*
+decompress_buf(BZ2Decompressor *d, Py_ssize_t max_length)
 {
-    size_t data_size = 0;
+    /* data_size is strictly positive, but because we repeatedly have to
+       compare against max_length and PyBytes_GET_SIZE we declare it as
+       signed */
+    Py_ssize_t data_size = 0;
     PyObject *result;
+    bz_stream *bzs = &d->bzs;
 
-    result = PyBytes_FromStringAndSize(NULL, SMALLCHUNK);
+    if (max_length < 0 || max_length >= INITIAL_BUFFER_SIZE)
+        result = PyBytes_FromStringAndSize(NULL, INITIAL_BUFFER_SIZE);
+    else
+        result = PyBytes_FromStringAndSize(NULL, max_length);
     if (result == NULL)
-        return result;
-    d->bzs.next_in = data;
-    /* On a 64-bit system, len might not fit in avail_in (an unsigned int).
-       Do decompression in chunks of no more than UINT_MAX bytes each. */
-    d->bzs.avail_in = (unsigned int)Py_MIN(len, UINT_MAX);
-    len -= d->bzs.avail_in;
-    d->bzs.next_out = PyBytes_AS_STRING(result);
-    d->bzs.avail_out = SMALLCHUNK;
+        return NULL;
+
+    bzs->next_out = PyBytes_AS_STRING(result);
     for (;;) {
-        char *this_out;
-        int bzerror;
+        int bzret;
+        size_t avail;
+
+        /* On a 64-bit system, buffer length might not fit in avail_out, so we
+           do decompression in chunks of no more than UINT_MAX bytes
+           each. Note that the expression for `avail` is guaranteed to be
+           positive, so the cast is safe. */
+        avail = (size_t) (PyBytes_GET_SIZE(result) - data_size);
+        bzs->avail_out = (unsigned int)Py_MIN(avail, UINT_MAX);
+        bzs->avail_in = (unsigned int)Py_MIN(d->bzs_avail_in_real, UINT_MAX);
+        d->bzs_avail_in_real -= bzs->avail_in;
 
         Py_BEGIN_ALLOW_THREADS
-        this_out = d->bzs.next_out;
-        bzerror = BZ2_bzDecompress(&d->bzs);
-        data_size += d->bzs.next_out - this_out;
+        bzret = BZ2_bzDecompress(bzs);
+        data_size = bzs->next_out - PyBytes_AS_STRING(result);
+        d->bzs_avail_in_real += bzs->avail_in;
         Py_END_ALLOW_THREADS
-        if (catch_bz2_error(bzerror))
+        if (catch_bz2_error(bzret))
             goto error;
-        if (bzerror == BZ_STREAM_END) {
+        if (bzret == BZ_STREAM_END) {
             d->eof = 1;
-            len += d->bzs.avail_in;
-            if (len > 0) { /* Save leftover input to unused_data */
-                Py_CLEAR(d->unused_data);
-                d->unused_data = PyBytes_FromStringAndSize(d->bzs.next_in, len);
-                if (d->unused_data == NULL)
-                    goto error;
-            }
             break;
-        }
-        if (d->bzs.avail_in == 0) {
-            if (len == 0)
+        } else if (d->bzs_avail_in_real == 0) {
+            break;
+        } else if (bzs->avail_out == 0) {
+            if (data_size == max_length)
                 break;
-            d->bzs.avail_in = (unsigned int)Py_MIN(len, UINT_MAX);
-            len -= d->bzs.avail_in;
-        }
-        if (d->bzs.avail_out == 0) {
-            size_t buffer_left = PyBytes_GET_SIZE(result) - data_size;
-            if (buffer_left == 0) {
-                if (grow_buffer(&result) < 0)
-                    goto error;
-                d->bzs.next_out = PyBytes_AS_STRING(result) + data_size;
-                buffer_left = PyBytes_GET_SIZE(result) - data_size;
-            }
-            d->bzs.avail_out = (unsigned int)Py_MIN(buffer_left, UINT_MAX);
+            if (data_size == PyBytes_GET_SIZE(result) &&
+                grow_buffer(&result, max_length) == -1)
+                goto error;
+            bzs->next_out = PyBytes_AS_STRING(result) + data_size;
         }
     }
     if (data_size != PyBytes_GET_SIZE(result))
-        if (_PyBytes_Resize(&result, data_size) < 0)
+        if (_PyBytes_Resize(&result, data_size) == -1)
             goto error;
+
     return result;
 
 error:
@@ -451,32 +480,151 @@ error:
     return NULL;
 }
 
-PyDoc_STRVAR(BZ2Decompressor_decompress__doc__,
-"decompress(data) -> bytes\n"
-"\n"
-"Provide data to the decompressor object. Returns a chunk of\n"
-"decompressed data if possible, or b'' otherwise.\n"
-"\n"
-"Attempting to decompress data after the end of stream is reached\n"
-"raises an EOFError. Any data found after the end of the stream\n"
-"is ignored and saved in the unused_data attribute.\n");
 
 static PyObject *
-BZ2Decompressor_decompress(BZ2Decompressor *self, PyObject *args)
+decompress(BZ2Decompressor *d, char *data, size_t len, Py_ssize_t max_length)
 {
-    Py_buffer buffer;
-    PyObject *result = NULL;
+    char input_buffer_in_use;
+    PyObject *result;
+    bz_stream *bzs = &d->bzs;
 
-    if (!PyArg_ParseTuple(args, "y*:decompress", &buffer))
+    /* Prepend unconsumed input if necessary */
+    if (bzs->next_in != NULL) {
+        size_t avail_now, avail_total;
+
+        /* Number of bytes we can append to input buffer */
+        avail_now = (d->input_buffer + d->input_buffer_size)
+            - (bzs->next_in + d->bzs_avail_in_real);
+
+        /* Number of bytes we can append if we move existing
+           contents to beginning of buffer (overwriting
+           consumed input) */
+        avail_total = d->input_buffer_size - d->bzs_avail_in_real;
+
+        if (avail_total < len) {
+            size_t offset = bzs->next_in - d->input_buffer;
+            char *tmp;
+            size_t new_size = d->input_buffer_size + len - avail_now;
+
+            /* Assign to temporary variable first, so we don't
+               lose address of allocated buffer if realloc fails */
+            tmp = PyMem_Realloc(d->input_buffer, new_size);
+            if (tmp == NULL) {
+                PyErr_SetNone(PyExc_MemoryError);
+                return NULL;
+            }
+            d->input_buffer = tmp;
+            d->input_buffer_size = new_size;
+
+            bzs->next_in = d->input_buffer + offset;
+        }
+        else if (avail_now < len) {
+            memmove(d->input_buffer, bzs->next_in,
+                    d->bzs_avail_in_real);
+            bzs->next_in = d->input_buffer;
+        }
+        memcpy((void*)(bzs->next_in + d->bzs_avail_in_real), data, len);
+        d->bzs_avail_in_real += len;
+        input_buffer_in_use = 1;
+    }
+    else {
+        bzs->next_in = data;
+        d->bzs_avail_in_real = len;
+        input_buffer_in_use = 0;
+    }
+
+    result = decompress_buf(d, max_length);
+    if(result == NULL)
         return NULL;
+
+    if (d->eof) {
+        d->needs_input = 0;
+        if (d->bzs_avail_in_real > 0) {
+            Py_SETREF(d->unused_data,
+                      PyBytes_FromStringAndSize(bzs->next_in, d->bzs_avail_in_real));
+            if (d->unused_data == NULL)
+                goto error;
+        }
+    }
+    else if (d->bzs_avail_in_real == 0) {
+        bzs->next_in = NULL;
+        d->needs_input = 1;
+    }
+    else {
+        d->needs_input = 0;
+
+        /* If we did not use the input buffer, we now have
+           to copy the tail from the caller's buffer into the
+           input buffer */
+        if (!input_buffer_in_use) {
+
+            /* Discard buffer if it's too small
+               (resizing it may needlessly copy the current contents) */
+            if (d->input_buffer != NULL &&
+                d->input_buffer_size < d->bzs_avail_in_real) {
+                PyMem_Free(d->input_buffer);
+                d->input_buffer = NULL;
+            }
+
+            /* Allocate if necessary */
+            if (d->input_buffer == NULL) {
+                d->input_buffer = PyMem_Malloc(d->bzs_avail_in_real);
+                if (d->input_buffer == NULL) {
+                    PyErr_SetNone(PyExc_MemoryError);
+                    goto error;
+                }
+                d->input_buffer_size = d->bzs_avail_in_real;
+            }
+
+            /* Copy tail */
+            memcpy(d->input_buffer, bzs->next_in, d->bzs_avail_in_real);
+            bzs->next_in = d->input_buffer;
+        }
+    }
+
+    return result;
+
+error:
+    Py_XDECREF(result);
+    return NULL;
+}
+
+/*[clinic input]
+_bz2.BZ2Decompressor.decompress
+
+    self: self(type="BZ2Decompressor *")
+    data: Py_buffer
+    max_length: Py_ssize_t=-1
+
+Decompress *data*, returning uncompressed data as bytes.
+
+If *max_length* is nonnegative, returns at most *max_length* bytes of
+decompressed data. If this limit is reached and further output can be
+produced, *self.needs_input* will be set to ``False``. In this case, the next
+call to *decompress()* may provide *data* as b'' to obtain more of the output.
+
+If all of the input data was decompressed and returned (either because this
+was less than *max_length* bytes, or because *max_length* was negative),
+*self.needs_input* will be set to True.
+
+Attempting to decompress data after the end of stream is reached raises an
+EOFError.  Any data found after the end of the stream is ignored and saved in
+the unused_data attribute.
+[clinic start generated code]*/
+
+static PyObject *
+_bz2_BZ2Decompressor_decompress_impl(BZ2Decompressor *self, Py_buffer *data,
+                                     Py_ssize_t max_length)
+/*[clinic end generated code: output=23e41045deb240a3 input=9558b424c8b00516]*/
+{
+    PyObject *result = NULL;
 
     ACQUIRE_LOCK(self);
     if (self->eof)
         PyErr_SetString(PyExc_EOFError, "End of stream already reached");
     else
-        result = decompress(self, buffer.buf, buffer.len);
+        result = decompress(self, data->buf, data->len, max_length);
     RELEASE_LOCK(self);
-    PyBuffer_Release(&buffer);
     return result;
 }
 
@@ -488,13 +636,19 @@ BZ2Decompressor_getstate(BZ2Decompressor *self, PyObject *noargs)
     return NULL;
 }
 
+/*[clinic input]
+_bz2.BZ2Decompressor.__init__
+
+Create a decompressor object for decompressing data incrementally.
+
+For one-shot decompression, use the decompress() function instead.
+[clinic start generated code]*/
+
 static int
-BZ2Decompressor_init(BZ2Decompressor *self, PyObject *args, PyObject *kwargs)
+_bz2_BZ2Decompressor___init___impl(BZ2Decompressor *self)
+/*[clinic end generated code: output=e4d2b9bb866ab8f1 input=95f6500dcda60088]*/
 {
     int bzerror;
-
-    if (!PyArg_ParseTuple(args, ":BZ2Decompressor"))
-        return -1;
 
 #ifdef WITH_THREAD
     self->lock = PyThread_allocate_lock();
@@ -504,7 +658,11 @@ BZ2Decompressor_init(BZ2Decompressor *self, PyObject *args, PyObject *kwargs)
     }
 #endif
 
-    self->unused_data = PyBytes_FromStringAndSize("", 0);
+    self->needs_input = 1;
+    self->bzs_avail_in_real = 0;
+    self->input_buffer = NULL;
+    self->input_buffer_size = 0;
+    self->unused_data = PyBytes_FromStringAndSize(NULL, 0);
     if (self->unused_data == NULL)
         goto error;
 
@@ -526,6 +684,8 @@ error:
 static void
 BZ2Decompressor_dealloc(BZ2Decompressor *self)
 {
+    if(self->input_buffer != NULL)
+        PyMem_Free(self->input_buffer);
     BZ2_bzDecompressEnd(&self->bzs);
     Py_CLEAR(self->unused_data);
 #ifdef WITH_THREAD
@@ -536,8 +696,7 @@ BZ2Decompressor_dealloc(BZ2Decompressor *self)
 }
 
 static PyMethodDef BZ2Decompressor_methods[] = {
-    {"decompress", (PyCFunction)BZ2Decompressor_decompress, METH_VARARGS,
-     BZ2Decompressor_decompress__doc__},
+    _BZ2_BZ2DECOMPRESSOR_DECOMPRESS_METHODDEF
     {"__getstate__", (PyCFunction)BZ2Decompressor_getstate, METH_NOARGS},
     {NULL}
 };
@@ -548,20 +707,18 @@ PyDoc_STRVAR(BZ2Decompressor_eof__doc__,
 PyDoc_STRVAR(BZ2Decompressor_unused_data__doc__,
 "Data found after the end of the compressed stream.");
 
+PyDoc_STRVAR(BZ2Decompressor_needs_input_doc,
+"True if more input is needed before more decompressed data can be produced.");
+
 static PyMemberDef BZ2Decompressor_members[] = {
     {"eof", T_BOOL, offsetof(BZ2Decompressor, eof),
      READONLY, BZ2Decompressor_eof__doc__},
     {"unused_data", T_OBJECT_EX, offsetof(BZ2Decompressor, unused_data),
      READONLY, BZ2Decompressor_unused_data__doc__},
+    {"needs_input", T_BOOL, offsetof(BZ2Decompressor, needs_input), READONLY,
+     BZ2Decompressor_needs_input_doc},
     {NULL}
 };
-
-PyDoc_STRVAR(BZ2Decompressor__doc__,
-"BZ2Decompressor()\n"
-"\n"
-"Create a decompressor object for decompressing data incrementally.\n"
-"\n"
-"For one-shot decompression, use the decompress() function instead.\n");
 
 static PyTypeObject BZ2Decompressor_Type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -584,7 +741,7 @@ static PyTypeObject BZ2Decompressor_Type = {
     0,                                  /* tp_setattro */
     0,                                  /* tp_as_buffer */
     Py_TPFLAGS_DEFAULT,                 /* tp_flags */
-    BZ2Decompressor__doc__,             /* tp_doc */
+    _bz2_BZ2Decompressor___init____doc__,  /* tp_doc */
     0,                                  /* tp_traverse */
     0,                                  /* tp_clear */
     0,                                  /* tp_richcompare */
@@ -599,7 +756,7 @@ static PyTypeObject BZ2Decompressor_Type = {
     0,                                  /* tp_descr_get */
     0,                                  /* tp_descr_set */
     0,                                  /* tp_dictoffset */
-    (initproc)BZ2Decompressor_init,     /* tp_init */
+    _bz2_BZ2Decompressor___init__,      /* tp_init */
     0,                                  /* tp_alloc */
     PyType_GenericNew,                  /* tp_new */
 };

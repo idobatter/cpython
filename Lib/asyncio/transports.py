@@ -1,6 +1,10 @@
 """Abstract Transport class."""
 
-__all__ = ['ReadTransport', 'WriteTransport', 'Transport']
+from asyncio import compat
+
+__all__ = ['BaseTransport', 'ReadTransport', 'WriteTransport',
+           'Transport', 'DatagramTransport', 'SubprocessTransport',
+           ]
 
 
 class BaseTransport:
@@ -14,6 +18,10 @@ class BaseTransport:
     def get_extra_info(self, name, default=None):
         """Get optional transport information."""
         return self._extra.get(name, default)
+
+    def is_closing(self):
+        """Return True if the transport is closing or closed."""
+        raise NotImplementedError
 
     def close(self):
         """Close the transport.
@@ -58,7 +66,7 @@ class WriteTransport(BaseTransport):
         high-water limit.  Neither value can be negative.
 
         The defaults are implementation-specific.  If only the
-        high-water limit is given, the low-water limit defaults to a
+        high-water limit is given, the low-water limit defaults to an
         implementation-specific value less than or equal to the
         high-water limit.  Setting high to zero forces low to zero as
         well, and causes pause_writing() to be called whenever the
@@ -85,11 +93,11 @@ class WriteTransport(BaseTransport):
     def writelines(self, list_of_data):
         """Write a list (or any iterable) of data bytes to the transport.
 
-        The default implementation just calls write() for each item in
-        the list/iterable.
+        The default implementation concatenates the arguments and
+        calls write() on the result.
         """
-        for data in list_of_data:
-            self.write(data)
+        data = compat.flatten_list_bytes(list_of_data)
+        self.write(data)
 
     def write_eof(self):
         """Close the write end after flushing buffered data.
@@ -208,4 +216,83 @@ class SubprocessTransport(BaseTransport):
         See also:
         http://docs.python.org/3/library/subprocess#subprocess.Popen.kill
         """
+        raise NotImplementedError
+
+
+class _FlowControlMixin(Transport):
+    """All the logic for (write) flow control in a mix-in base class.
+
+    The subclass must implement get_write_buffer_size().  It must call
+    _maybe_pause_protocol() whenever the write buffer size increases,
+    and _maybe_resume_protocol() whenever it decreases.  It may also
+    override set_write_buffer_limits() (e.g. to specify different
+    defaults).
+
+    The subclass constructor must call super().__init__(extra).  This
+    will call set_write_buffer_limits().
+
+    The user may call set_write_buffer_limits() and
+    get_write_buffer_size(), and their protocol's pause_writing() and
+    resume_writing() may be called.
+    """
+
+    def __init__(self, extra=None, loop=None):
+        super().__init__(extra)
+        assert loop is not None
+        self._loop = loop
+        self._protocol_paused = False
+        self._set_write_buffer_limits()
+
+    def _maybe_pause_protocol(self):
+        size = self.get_write_buffer_size()
+        if size <= self._high_water:
+            return
+        if not self._protocol_paused:
+            self._protocol_paused = True
+            try:
+                self._protocol.pause_writing()
+            except Exception as exc:
+                self._loop.call_exception_handler({
+                    'message': 'protocol.pause_writing() failed',
+                    'exception': exc,
+                    'transport': self,
+                    'protocol': self._protocol,
+                })
+
+    def _maybe_resume_protocol(self):
+        if (self._protocol_paused and
+            self.get_write_buffer_size() <= self._low_water):
+            self._protocol_paused = False
+            try:
+                self._protocol.resume_writing()
+            except Exception as exc:
+                self._loop.call_exception_handler({
+                    'message': 'protocol.resume_writing() failed',
+                    'exception': exc,
+                    'transport': self,
+                    'protocol': self._protocol,
+                })
+
+    def get_write_buffer_limits(self):
+        return (self._low_water, self._high_water)
+
+    def _set_write_buffer_limits(self, high=None, low=None):
+        if high is None:
+            if low is None:
+                high = 64*1024
+            else:
+                high = 4*low
+        if low is None:
+            low = high // 4
+        if not high >= low >= 0:
+            raise ValueError('high (%r) must be >= low (%r) must be >= 0' %
+                             (high, low))
+        self._high_water = high
+        self._low_water = low
+
+    def set_write_buffer_limits(self, high=None, low=None):
+        self._set_write_buffer_limits(high=high, low=low)
+        self._maybe_pause_protocol()
+
+    def get_write_buffer_size(self):
         raise NotImplementedError

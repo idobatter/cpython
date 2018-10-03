@@ -13,16 +13,46 @@ cET_alias = import_fresh_module('xml.etree.cElementTree',
 
 class MiscTests(unittest.TestCase):
     # Issue #8651.
-    @support.bigmemtest(size=support._2G + 100, memuse=1)
+    @support.bigmemtest(size=support._2G + 100, memuse=1, dry_run=False)
     def test_length_overflow(self, size):
-        if size < support._2G + 100:
-            self.skipTest("not enough free memory, need at least 2 GB")
         data = b'x' * size
         parser = cET.XMLParser()
         try:
             self.assertRaises(OverflowError, parser.feed, data)
         finally:
             data = None
+
+    def test_del_attribute(self):
+        element = cET.Element('tag')
+
+        element.tag = 'TAG'
+        with self.assertRaises(AttributeError):
+            del element.tag
+        self.assertEqual(element.tag, 'TAG')
+
+        with self.assertRaises(AttributeError):
+            del element.text
+        self.assertIsNone(element.text)
+        element.text = 'TEXT'
+        with self.assertRaises(AttributeError):
+            del element.text
+        self.assertEqual(element.text, 'TEXT')
+
+        with self.assertRaises(AttributeError):
+            del element.tail
+        self.assertIsNone(element.tail)
+        element.tail = 'TAIL'
+        with self.assertRaises(AttributeError):
+            del element.tail
+        self.assertEqual(element.tail, 'TAIL')
+
+        with self.assertRaises(AttributeError):
+            del element.attrib
+        self.assertEqual(element.attrib, {})
+        element.attrib = {'A': 'B', 'C': 'D'}
+        with self.assertRaises(AttributeError):
+            del element.attrib
+        self.assertEqual(element.attrib, {'A': 'B', 'C': 'D'})
 
 
 @unittest.skipUnless(cET, 'requires _elementtree')
@@ -57,7 +87,7 @@ class SizeofTest(unittest.TestCase):
     def setUp(self):
         self.elementsize = support.calcobjsize('5P')
         # extra
-        self.extra = struct.calcsize('PiiP4P')
+        self.extra = struct.calcsize('PnnP4P')
 
     check_sizeof = support.check_sizeof
 

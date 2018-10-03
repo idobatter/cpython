@@ -216,6 +216,9 @@
     <ClInclude Include="..\Include\pygetopt.h">
       <Filter>Include</Filter>
     </ClInclude>
+    <ClInclude Include="..\Include\pylifecycle.h">
+      <Filter>Include</Filter>
+    </ClInclude>
     <ClInclude Include="..\Include\pymath.h">
       <Filter>Include</Filter>
     </ClInclude>
@@ -238,6 +241,9 @@
       <Filter>Include</Filter>
     </ClInclude>
     <ClInclude Include="..\Include\pystrtod.h">
+      <Filter>Include</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Include\pystrhex.h">
       <Filter>Include</Filter>
     </ClInclude>
     <ClInclude Include="..\Include\dtoa.h">
@@ -414,7 +420,6 @@
     <ClInclude Include="..\Python\thread_nt.h">
       <Filter>Python</Filter>
     </ClInclude>
-    <ClInclude Include="..\Include\namespaceobject.h" />
     <ClInclude Include="..\Python\condvar.h">
       <Filter>Python</Filter>
     </ClInclude>
@@ -422,6 +427,15 @@
       <Filter>Python</Filter>
     </ClInclude>
     <ClInclude Include="..\Include\pyhash.h">
+      <Filter>Include</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Include\namespaceobject.h">
+      <Filter>Include</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Modules\hashtable.h">
+      <Filter>Modules</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Include\odictobject.h">
       <Filter>Include</Filter>
     </ClInclude>
   </ItemGroup>
@@ -885,6 +899,9 @@
     <ClCompile Include="..\Python\pyfpe.c">
       <Filter>Python</Filter>
     </ClCompile>
+    <ClCompile Include="..\Python\pylifecycle.c">
+      <Filter>Python</Filter>
+    </ClCompile>
     <ClCompile Include="..\Python\pymath.c">
       <Filter>Python</Filter>
     </ClCompile>
@@ -895,6 +912,9 @@
       <Filter>Python</Filter>
     </ClCompile>
     <ClCompile Include="..\Python\pystrcmp.c">
+      <Filter>Python</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Python\pystrhex.c">
       <Filter>Python</Filter>
     </ClCompile>
     <ClCompile Include="..\Python\pystrtod.c">
@@ -930,12 +950,29 @@
     <ClCompile Include="..\Modules\_winapi.c">
       <Filter>PC</Filter>
     </ClCompile>
-    <ClCompile Include="..\Objects\namespaceobject.c" />
     <ClCompile Include="..\Modules\_stat.c">
       <Filter>Modules</Filter>
     </ClCompile>
     <ClCompile Include="..\Python\pyhash.c">
       <Filter>Python</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Objects\namespaceobject.c">
+      <Filter>Objects</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Modules\_opcode.c">
+      <Filter>Modules</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Modules\_tracemalloc.c">
+      <Filter>Modules</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Modules\hashtable.c">
+      <Filter>Modules</Filter>
+    </ClCompile>
+    <ClCompile Include="..\PC\invalid_parameter_handler.c">
+      <Filter>PC</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Objects\odictobject.c">
+      <Filter>Objects</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

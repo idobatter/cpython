@@ -99,7 +99,7 @@ separators.
 
 Some email package methods accept a *policy* keyword argument, allowing the
 policy to be overridden for that method.  For example, the following code uses
-the :meth:`~email.message.Message.as_string` method of the *msg* object from
+the :meth:`~email.message.Message.as_bytes` method of the *msg* object from
 the previous example and writes the message to a file using the native line
 separators for the platform on which it is running::
 
@@ -186,6 +186,18 @@ added matters.  To illustrate::
       If :const:`True`, any defects encountered will be raised as errors.  If
       :const:`False` (the default), defects will be passed to the
       :meth:`register_defect` method.
+
+
+
+   .. attribute:: mangle_from\_
+
+      If :const:`True`, lines starting with *"From "* in the body are
+      escaped by putting a ``>`` in front of them. This parameter is used when
+      the message is being serialized by a generator.
+      Default: :const:`False`.
+
+      .. versionadded:: 3.5
+         The *mangle_from_* parameter.
 
    The following :class:`Policy` method is intended to be called by code using
    the email library to create policy instances with custom settings:
@@ -319,6 +331,13 @@ added matters.  To illustrate::
    :const:`compat32`, that is used as the default policy.  Thus the default
    behavior of the email package is to maintain compatibility with Python 3.2.
 
+   The following attributes have values that are different from the
+   :class:`Policy` default:
+
+   .. attribute:: mangle_from_
+
+      The default is ``True``.
+
    The class provides the following concrete implementations of the
    abstract methods of :class:`Policy`:
 
@@ -356,6 +375,14 @@ added matters.  To illustrate::
       line breaks and any (RFC invalid) binary data it may contain.
 
 
+An instance of :class:`Compat32` is provided as a module constant:
+
+.. data:: compat32
+
+   An instance of :class:`Compat32`, providing  backward compatibility with the
+   behavior of the email package in Python 3.2.
+
+
 .. note::
 
    The documentation below describes new policies that are included in the
@@ -377,6 +404,14 @@ added matters.  To illustrate::
 
    In addition to the settable attributes listed above that apply to all
    policies, this policy adds the following additional attributes:
+
+   .. attribute:: utf8
+
+      If ``False``, follow :rfc:`5322`, supporting non-ASCII characters in
+      headers by encoding them as "encoded words".  If ``True``, follow
+      :rfc:`6532` and use ``utf-8`` encoding for headers.  Messages
+      formatted in this way may be passed to SMTP servers that support
+      the ``SMTPUTF8`` extension (:rfc:`6531`).
 
    .. attribute:: refold_source
 
@@ -419,7 +454,7 @@ added matters.  To illustrate::
       additional arguments.  By default ``content_manager`` is set to
       :data:`~email.contentmanager.raw_data_manager`.
 
-      .. versionadded 3.4
+      .. versionadded:: 3.4
 
 
    The class provides the following concrete implementations of the abstract
@@ -498,6 +533,14 @@ more closely to the RFCs relevant to their domains.
    Suitable for serializing messages in conformance with the email RFCs.
    Like ``default``, but with ``linesep`` set to ``\r\n``, which is RFC
    compliant.
+
+.. data:: SMTPUTF8
+
+   The same as ``SMTP`` except that :attr:`~EmailPolicy.utf8` is ``True``.
+   Useful for serializing messages to a message store without using encoded
+   words in the headers.  Should only be used for SMTP trasmission if the
+   sender or recipient addresses have non-ASCII characters (the
+   :meth:`smtplib.SMTP.send_message` method handles this automatically).
 
 .. data:: HTTP
 

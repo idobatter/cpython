@@ -61,8 +61,8 @@ connection requests.
    have only one method, :meth:`more`, which should return data to be
    transmitted on the channel.
    The producer indicates exhaustion (*i.e.* that it contains no more data) by
-   having its :meth:`more` method return the empty string. At this point the
-   :class:`async_chat` object removes the producer from the fifo and starts
+   having its :meth:`more` method return the empty bytes object. At this point
+   the :class:`async_chat` object removes the producer from the fifo and starts
    using the next producer, if any. When the producer fifo is empty the
    :meth:`handle_write` method does nothing. You use the channel object's
    :meth:`set_terminator` method to describe how to recognize the end of, or
@@ -147,40 +147,6 @@ connection requests.
    by the channel after :meth:`found_terminator` is called.
 
 
-asynchat - Auxiliary Classes
-------------------------------------------
-
-.. class:: fifo(list=None)
-
-   A :class:`fifo` holding data which has been pushed by the application but
-   not yet popped for writing to the channel.  A :class:`fifo` is a list used
-   to hold data and/or producers until they are required.  If the *list*
-   argument is provided then it should contain producers or data items to be
-   written to the channel.
-
-
-   .. method:: is_empty()
-
-      Returns ``True`` if and only if the fifo is empty.
-
-
-   .. method:: first()
-
-      Returns the least-recently :meth:`push`\ ed item from the fifo.
-
-
-   .. method:: push(data)
-
-      Adds the given data (which may be a string or a producer object) to the
-      producer fifo.
-
-
-   .. method:: pop()
-
-      If the fifo is not empty, returns ``True, first()``, deleting the popped
-      item.  Returns ``False, None`` for an empty fifo.
-
-
 .. _asynchat-example:
 
 asynchat Example
@@ -226,7 +192,7 @@ any extraneous data sent by the web client are ignored. ::
        def found_terminator(self):
            if self.reading_headers:
                self.reading_headers = False
-               self.parse_headers("".join(self.ibuffer))
+               self.parse_headers(b"".join(self.ibuffer))
                self.ibuffer = []
                if self.op.upper() == b"POST":
                    clen = self.headers.getheader("content-length")

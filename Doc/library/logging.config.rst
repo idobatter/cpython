@@ -80,7 +80,9 @@ in :mod:`logging` itself) and defining handlers which are declared either in
 
 .. function:: fileConfig(fname, defaults=None, disable_existing_loggers=True)
 
-   Reads the logging configuration from a :mod:`configparser`\-format file.
+   Reads the logging configuration from a :mod:`configparser`\-format file. The
+   format of the file should be as described in
+   :ref:`logging-config-fileformat`.
    This function can be called several times from an application, allowing an
    end user to select from various pre-canned configurations (if the developer
    provides a mechanism to present the choices and load the chosen
@@ -103,7 +105,7 @@ in :mod:`logging` itself) and defining handlers which are declared either in
 
    :param disable_existing_loggers: If specified as ``False``, loggers which
                                     exist when this call is made are left
-                                    alone. The default is ``True`` because this
+                                    enabled. The default is ``True`` because this
                                     enables old behaviour in a backward-
                                     compatible way. This behaviour is to
                                     disable any existing loggers unless they or
@@ -146,7 +148,9 @@ in :mod:`logging` itself) and defining handlers which are declared either in
    send it to the socket as a string of bytes preceded by a four-byte length
    string packed in binary using ``struct.pack('>L', n)``.
 
-   .. note:: Because portions of the configuration are passed through
+   .. note::
+
+      Because portions of the configuration are passed through
       :func:`eval`, use of this function may open its users to a security risk.
       While the function only binds to a socket on ``localhost``, and so does
       not accept connections from remote machines, there are scenarios where
@@ -611,6 +615,18 @@ called ``form01`` in the ``[formatters]`` section will have its configuration
 specified in a section called ``[formatter_form01]``. The root logger
 configuration must be specified in a section called ``[logger_root]``.
 
+.. note::
+
+   The :func:`fileConfig` API is older than the :func:`dictConfig` API and does
+   not provide functionality to cover certain aspects of logging. For example,
+   you cannot configure :class:`~logging.Filter` objects, which provide for
+   filtering of messages beyond simple integer levels, using :func:`fileConfig`.
+   If you need to have instances of :class:`~logging.Filter` in your logging
+   configuration, you will need to use :func:`dictConfig`. Note that future
+   enhancements to configuration functionality will be added to
+   :func:`dictConfig`, so it's worth considering transitioning to this newer
+   API when it's convenient to do so.
+
 Examples of these sections in the file are given below. ::
 
    [loggers]
@@ -750,7 +766,9 @@ The ``class`` entry is optional.  It indicates the name of the formatter's class
 :class:`~logging.Formatter` can present exception tracebacks in an expanded or
 condensed format.
 
-.. note:: Due to the use of :func:`eval` as described above, there are
+.. note::
+
+   Due to the use of :func:`eval` as described above, there are
    potential security risks which result from using the :func:`listen` to send
    and receive configurations via sockets. The risks are limited to where
    multiple users with no mutual trust run code on the same machine; see the

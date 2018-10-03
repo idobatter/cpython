@@ -12,10 +12,10 @@
 #include "multibytecodec.h"
 
 
-/* a unicode "undefined" codepoint */
+/* a unicode "undefined" code point */
 #define UNIINV  0xFFFE
 
-/* internal-use DBCS codepoints which aren't used by any charsets */
+/* internal-use DBCS code points which aren't used by any charsets */
 #define NOCHAR  0xFFFF
 #define MULTIC  0xFFFE
 #define DBCINV  0xFFFD
@@ -362,7 +362,7 @@ importmap(const char *modname, const char *symbol,
     if (mod == NULL)
         return -1;
 
-    o = PyObject_GetAttrString(mod, (char*)symbol);
+    o = PyObject_GetAttrString(mod, symbol);
     if (o == NULL)
         goto errorexit;
     else if (!PyCapsule_IsValid(o, PyMultibyteCodec_CAPSULE_NAME)) {
@@ -401,7 +401,7 @@ errorexit:
         NULL,                                                           \
         NULL                                                            \
     };                                                                  \
-    PyObject*                                                           \
+    PyMODINIT_FUNC                                                      \
     PyInit__codecs_##loc(void)                                          \
     {                                                                   \
         PyObject *m = PyModule_Create(&__module);                       \

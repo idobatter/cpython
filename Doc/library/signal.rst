@@ -65,6 +65,16 @@ Besides, only the main thread is allowed to set a new signal handler.
 Module contents
 ---------------
 
+.. versionchanged:: 3.5
+   signal (SIG*), handler (:const:`SIG_DFL`, :const:`SIG_IGN`) and sigmask
+   (:const:`SIG_BLOCK`, :const:`SIG_UNBLOCK`, :const:`SIG_SETMASK`)
+   related constants listed below were turned into
+   :class:`enums <enum.IntEnum>`.
+   :func:`getsignal`, :func:`pthread_sigmask`, :func:`sigpending` and
+   :func:`sigwait` functions return human-readable
+   :class:`enums <enum.IntEnum>`.
+
+
 The variables defined in the :mod:`signal` module are:
 
 
@@ -95,7 +105,7 @@ The variables defined in the :mod:`signal` module are:
 
 .. data:: CTRL_C_EVENT
 
-   The signal corresponding to the CTRL+C keystroke event. This signal can
+   The signal corresponding to the :kbd:`Ctrl+C` keystroke event. This signal can
    only be used with :func:`os.kill`.
 
    Availability: Windows.
@@ -105,7 +115,7 @@ The variables defined in the :mod:`signal` module are:
 
 .. data:: CTRL_BREAK_EVENT
 
-   The signal corresponding to the CTRL+BREAK keystroke event. This signal can
+   The signal corresponding to the :kbd:`Ctrl+Break` keystroke event. This signal can
    only be used with :func:`os.kill`.
 
    Availability: Windows.
@@ -209,21 +219,21 @@ The :mod:`signal` module defines the following functions:
    :func:`sigpending`.
 
 
-.. function:: pthread_kill(thread_id, signum)
+.. function:: pthread_kill(thread_id, signalnum)
 
-   Send the signal *signum* to the thread *thread_id*, another thread in the
+   Send the signal *signalnum* to the thread *thread_id*, another thread in the
    same process as the caller.  The target thread can be executing any code
    (Python or not).  However, if the target thread is executing the Python
    interpreter, the Python signal handlers will be :ref:`executed by the main
-   thread <signals-and-threads>`.  Therefore, the only point of sending a signal to a particular
-   Python thread would be to force a running system call to fail with
-   :exc:`InterruptedError`.
+   thread <signals-and-threads>`.  Therefore, the only point of sending a
+   signal to a particular Python thread would be to force a running system call
+   to fail with :exc:`InterruptedError`.
 
    Use :func:`threading.get_ident()` or the :attr:`~threading.Thread.ident`
    attribute of :class:`threading.Thread` objects to get a suitable value
    for *thread_id*.
 
-   If *signum* is 0, then no signal is sent, but error checking is still
+   If *signalnum* is 0, then no signal is sent, but error checking is still
    performed; this can be used to check if the target thread is still running.
 
    Availability: Unix (see the man page :manpage:`pthread_kill(3)` for further
@@ -307,6 +317,9 @@ The :mod:`signal` module defines the following functions:
    When threads are enabled, this function can only be called from the main thread;
    attempting to call it from other threads will cause a :exc:`ValueError`
    exception to be raised.
+
+   .. versionchanged:: 3.5
+      On Windows, the function now also supports socket handles.
 
 
 .. function:: siginterrupt(signalnum, flag)
@@ -395,6 +408,11 @@ The :mod:`signal` module defines the following functions:
 
    .. versionadded:: 3.3
 
+   .. versionchanged:: 3.5
+      The function is now retried if interrupted by a signal not in *sigset*
+      and the signal handler does not raise an exception (see :pep:`475` for
+      the rationale).
+
 
 .. function:: sigtimedwait(sigset, timeout)
 
@@ -408,6 +426,11 @@ The :mod:`signal` module defines the following functions:
    See also :func:`pause`, :func:`sigwait` and :func:`sigwaitinfo`.
 
    .. versionadded:: 3.3
+
+   .. versionchanged:: 3.5
+      The function is now retried with the recomputed *timeout* if interrupted
+      by a signal not in *sigset* and the signal handler does not raise an
+      exception (see :pep:`475` for the rationale).
 
 
 .. _signal-example:

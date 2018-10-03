@@ -58,9 +58,14 @@ The module defines the following:
    which can be used as Edge or Level Triggered interface for I/O
    events. *sizehint* is deprecated and completely ignored. *flags* can be set
    to :const:`EPOLL_CLOEXEC`, which causes the epoll descriptor to be closed
-   automatically when :func:`os.execve` is called. See section
-   :ref:`epoll-objects` below for the methods supported by epolling objects.
-   They also support the :keyword:`with` statement.
+   automatically when :func:`os.execve` is called.
+
+   See the :ref:`epoll-objects` section below for the methods supported by
+   epolling objects.
+
+   ``epoll`` objects support the context management protocol: when used in a
+   :keyword:`with` statement, the new file descriptor is automatically closed
+   at the end of the block.
 
    The new file descriptor is :ref:`non-inheritable <fd_inheritance>`.
 
@@ -140,6 +145,13 @@ The module defines the following:
       library, and does not handle file descriptors that don't originate from
       WinSock.
 
+   .. versionchanged:: 3.5
+      The function is now retried with a recomputed timeout when interrupted by
+      a signal, except if the signal handler raises an exception (see
+      :pep:`475` for the rationale), instead of raising
+      :exc:`InterruptedError`.
+
+
 .. attribute:: PIPE_BUF
 
    The minimum number of bytes which can be written without blocking to a pipe
@@ -155,10 +167,7 @@ The module defines the following:
 .. _devpoll-objects:
 
 ``/dev/poll`` Polling Objects
-----------------------------------------------
-
-   http://developers.sun.com/solaris/articles/using_devpoll.html
-   http://developers.sun.com/solaris/articles/polling_efficient.html
+-----------------------------
 
 Solaris and derivatives have ``/dev/poll``. While :c:func:`select` is
 O(highest file descriptor) and :c:func:`poll` is O(number of file
@@ -205,7 +214,7 @@ object.
    .. warning::
 
       Registering a file descriptor that's already registered is not an
-      error, but the result is undefined. The appropiate action is to
+      error, but the result is undefined. The appropriate action is to
       unregister or modify it first. This is an important difference
       compared with :c:func:`poll`.
 
@@ -239,6 +248,12 @@ object.
    length of time in milliseconds which the system will wait for events before
    returning. If *timeout* is omitted, -1, or :const:`None`, the call will
    block until there is an event for this poll object.
+
+   .. versionchanged:: 3.5
+      The function is now retried with a recomputed timeout when interrupted by
+      a signal, except if the signal handler raises an exception (see
+      :pep:`475` for the rationale), instead of raising
+      :exc:`InterruptedError`.
 
 
 .. _epoll-objects:
@@ -308,7 +323,7 @@ Edge and Level Trigger Polling (epoll) Objects
 
 .. method:: epoll.modify(fd, eventmask)
 
-   Modify a register file descriptor.
+   Modify a registered file descriptor.
 
 
 .. method:: epoll.unregister(fd)
@@ -319,6 +334,12 @@ Edge and Level Trigger Polling (epoll) Objects
 .. method:: epoll.poll(timeout=-1, maxevents=-1)
 
    Wait for events. timeout in seconds (float)
+
+   .. versionchanged:: 3.5
+      The function is now retried with a recomputed timeout when interrupted by
+      a signal, except if the signal handler raises an exception (see
+      :pep:`475` for the rationale), instead of raising
+      :exc:`InterruptedError`.
 
 
 .. _poll-objects:
@@ -372,7 +393,7 @@ linearly scanned again. :c:func:`select` is O(highest file descriptor), while
 
    Modifies an already registered fd. This has the same effect as
    ``register(fd, eventmask)``.  Attempting to modify a file descriptor
-   that was never registered causes an :exc:`IOError` exception with errno
+   that was never registered causes an :exc:`OSError` exception with errno
    :const:`ENOENT` to be raised.
 
 
@@ -398,6 +419,12 @@ linearly scanned again. :c:func:`select` is O(highest file descriptor), while
    length of time in milliseconds which the system will wait for events before
    returning. If *timeout* is omitted, negative, or :const:`None`, the call will
    block until there is an event for this poll object.
+
+   .. versionchanged:: 3.5
+      The function is now retried with a recomputed timeout when interrupted by
+      a signal, except if the signal handler raises an exception (see
+      :pep:`475` for the rationale), instead of raising
+      :exc:`InterruptedError`.
 
 
 .. _kqueue-objects:
@@ -432,6 +459,12 @@ Kqueue Objects
    - changelist must be an iterable of kevent object or None
    - max_events must be 0 or a positive integer
    - timeout in seconds (floats possible)
+
+   .. versionchanged:: 3.5
+      The function is now retried with a recomputed timeout when interrupted by
+      a signal, except if the signal handler raises an exception (see
+      :pep:`475` for the rationale), instead of raising
+      :exc:`InterruptedError`.
 
 
 .. _kevent-objects:

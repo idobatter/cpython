@@ -39,7 +39,7 @@ finds there were 353 patches applied and 458 bugs fixed between Python 2.4 and
 This article doesn't try to be a complete specification of the new features;
 instead changes are briefly introduced using helpful examples.  For full
 details, you should always refer to the documentation for Python 2.5 at
-http://docs.python.org. If you want to understand the complete implementation
+https://docs.python.org. If you want to understand the complete implementation
 and design rationale, refer to the PEP for a particular new feature.
 
 Comments, suggestions, and error reports for this document are welcome; please
@@ -229,7 +229,7 @@ required packages. ::
         )
 
 Another new enhancement to the Python package index at
-http://cheeseshop.python.org is storing source and binary archives for a
+https://pypi.python.org is storing source and binary archives for a
 package.  The new :command:`upload` Distutils command will upload a package to
 the repository.
 
@@ -286,7 +286,7 @@ Python's standard :mod:`string` module?  There's no clean way to ignore
 :mod:`pkg.string` and look for the standard module; generally you had to look at
 the contents of ``sys.modules``, which is slightly unclean.    Holger Krekel's
 :mod:`py.std` package provides a tidier way to perform imports from the standard
-library, ``import py ; py.std.string.join()``, but that package isn't available
+library, ``import py; py.std.string.join()``, but that package isn't available
 on all Python installations.
 
 Reading code which relies on relative imports is also less clear, because a
@@ -827,7 +827,7 @@ inheritance relationships are::
 This rearrangement was done because people often want to catch all exceptions
 that indicate program errors.  :exc:`KeyboardInterrupt` and :exc:`SystemExit`
 aren't errors, though, and usually represent an explicit action such as the user
-hitting Control-C or code calling :func:`sys.exit`.  A bare ``except:`` will
+hitting :kbd:`Control-C` or code calling :func:`sys.exit`.  A bare ``except:`` will
 catch all exceptions, so you commonly need to list :exc:`KeyboardInterrupt` and
 :exc:`SystemExit` in order to re-raise them.  The usual pattern is::
 
@@ -2130,7 +2130,7 @@ Changes to Python's build process and to the C API include:
   such as PyCon.
 
   .. List of names taken from Jeremy's python-dev post at
-  .. http://mail.python.org/pipermail/python-dev/2005-October/057500.html
+  .. https://mail.python.org/pipermail/python-dev/2005-October/057500.html
 
 * Evan Jones's patch to obmalloc, first described in a talk at PyCon DC 2005,
   was applied.  Python 2.4 allocated small objects in 256K-sized arenas, but never

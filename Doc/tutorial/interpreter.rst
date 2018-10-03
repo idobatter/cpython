@@ -1,4 +1,4 @@
-.. _tut-using:
+3.6.. _tut-using:
 
 ****************************
 Using the Python Interpreter
@@ -10,13 +10,13 @@ Using the Python Interpreter
 Invoking the Interpreter
 ========================
 
-The Python interpreter is usually installed as :file:`/usr/local/bin/python3.4`
+The Python interpreter is usually installed as :file:`/usr/local/bin/python3.6`
 on those machines where it is available; putting :file:`/usr/local/bin` in your
 Unix shell's search path makes it possible to start it by typing the command:
 
 .. code-block:: text
 
-   python3.4
+   python3.6
 
 to the shell. [#]_ Since the choice of the directory where the interpreter lives
 is an installation option, other places are possible; check with your local
@@ -24,26 +24,25 @@ Python guru or system administrator.  (E.g., :file:`/usr/local/python` is a
 popular alternative location.)
 
 On Windows machines, the Python installation is usually placed in
-:file:`C:\\Python34`, though you can change this when you're running the
+:file:`C:\\Python36`, though you can change this when you're running the
 installer.  To add this directory to your path,  you can type the following
 command into the command prompt in a DOS box::
 
-   set path=%path%;C:\python34
+   set path=%path%;C:\python36
 
 Typing an end-of-file character (:kbd:`Control-D` on Unix, :kbd:`Control-Z` on
 Windows) at the primary prompt causes the interpreter to exit with a zero exit
 status.  If that doesn't work, you can exit the interpreter by typing the
 following command: ``quit()``.
 
-The interpreter's line-editing features usually aren't very sophisticated.  On
-Unix, whoever installed the interpreter may have enabled support for the GNU
-readline library, which adds more elaborate interactive editing and history
-features. Perhaps the quickest check to see whether command line editing is
-supported is typing Control-P to the first Python prompt you get.  If it beeps,
-you have command line editing; see Appendix :ref:`tut-interacting` for an
-introduction to the keys.  If nothing appears to happen, or if ``^P`` is echoed,
-command line editing isn't available; you'll only be able to use backspace to
-remove characters from the current line.
+The interpreter's line-editing features include interactive editing, history
+substitution and code completion on systems that support readline.  Perhaps the
+quickest check to see whether command line editing is supported is typing
+:kbd:`Control-P` to the first Python prompt you get.  If it beeps, you have command
+line editing; see Appendix :ref:`tut-interacting` for an introduction to the
+keys.  If nothing appears to happen, or if ``^P`` is echoed, command line
+editing isn't available; you'll only be able to use backspace to remove
+characters from the current line.
 
 The interpreter operates somewhat like the Unix shell: when called with standard
 input connected to a tty device, it reads and executes commands interactively;
@@ -63,6 +62,8 @@ if you had spelled out its full name on the command line.
 When a script file is used, it is sometimes useful to be able to run the script
 and enter interactive mode afterwards.  This can be done by passing :option:`-i`
 before the script.
+
+All command line options are described in :ref:`using-on-general`.
 
 
 .. _tut-argpassing:
@@ -95,9 +96,9 @@ with the *secondary prompt*, by default three dots (``...``). The interpreter
 prints a welcome message stating its version number and a copyright notice
 before printing the first prompt::
 
-   $ python3.4
-   Python 3.4 (default, Sep 24 2012, 09:25:04)
-   [GCC 4.6.3] on linux2
+   $ python3.6
+   Python 3.6 (default, Sep 16 2015, 09:25:04)
+   [GCC 4.8.2] on linux
    Type "help", "copyright", "credits" or "license" for more information.
    >>>
 
@@ -106,68 +107,20 @@ before printing the first prompt::
 Continuation lines are needed when entering a multi-line construct. As an
 example, take a look at this :keyword:`if` statement::
 
-   >>> the_world_is_flat = 1
+   >>> the_world_is_flat = True
    >>> if the_world_is_flat:
    ...     print("Be careful not to fall off!")
    ...
    Be careful not to fall off!
 
 
+For more on interactive mode, see :ref:`tut-interac`.
+
+
 .. _tut-interp:
 
 The Interpreter and Its Environment
 ===================================
-
-
-.. _tut-error:
-
-Error Handling
---------------
-
-When an error occurs, the interpreter prints an error message and a stack trace.
-In interactive mode, it then returns to the primary prompt; when input came from
-a file, it exits with a nonzero exit status after printing the stack trace.
-(Exceptions handled by an :keyword:`except` clause in a :keyword:`try` statement
-are not errors in this context.)  Some errors are unconditionally fatal and
-cause an exit with a nonzero exit; this applies to internal inconsistencies and
-some cases of running out of memory.  All error messages are written to the
-standard error stream; normal output from executed commands is written to
-standard output.
-
-Typing the interrupt character (usually Control-C or DEL) to the primary or
-secondary prompt cancels the input and returns to the primary prompt. [#]_
-Typing an interrupt while a command is executing raises the
-:exc:`KeyboardInterrupt` exception, which may be handled by a :keyword:`try`
-statement.
-
-
-.. _tut-scripts:
-
-Executable Python Scripts
--------------------------
-
-On BSD'ish Unix systems, Python scripts can be made directly executable, like
-shell scripts, by putting the line ::
-
-   #! /usr/bin/env python3.4
-
-(assuming that the interpreter is on the user's :envvar:`PATH`) at the beginning
-of the script and giving the file an executable mode.  The ``#!`` must be the
-first two characters of the file.  On some platforms, this first line must end
-with a Unix-style line ending (``'\n'``), not a Windows (``'\r\n'``) line
-ending.  Note that the hash, or pound, character, ``'#'``, is used to start a
-comment in Python.
-
-The script can be given an executable mode, or permission, using the
-:program:`chmod` command::
-
-   $ chmod +x myscript.py
-
-On Windows systems, there is no notion of an "executable mode".  The Python
-installer automatically associates ``.py`` files with ``python.exe`` so that
-a double-click on a Python file will run it as a script.  The extension can
-also be ``.pyw``, in that case, the console window that normally appears is
-suppressed.
 
 
 .. _tut-source-encoding:
@@ -203,67 +156,8 @@ files.  The special encoding comment must be in the *first or second* line
 within the file.
 
 
-.. _tut-startup:
-
-The Interactive Startup File
-----------------------------
-
-When you use Python interactively, it is frequently handy to have some standard
-commands executed every time the interpreter is started.  You can do this by
-setting an environment variable named :envvar:`PYTHONSTARTUP` to the name of a
-file containing your start-up commands.  This is similar to the :file:`.profile`
-feature of the Unix shells.
-
-.. XXX This should probably be dumped in an appendix, since most people
-   don't use Python interactively in non-trivial ways.
-
-This file is only read in interactive sessions, not when Python reads commands
-from a script, and not when :file:`/dev/tty` is given as the explicit source of
-commands (which otherwise behaves like an interactive session).  It is executed
-in the same namespace where interactive commands are executed, so that objects
-that it defines or imports can be used without qualification in the interactive
-session. You can also change the prompts ``sys.ps1`` and ``sys.ps2`` in this
-file.
-
-If you want to read an additional start-up file from the current directory, you
-can program this in the global start-up file using code like ``if
-os.path.isfile('.pythonrc.py'): exec(open('.pythonrc.py').read())``.
-If you want to use the startup file in a script, you must do this explicitly
-in the script::
-
-   import os
-   filename = os.environ.get('PYTHONSTARTUP')
-   if filename and os.path.isfile(filename):
-       exec(open(filename).read())
-
-
-.. _tut-customize:
-
-The Customization Modules
--------------------------
-
-Python provides two hooks to let you customize it: :mod:`sitecustomize` and
-:mod:`usercustomize`.  To see how it works, you need first to find the location
-of your user site-packages directory.  Start Python and run this code:
-
-   >>> import site
-   >>> site.getusersitepackages()
-   '/home/user/.local/lib/python3.2/site-packages'
-
-Now you can create a file named :file:`usercustomize.py` in that directory and
-put anything you want in it.  It will affect every invocation of Python, unless
-it is started with the :option:`-s` option to disable the automatic import.
-
-:mod:`sitecustomize` works in the same way, but is typically created by an
-administrator of the computer in the global site-packages directory, and is
-imported before :mod:`usercustomize`.  See the documentation of the :mod:`site`
-module for more details.
-
-
 .. rubric:: Footnotes
 
 .. [#] On Unix, the Python 3.x interpreter is by default not installed with the
    executable named ``python``, so that it does not conflict with a
    simultaneously installed Python 2.x executable.
-
-.. [#] A problem with the GNU Readline package may prevent this.

@@ -32,10 +32,12 @@ __version__ = "2.6"
 # =======
 
 from io import StringIO, BytesIO, TextIOWrapper
+from collections import Mapping
 import sys
 import os
 import urllib.parse
 from email.parser import FeedParser
+from email.message import Message
 from warnings import warn
 import html
 import locale
@@ -472,18 +474,24 @@ class FieldStorage:
                 self.qs_on_post = environ['QUERY_STRING']
             if 'CONTENT_LENGTH' in environ:
                 headers['content-length'] = environ['CONTENT_LENGTH']
+        else:
+            if not (isinstance(headers, (Mapping, Message))):
+                raise TypeError("headers must be mapping or an instance of "
+                                "email.message.Message")
+        self.headers = headers
         if fp is None:
             self.fp = sys.stdin.buffer
         # self.fp.read() must return bytes
         elif isinstance(fp, TextIOWrapper):
             self.fp = fp.buffer
         else:
+            if not (hasattr(fp, 'read') and hasattr(fp, 'readline')):
+                raise TypeError("fp must be file pointer")
             self.fp = fp
 
         self.encoding = encoding
         self.errors = errors
 
-        self.headers = headers
         if not isinstance(outerboundary, bytes):
             raise TypeError('outerboundary must be bytes, not %s'
                             % type(outerboundary).__name__)
@@ -557,6 +565,12 @@ class FieldStorage:
             self.file.close()
         except AttributeError:
             pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.file.close()
 
     def __repr__(self):
         """Return a printable representation."""
@@ -642,7 +656,9 @@ class FieldStorage:
         """Dictionary style len(x) support."""
         return len(self.keys())
 
-    def __nonzero__(self):
+    def __bool__(self):
+        if self.list is None:
+            raise TypeError("Cannot be converted to bool.")
         return bool(self.list)
 
     def read_urlencoded(self):
@@ -683,8 +699,13 @@ class FieldStorage:
             raise ValueError("%s should return bytes, got %s" \
                              % (self.fp, type(first_line).__name__))
         self.bytes_read += len(first_line)
-        # first line holds boundary ; ignore it, or check that
-        # b"--" + ib == first_line.strip() ?
+
+        # Ensure that we consume the file until we've hit our inner boundary
+        while (first_line.strip() != (b"--" + self.innerboundary) and
+                first_line):
+            first_line = self.fp.readline()
+            self.bytes_read += len(first_line)
+
         while True:
             parser = FeedParser()
             hdr_text = b""
@@ -699,6 +720,11 @@ class FieldStorage:
             self.bytes_read += len(hdr_text)
             parser.feed(hdr_text.decode(self.encoding, self.errors))
             headers = parser.close()
+
+            # Some clients add Content-Length for part headers, ignore them
+            if 'content-length' in headers:
+                del headers['content-length']
+
             part = klass(self.fp, headers, ib, environ, keep_blank_values,
                          strict_parsing,self.limit-self.bytes_read,
                          self.encoding, self.errors)
@@ -1035,7 +1061,7 @@ def escape(s, quote=None):
     return s
 
 
-def valid_boundary(s, _vb_pattern=None):
+def valid_boundary(s):
     import re
     if isinstance(s, bytes):
         _vb_pattern = b"^[ -~]{0,200}[!-~]$"

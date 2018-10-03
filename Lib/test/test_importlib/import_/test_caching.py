@@ -1,6 +1,5 @@
 """Test that sys.modules is used properly by import."""
 from .. import util
-from . import util as import_util
 import sys
 from types import MethodType
 import unittest
@@ -39,6 +38,18 @@ class UseCache:
                 self.__import__(name)
             self.assertEqual(cm.exception.name, name)
 
+
+(Frozen_UseCache,
+ Source_UseCache
+ ) = util.test_both(UseCache, __import__=util.__import__)
+
+
+class ImportlibUseCache(UseCache, unittest.TestCase):
+
+    # Pertinent only to PEP 302; exec_module() doesn't return a module.
+
+    __import__ = util.__import__['Source']
+
     def create_mock(self, *names, return_=None):
         mock = util.mock_modules(*names)
         original_load = mock.load_module
@@ -47,14 +58,6 @@ class UseCache:
             return return_
         mock.load_module = MethodType(load_module, mock)
         return mock
-
-Frozen_UseCache, Source_UseCache = util.test_both(
-        UseCache, __import__=import_util.__import__)
-
-
-class ImportlibUseCache(UseCache, unittest.TestCase):
-
-    __import__ = import_util.__import__[1]
 
     # __import__ inconsistent between loaders and built-in import when it comes
     #   to when to use the module in sys.modules and when not to.

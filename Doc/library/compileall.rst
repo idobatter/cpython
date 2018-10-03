@@ -4,6 +4,10 @@
 .. module:: compileall
    :synopsis: Tools for byte-compiling all Python source files in a directory tree.
 
+**Source code:** :source:`Lib/compileall.py`
+
+--------------
+
 
 This module provides some utility functions to support installing Python
 libraries.  These functions compile Python source files in a directory tree.
@@ -20,7 +24,8 @@ compile Python sources.
 
 .. program:: compileall
 
-.. cmdoption:: [directory|file]...
+.. cmdoption:: directory ...
+               file ...
 
    Positional arguments are files to compile or directories that contain
    source files, traversed recursively.  If no argument is given, behave as if
@@ -37,7 +42,8 @@ compile Python sources.
 
 .. cmdoption:: -q
 
-   Do not print the list of files compiled, print only error messages.
+   Do not print the list of files compiled. If passed once, error messages will
+   still be printed. If passed twice (``-qq``), all output is suppressed.
 
 .. cmdoption:: -d destdir
 
@@ -65,8 +71,27 @@ compile Python sources.
    is to write files to their :pep:`3147` locations and names, which allows
    byte-code files from multiple versions of Python to coexist.
 
+.. cmdoption:: -r
+
+   Control the maximum recursion level for subdirectories.
+   If this is given, then ``-l`` option will not be taken into account.
+   :program:`python -m compileall <directory> -r 0` is equivalent to
+   :program:`python -m compileall <directory> -l`.
+
+.. cmdoption:: -j N
+
+   Use *N* workers to compile the files within the given directory.
+   If ``0`` is used, then the result of :func:`os.cpu_count()`
+   will be used.
+
 .. versionchanged:: 3.2
    Added the ``-i``, ``-b`` and ``-h`` options.
+
+.. versionchanged:: 3.5
+   Added the  ``-j``, ``-r``, and ``-qq`` options.  ``-q`` option
+   was changed to a multilevel value.  ``-b`` will always produce a
+   byte-code file ending in ``.pyc``, never ``.pyo``.
+
 
 There is no command-line option to control the optimization level used by the
 :func:`compile` function, because the Python interpreter itself already
@@ -75,10 +100,11 @@ provides the option: :program:`python -O -m compileall`.
 Public functions
 ----------------
 
-.. function:: compile_dir(dir, maxlevels=10, ddir=None, force=False, rx=None, quiet=False, legacy=False, optimize=-1)
+.. function:: compile_dir(dir, maxlevels=10, ddir=None, force=False, rx=None, quiet=0, legacy=False, optimize=-1, workers=1)
 
    Recursively descend the directory tree named by *dir*, compiling all :file:`.py`
-   files along the way.
+   files along the way. Return a true value if all the files compiled successfully,
+   and a false value otherwise.
 
    The *maxlevels* parameter is used to limit the depth of the recursion; it
    defaults to ``10``.
@@ -96,8 +122,9 @@ Public functions
    file considered for compilation, and if it returns a true value, the file
    is skipped.
 
-   If *quiet* is true, nothing is printed to the standard output unless errors
-   occur.
+   If *quiet* is ``False`` or ``0`` (the default), the filenames and other
+   information are printed to standard out. Set to ``1``, only errors are
+   printed. Set to ``2``, all output is suppressed.
 
    If *legacy* is true, byte-code files are written to their legacy locations
    and names, which may overwrite byte-code files created by another version of
@@ -108,13 +135,29 @@ Public functions
    *optimize* specifies the optimization level for the compiler.  It is passed to
    the built-in :func:`compile` function.
 
+   The argument *workers* specifies how many workers are used to
+   compile files in parallel. The default is to not use multiple workers.
+   If the platform can't use multiple workers and *workers* argument is given,
+   then sequential compilation will be used as a fallback.  If *workers* is
+   lower than ``0``, a :exc:`ValueError` will be raised.
+
    .. versionchanged:: 3.2
       Added the *legacy* and *optimize* parameter.
 
+   .. versionchanged:: 3.5
+      Added the *workers* parameter.
 
-.. function:: compile_file(fullname, ddir=None, force=False, rx=None, quiet=False, legacy=False, optimize=-1)
+   .. versionchanged:: 3.5
+      *quiet* parameter was changed to a multilevel value.
 
-   Compile the file with path *fullname*.
+   .. versionchanged:: 3.5
+      The *legacy* parameter only writes out ``.pyc`` files, not ``.pyo`` files
+      no matter what the value of *optimize* is.
+
+.. function:: compile_file(fullname, ddir=None, force=False, rx=None, quiet=0, legacy=False, optimize=-1)
+
+   Compile the file with path *fullname*. Return a true value if the file
+   compiled successfully, and a false value otherwise.
 
    If *ddir* is given, it is prepended to the path to the file being compiled
    for use in compilation time tracebacks, and is also compiled in to the
@@ -126,8 +169,9 @@ Public functions
    file being compiled, and if it returns a true value, the file is not
    compiled and ``True`` is returned.
 
-   If *quiet* is true, nothing is printed to the standard output unless errors
-   occur.
+   If *quiet* is ``False`` or ``0`` (the default), the filenames and other
+   information are printed to standard out. Set to ``1``, only errors are
+   printed. Set to ``2``, all output is suppressed.
 
    If *legacy* is true, byte-code files are written to their legacy locations
    and names, which may overwrite byte-code files created by another version of
@@ -140,11 +184,19 @@ Public functions
 
    .. versionadded:: 3.2
 
+   .. versionchanged:: 3.5
+      *quiet* parameter was changed to a multilevel value.
 
-.. function:: compile_path(skip_curdir=True, maxlevels=0, force=False, legacy=False, optimize=-1)
+   .. versionchanged:: 3.5
+      The *legacy* parameter only writes out ``.pyc`` files, not ``.pyo`` files
+      no matter what the value of *optimize* is.
 
-   Byte-compile all the :file:`.py` files found along ``sys.path``. If
-   *skip_curdir* is true (the default), the current directory is not included
+.. function:: compile_path(skip_curdir=True, maxlevels=0, force=False, quiet=0, legacy=False, optimize=-1)
+
+   Byte-compile all the :file:`.py` files found along ``sys.path``. Return a
+   true value if all the files compiled successfully, and a false value otherwise.
+
+   If *skip_curdir* is true (the default), the current directory is not included
    in the search.  All other parameters are passed to the :func:`compile_dir`
    function.  Note that unlike the other compile functions, ``maxlevels``
    defaults to ``0``.
@@ -152,6 +204,12 @@ Public functions
    .. versionchanged:: 3.2
       Added the *legacy* and *optimize* parameter.
 
+   .. versionchanged:: 3.5
+      *quiet* parameter was changed to a multilevel value.
+
+   .. versionchanged:: 3.5
+      The *legacy* parameter only writes out ``.pyc`` files, not ``.pyo`` files
+      no matter what the value of *optimize* is.
 
 To force a recompile of all the :file:`.py` files in the :file:`Lib/`
 subdirectory and all its subdirectories::

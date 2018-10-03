@@ -765,6 +765,7 @@ I_set_sw(void *ptr, PyObject *value, Py_ssize_t size)
     if (get_ulong(value, &val) < 0)
         return  NULL;
     memcpy(&field, ptr, sizeof(field));
+    field = SWAP_INT(field);
     field = SET(unsigned int, field, (unsigned int)val, size);
     field = SWAP_INT(field);
     memcpy(ptr, &field, sizeof(field));
@@ -1160,7 +1161,7 @@ c_set(void *ptr, PyObject *value, Py_ssize_t size)
     }
   error:
     PyErr_Format(PyExc_TypeError,
-                 "one character string expected");
+                 "one character bytes, bytearray or integer expected");
     return NULL;
 }
 
@@ -1295,7 +1296,7 @@ s_set(void *ptr, PyObject *value, Py_ssize_t length)
         Py_INCREF(value);
     } else {
         PyErr_Format(PyExc_TypeError,
-                     "expected string, %s found",
+                     "expected bytes, %s found",
                      value->ob_type->tp_name);
         return NULL;
     }
@@ -1311,7 +1312,7 @@ s_set(void *ptr, PyObject *value, Py_ssize_t length)
         ++size;
     } else if (size > length) {
         PyErr_Format(PyExc_ValueError,
-                     "string too long (%zd, maximum length %zd)",
+                     "bytes too long (%zd, maximum length %zd)",
                      size, length);
         Py_DECREF(value);
         return NULL;
@@ -1354,14 +1355,6 @@ z_get(void *ptr, Py_ssize_t size)
 {
     /* XXX What about invalid pointers ??? */
     if (*(void **)ptr) {
-#if defined(MS_WIN32) && !defined(_WIN32_WCE)
-        if (IsBadStringPtrA(*(char **)ptr, -1)) {
-            PyErr_Format(PyExc_ValueError,
-                         "invalid string pointer %p",
-                         *(char **)ptr);
-            return NULL;
-        }
-#endif
         return PyBytes_FromStringAndSize(*(char **)ptr,
                                          strlen(*(char **)ptr));
     } else {
@@ -1382,7 +1375,7 @@ Z_set(void *ptr, PyObject *value, Py_ssize_t size)
         Py_INCREF(value);
         return value;
     }
-    if (PyLong_Check(value) || PyLong_Check(value)) {
+    if (PyLong_Check(value)) {
 #if SIZEOF_VOID_P == SIZEOF_LONG_LONG
         *(wchar_t **)ptr = (wchar_t *)PyLong_AsUnsignedLongLongMask(value);
 #else
@@ -1418,14 +1411,6 @@ Z_get(void *ptr, Py_ssize_t size)
     wchar_t *p;
     p = *(wchar_t **)ptr;
     if (p) {
-#if defined(MS_WIN32) && !defined(_WIN32_WCE)
-        if (IsBadStringPtrW(*(wchar_t **)ptr, -1)) {
-            PyErr_Format(PyExc_ValueError,
-                         "invalid string pointer %p",
-                         *(wchar_t **)ptr);
-            return NULL;
-        }
-#endif
         return PyUnicode_FromWideChar(p, wcslen(p));
     } else {
         Py_INCREF(Py_None);
@@ -1455,15 +1440,15 @@ BSTR_set(void *ptr, PyObject *value, Py_ssize_t size)
     /* create a BSTR from value */
     if (value) {
         wchar_t* wvalue;
-        Py_ssize_t size;
-        wvalue = PyUnicode_AsUnicodeAndSize(value, &size);
+        Py_ssize_t wsize;
+        wvalue = PyUnicode_AsUnicodeAndSize(value, &wsize);
         if (wvalue == NULL)
             return NULL;
-        if ((unsigned) size != size) {
+        if ((unsigned) wsize != wsize) {
             PyErr_SetString(PyExc_ValueError, "String too long for BSTR");
             return NULL;
         }
-        bstr = SysAllocStringLen(wvalue, (unsigned)size);
+        bstr = SysAllocStringLen(wvalue, (unsigned)wsize);
         Py_DECREF(value);
     } else
         bstr = NULL;
@@ -1506,7 +1491,7 @@ P_set(void *ptr, PyObject *value, Py_ssize_t size)
         _RET(value);
     }
 
-    if (!PyLong_Check(value) && !PyLong_Check(value)) {
+    if (!PyLong_Check(value)) {
         PyErr_SetString(PyExc_TypeError,
                         "cannot be converted to pointer");
         return NULL;
@@ -1640,9 +1625,9 @@ typedef struct { char c; void *x; } s_void_p;
 /*
 #define CHAR_ALIGN (sizeof(s_char) - sizeof(char))
 #define SHORT_ALIGN (sizeof(s_short) - sizeof(short))
-#define INT_ALIGN (sizeof(s_int) - sizeof(int))
 #define LONG_ALIGN (sizeof(s_long) - sizeof(long))
 */
+#define INT_ALIGN (sizeof(s_int) - sizeof(int))
 #define FLOAT_ALIGN (sizeof(s_float) - sizeof(float))
 #define DOUBLE_ALIGN (sizeof(s_double) - sizeof(double))
 #define LONGDOUBLE_ALIGN (sizeof(s_long_double) - sizeof(long double))
@@ -1684,8 +1669,8 @@ ffi_type ffi_type_sint8 = { 1, 1, FFI_TYPE_SINT8 };
 ffi_type ffi_type_uint16 = { 2, 2, FFI_TYPE_UINT16 };
 ffi_type ffi_type_sint16 = { 2, 2, FFI_TYPE_SINT16 };
 
-ffi_type ffi_type_uint32 = { 4, 4, FFI_TYPE_UINT32 };
-ffi_type ffi_type_sint32 = { 4, 4, FFI_TYPE_SINT32 };
+ffi_type ffi_type_uint32 = { 4, INT_ALIGN, FFI_TYPE_UINT32 };
+ffi_type ffi_type_sint32 = { 4, INT_ALIGN, FFI_TYPE_SINT32 };
 
 ffi_type ffi_type_uint64 = { 8, LONG_LONG_ALIGN, FFI_TYPE_UINT64 };
 ffi_type ffi_type_sint64 = { 8, LONG_LONG_ALIGN, FFI_TYPE_SINT64 };

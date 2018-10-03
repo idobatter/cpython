@@ -287,7 +287,7 @@ class DateTimeTestCase(unittest.TestCase):
     def test_repr(self):
         d = datetime.datetime(2007,1,2,3,4,5)
         t = xmlrpclib.DateTime(d)
-        val ="<DateTime '20070102T03:04:05' at %x>" % id(t)
+        val ="<DateTime '20070102T03:04:05' at %#x>" % id(t)
         self.assertEqual(repr(t), val)
 
     def test_decode(self):
@@ -517,7 +517,7 @@ def is_unavailable_exception(e):
         return True
 
 def make_request_and_skipIf(condition, reason):
-    # If we skip the test, we have to make a request because the
+    # If we skip the test, we have to make a request because
     # the server created in setUp blocks expecting one to come in.
     if not condition:
         return lambda func: func
@@ -713,6 +713,23 @@ class SimpleServerTestCase(BaseServerTestCase):
         conn.request('POST', '/RPC2 HTTP/1.0\r\nContent-Length: 100\r\n\r\nbye')
         conn.close()
 
+    def test_context_manager(self):
+        with xmlrpclib.ServerProxy(URL) as server:
+            server.add(2, 3)
+            self.assertNotEqual(server('transport')._connection,
+                                (None, None))
+        self.assertEqual(server('transport')._connection,
+                         (None, None))
+
+    def test_context_manager_method_error(self):
+        try:
+            with xmlrpclib.ServerProxy(URL) as server:
+                server.add(2, "a")
+        except xmlrpclib.Fault:
+            pass
+        self.assertEqual(server('transport')._connection,
+                         (None, None))
+
 
 class MultiPathServerTestCase(BaseServerTestCase):
     threadFunc = staticmethod(http_multi_server)
@@ -863,7 +880,7 @@ class GzipServerTestCase(BaseServerTestCase):
             p.pow(6, 8)
         p("close")()
 
-    def test_gsip_response(self):
+    def test_gzip_response(self):
         t = self.Transport()
         p = xmlrpclib.ServerProxy(URL, transport=t)
         old = self.requestHandler.encode_threshold
@@ -876,6 +893,27 @@ class GzipServerTestCase(BaseServerTestCase):
         b = t.response_length
         self.requestHandler.encode_threshold = old
         self.assertTrue(a>b)
+
+
+@unittest.skipIf(gzip is None, 'requires gzip')
+class GzipUtilTestCase(unittest.TestCase):
+
+    def test_gzip_decode_limit(self):
+        max_gzip_decode = 20 * 1024 * 1024
+        data = b'\0' * max_gzip_decode
+        encoded = xmlrpclib.gzip_encode(data)
+        decoded = xmlrpclib.gzip_decode(encoded)
+        self.assertEqual(len(decoded), max_gzip_decode)
+
+        data = b'\0' * (max_gzip_decode + 1)
+        encoded = xmlrpclib.gzip_encode(data)
+
+        with self.assertRaisesRegex(ValueError,
+                                    "max gzipped payload length exceeded"):
+            xmlrpclib.gzip_decode(encoded)
+
+        xmlrpclib.gzip_decode(encoded, max_decode=-1)
+
 
 #Test special attributes of the ServerProxy object
 class ServerProxyTestCase(unittest.TestCase):
@@ -897,6 +935,7 @@ class ServerProxyTestCase(unittest.TestCase):
         t = xmlrpclib.Transport()
         p = xmlrpclib.ServerProxy(self.url, transport=t)
         self.assertEqual(p('transport'), t)
+
 
 # This is a contrived way to make a failure occur on the server side
 # in order to test the _send_traceback_header flag on the server
@@ -1105,7 +1144,7 @@ def test_main():
     support.run_unittest(XMLRPCTestCase, HelperTestCase, DateTimeTestCase,
             BinaryTestCase, FaultTestCase, UseBuiltinTypesTestCase,
             SimpleServerTestCase, KeepaliveServerTestCase1,
-            KeepaliveServerTestCase2, GzipServerTestCase,
+            KeepaliveServerTestCase2, GzipServerTestCase, GzipUtilTestCase,
             MultiPathServerTestCase, ServerProxyTestCase, FailingServerTestCase,
             CGIHandlerTestCase)
 

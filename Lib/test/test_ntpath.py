@@ -22,13 +22,15 @@ def tester(fn, wantResult):
     fn = fn.replace('["', '[b"')
     fn = fn.replace(", '", ", b'")
     fn = fn.replace(', "', ', b"')
+    fn = os.fsencode(fn).decode('latin1')
+    fn = fn.encode('ascii', 'backslashreplace').decode('ascii')
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
         gotResult = eval(fn)
     if isinstance(wantResult, str):
-        wantResult = wantResult.encode('ascii')
+        wantResult = os.fsencode(wantResult)
     elif isinstance(wantResult, tuple):
-        wantResult = tuple(r.encode('ascii') for r in wantResult)
+        wantResult = tuple(os.fsencode(r) for r in wantResult)
 
     gotResult = eval(fn)
     if wantResult != gotResult:
@@ -66,6 +68,32 @@ class TestNtpath(unittest.TestCase):
                ('', '\\\\conky\\\\mountpoint\\foo\\bar'))
         tester('ntpath.splitdrive("//conky//mountpoint/foo/bar")',
                ('', '//conky//mountpoint/foo/bar'))
+        # Issue #19911: UNC part containing U+0130
+        self.assertEqual(ntpath.splitdrive('//conky/MOUNTPOİNT/foo/bar'),
+                         ('//conky/MOUNTPOİNT', '/foo/bar'))
+
+    def test_splitunc(self):
+        with self.assertWarns(DeprecationWarning):
+            ntpath.splitunc('')
+        with support.check_warnings(('', DeprecationWarning)):
+            tester('ntpath.splitunc("c:\\foo\\bar")',
+                   ('', 'c:\\foo\\bar'))
+            tester('ntpath.splitunc("c:/foo/bar")',
+                   ('', 'c:/foo/bar'))
+            tester('ntpath.splitunc("\\\\conky\\mountpoint\\foo\\bar")',
+                   ('\\\\conky\\mountpoint', '\\foo\\bar'))
+            tester('ntpath.splitunc("//conky/mountpoint/foo/bar")',
+                   ('//conky/mountpoint', '/foo/bar'))
+            tester('ntpath.splitunc("\\\\\\conky\\mountpoint\\foo\\bar")',
+                   ('', '\\\\\\conky\\mountpoint\\foo\\bar'))
+            tester('ntpath.splitunc("///conky/mountpoint/foo/bar")',
+                   ('', '///conky/mountpoint/foo/bar'))
+            tester('ntpath.splitunc("\\\\conky\\\\mountpoint\\foo\\bar")',
+                   ('', '\\\\conky\\\\mountpoint\\foo\\bar'))
+            tester('ntpath.splitunc("//conky//mountpoint/foo/bar")',
+                   ('', '//conky//mountpoint/foo/bar'))
+            self.assertEqual(ntpath.splitunc('//conky/MOUNTPOİNT/foo/bar'),
+                             ('//conky/MOUNTPOİNT', '/foo/bar'))
 
     def test_split(self):
         tester('ntpath.split("c:\\foo\\bar")', ('c:\\foo', 'bar'))
@@ -100,10 +128,7 @@ class TestNtpath(unittest.TestCase):
         tester('ntpath.join("/a")', '/a')
         tester('ntpath.join("\\a")', '\\a')
         tester('ntpath.join("a:")', 'a:')
-        tester('ntpath.join("a:", "b")', 'a:b')
-        tester('ntpath.join("a:", "/b")', 'a:/b')
         tester('ntpath.join("a:", "\\b")', 'a:\\b')
-        tester('ntpath.join("a", "/b")', '/b')
         tester('ntpath.join("a", "\\b")', '\\b')
         tester('ntpath.join("a", "b", "c")', 'a\\b\\c')
         tester('ntpath.join("a\\", "b", "c")', 'a\\b\\c')
@@ -111,42 +136,48 @@ class TestNtpath(unittest.TestCase):
         tester('ntpath.join("a", "b", "\\c")', '\\c')
         tester('ntpath.join("d:\\", "\\pleep")', 'd:\\pleep')
         tester('ntpath.join("d:\\", "a", "b")', 'd:\\a\\b')
-        tester("ntpath.join('c:', '/a')", 'c:/a')
-        tester("ntpath.join('c:/', '/a')", 'c:/a')
-        tester("ntpath.join('c:/a', '/b')", '/b')
-        tester("ntpath.join('c:', 'd:/')", 'd:/')
-        tester("ntpath.join('c:/', 'd:/')", 'd:/')
-        tester("ntpath.join('c:/', 'd:/a/b')", 'd:/a/b')
 
-        tester("ntpath.join('')", '')
-        tester("ntpath.join('', '', '', '', '')", '')
-        tester("ntpath.join('a')", 'a')
         tester("ntpath.join('', 'a')", 'a')
         tester("ntpath.join('', '', '', '', 'a')", 'a')
         tester("ntpath.join('a', '')", 'a\\')
         tester("ntpath.join('a', '', '', '', '')", 'a\\')
         tester("ntpath.join('a\\', '')", 'a\\')
         tester("ntpath.join('a\\', '', '', '', '')", 'a\\')
+        tester("ntpath.join('a/', '')", 'a/')
 
-        # from comment in ntpath.join
-        tester("ntpath.join('c:', '/a')", 'c:/a')
-        tester("ntpath.join('//computer/share', '/a')", '//computer/share/a')
-        tester("ntpath.join('c:/', '/a')", 'c:/a')
-        tester("ntpath.join('//computer/share/', '/a')", '//computer/share/a')
-        tester("ntpath.join('c:/a', '/b')", '/b')
-        tester("ntpath.join('//computer/share/a', '/b')", '/b')
-        tester("ntpath.join('c:', 'd:/')", 'd:/')
-        tester("ntpath.join('c:', '//computer/share/')", '//computer/share/')
-        tester("ntpath.join('//computer/share', 'd:/')", 'd:/')
-        tester("ntpath.join('//computer/share', '//computer/share/')", '//computer/share/')
-        tester("ntpath.join('c:/', 'd:/')", 'd:/')
-        tester("ntpath.join('c:/', '//computer/share/')", '//computer/share/')
-        tester("ntpath.join('//computer/share/', 'd:/')", 'd:/')
-        tester("ntpath.join('//computer/share/', '//computer/share/')", '//computer/share/')
+        tester("ntpath.join('a/b', 'x/y')", 'a/b\\x/y')
+        tester("ntpath.join('/a/b', 'x/y')", '/a/b\\x/y')
+        tester("ntpath.join('/a/b/', 'x/y')", '/a/b/x/y')
+        tester("ntpath.join('c:', 'x/y')", 'c:x/y')
+        tester("ntpath.join('c:a/b', 'x/y')", 'c:a/b\\x/y')
+        tester("ntpath.join('c:a/b/', 'x/y')", 'c:a/b/x/y')
+        tester("ntpath.join('c:/', 'x/y')", 'c:/x/y')
+        tester("ntpath.join('c:/a/b', 'x/y')", 'c:/a/b\\x/y')
+        tester("ntpath.join('c:/a/b/', 'x/y')", 'c:/a/b/x/y')
+        tester("ntpath.join('//computer/share', 'x/y')", '//computer/share\\x/y')
+        tester("ntpath.join('//computer/share/', 'x/y')", '//computer/share/x/y')
+        tester("ntpath.join('//computer/share/a/b', 'x/y')", '//computer/share/a/b\\x/y')
 
-        tester("ntpath.join('c:', '//computer/share/')", '//computer/share/')
-        tester("ntpath.join('c:/', '//computer/share/')", '//computer/share/')
-        tester("ntpath.join('c:/', '//computer/share/a/b')", '//computer/share/a/b')
+        tester("ntpath.join('a/b', '/x/y')", '/x/y')
+        tester("ntpath.join('/a/b', '/x/y')", '/x/y')
+        tester("ntpath.join('c:', '/x/y')", 'c:/x/y')
+        tester("ntpath.join('c:a/b', '/x/y')", 'c:/x/y')
+        tester("ntpath.join('c:/', '/x/y')", 'c:/x/y')
+        tester("ntpath.join('c:/a/b', '/x/y')", 'c:/x/y')
+        tester("ntpath.join('//computer/share', '/x/y')", '//computer/share/x/y')
+        tester("ntpath.join('//computer/share/', '/x/y')", '//computer/share/x/y')
+        tester("ntpath.join('//computer/share/a', '/x/y')", '//computer/share/x/y')
+
+        tester("ntpath.join('c:', 'C:x/y')", 'C:x/y')
+        tester("ntpath.join('c:a/b', 'C:x/y')", 'C:a/b\\x/y')
+        tester("ntpath.join('c:/', 'C:x/y')", 'C:/x/y')
+        tester("ntpath.join('c:/a/b', 'C:x/y')", 'C:/a/b\\x/y')
+
+        for x in ('', 'a/b', '/a/b', 'c:', 'c:a/b', 'c:/', 'c:/a/b',
+                  '//computer/share', '//computer/share/', '//computer/share/a/b'):
+            for y in ('d:', 'd:x/y', 'd:/', 'd:/x/y',
+                      '//machine/common', '//machine/common/', '//machine/common/x/y'):
+                tester("ntpath.join(%r, %r)" % (x, y), y)
 
         tester("ntpath.join('\\\\computer\\share\\', 'a', 'b')", '\\\\computer\\share\\a\\b')
         tester("ntpath.join('\\\\computer\\share', 'a', 'b')", '\\\\computer\\share\\a\\b')
@@ -194,7 +225,6 @@ class TestNtpath(unittest.TestCase):
             tester('ntpath.expandvars("$[foo]bar")', "$[foo]bar")
             tester('ntpath.expandvars("$bar bar")', "$bar bar")
             tester('ntpath.expandvars("$?bar")', "$?bar")
-            tester('ntpath.expandvars("${foo}bar")', "barbar")
             tester('ntpath.expandvars("$foo}bar")', "bar}bar")
             tester('ntpath.expandvars("${foo")', "${foo")
             tester('ntpath.expandvars("${{foo}}")', "baz1}")
@@ -207,6 +237,62 @@ class TestNtpath(unittest.TestCase):
             tester('ntpath.expandvars("%?bar%")', "%?bar%")
             tester('ntpath.expandvars("%foo%%bar")', "bar%bar")
             tester('ntpath.expandvars("\'%foo%\'%bar")', "\'%foo%\'%bar")
+            tester('ntpath.expandvars("bar\'%foo%")', "bar\'%foo%")
+
+    @unittest.skipUnless(support.FS_NONASCII, 'need support.FS_NONASCII')
+    def test_expandvars_nonascii(self):
+        def check(value, expected):
+            tester('ntpath.expandvars(%r)' % value, expected)
+        with support.EnvironmentVarGuard() as env:
+            env.clear()
+            nonascii = support.FS_NONASCII
+            env['spam'] = nonascii
+            env[nonascii] = 'ham' + nonascii
+            check('$spam bar', '%s bar' % nonascii)
+            check('$%s bar' % nonascii, '$%s bar' % nonascii)
+            check('${spam}bar', '%sbar' % nonascii)
+            check('${%s}bar' % nonascii, 'ham%sbar' % nonascii)
+            check('$spam}bar', '%s}bar' % nonascii)
+            check('$%s}bar' % nonascii, '$%s}bar' % nonascii)
+            check('%spam% bar', '%s bar' % nonascii)
+            check('%{}% bar'.format(nonascii), 'ham%s bar' % nonascii)
+            check('%spam%bar', '%sbar' % nonascii)
+            check('%{}%bar'.format(nonascii), 'ham%sbar' % nonascii)
+
+    def test_expanduser(self):
+        tester('ntpath.expanduser("test")', 'test')
+
+        with support.EnvironmentVarGuard() as env:
+            env.clear()
+            tester('ntpath.expanduser("~test")', '~test')
+
+            env['HOMEPATH'] = 'eric\\idle'
+            env['HOMEDRIVE'] = 'C:\\'
+            tester('ntpath.expanduser("~test")', 'C:\\eric\\test')
+            tester('ntpath.expanduser("~")', 'C:\\eric\\idle')
+
+            del env['HOMEDRIVE']
+            tester('ntpath.expanduser("~test")', 'eric\\test')
+            tester('ntpath.expanduser("~")', 'eric\\idle')
+
+            env.clear()
+            env['USERPROFILE'] = 'C:\\eric\\idle'
+            tester('ntpath.expanduser("~test")', 'C:\\eric\\test')
+            tester('ntpath.expanduser("~")', 'C:\\eric\\idle')
+
+            env.clear()
+            env['HOME'] = 'C:\\idle\\eric'
+            tester('ntpath.expanduser("~test")', 'C:\\idle\\test')
+            tester('ntpath.expanduser("~")', 'C:\\idle\\eric')
+
+            tester('ntpath.expanduser("~test\\foo\\bar")',
+                   'C:\\idle\\test\\foo\\bar')
+            tester('ntpath.expanduser("~test/foo/bar")',
+                   'C:\\idle\\test/foo/bar')
+            tester('ntpath.expanduser("~\\foo\\bar")',
+                   'C:\\idle\\eric\\foo\\bar')
+            tester('ntpath.expanduser("~/foo/bar")',
+                   'C:\\idle\\eric/foo/bar')
 
     def test_abspath(self):
         # ntpath.abspath() can only be used on a system with the "nt" module
@@ -218,16 +304,17 @@ class TestNtpath(unittest.TestCase):
             import nt
             tester('ntpath.abspath("C:\\")', "C:\\")
         except ImportError:
-            pass
+            self.skipTest('nt module not available')
 
     def test_relpath(self):
-        currentdir = os.path.split(os.getcwd())[-1]
         tester('ntpath.relpath("a")', 'a')
         tester('ntpath.relpath(os.path.abspath("a"))', 'a')
         tester('ntpath.relpath("a/b")', 'a\\b')
         tester('ntpath.relpath("../a/b")', '..\\a\\b')
-        tester('ntpath.relpath("a", "../b")', '..\\'+currentdir+'\\a')
-        tester('ntpath.relpath("a/b", "../c")', '..\\'+currentdir+'\\a\\b')
+        with support.temp_cwd(support.TESTFN) as cwd_dir:
+            currentdir = os.path.basename(cwd_dir)
+            tester('ntpath.relpath("a", "../b")', '..\\'+currentdir+'\\a')
+            tester('ntpath.relpath("a/b", "../c")', '..\\'+currentdir+'\\a\\b')
         tester('ntpath.relpath("a", "b/c")', '..\\..\\a')
         tester('ntpath.relpath("c:/foo/bar/bat", "c:/x/y")', '..\\..\\foo\\bar\\bat')
         tester('ntpath.relpath("//conky/mountpoint/a", "//conky/mountpoint/b/c")', '..\\..\\a')
@@ -242,6 +329,75 @@ class TestNtpath(unittest.TestCase):
         tester('ntpath.relpath("/a", "/a")', '.')
         tester('ntpath.relpath("/a/b", "/a/b")', '.')
         tester('ntpath.relpath("c:/foo", "C:/FOO")', '.')
+
+    def test_commonpath(self):
+        def check(paths, expected):
+            tester(('ntpath.commonpath(%r)' % paths).replace('\\\\', '\\'),
+                   expected)
+        def check_error(exc, paths):
+            self.assertRaises(exc, ntpath.commonpath, paths)
+            self.assertRaises(exc, ntpath.commonpath,
+                              [os.fsencode(p) for p in paths])
+
+        self.assertRaises(ValueError, ntpath.commonpath, [])
+        check_error(ValueError, ['C:\\Program Files', 'Program Files'])
+        check_error(ValueError, ['C:\\Program Files', 'C:Program Files'])
+        check_error(ValueError, ['\\Program Files', 'Program Files'])
+        check_error(ValueError, ['Program Files', 'C:\\Program Files'])
+        check(['C:\\Program Files'], 'C:\\Program Files')
+        check(['C:\\Program Files', 'C:\\Program Files'], 'C:\\Program Files')
+        check(['C:\\Program Files\\', 'C:\\Program Files'],
+              'C:\\Program Files')
+        check(['C:\\Program Files\\', 'C:\\Program Files\\'],
+              'C:\\Program Files')
+        check(['C:\\\\Program Files', 'C:\\Program Files\\\\'],
+              'C:\\Program Files')
+        check(['C:\\.\\Program Files', 'C:\\Program Files\\.'],
+              'C:\\Program Files')
+        check(['C:\\', 'C:\\bin'], 'C:\\')
+        check(['C:\\Program Files', 'C:\\bin'], 'C:\\')
+        check(['C:\\Program Files', 'C:\\Program Files\\Bar'],
+              'C:\\Program Files')
+        check(['C:\\Program Files\\Foo', 'C:\\Program Files\\Bar'],
+              'C:\\Program Files')
+        check(['C:\\Program Files', 'C:\\Projects'], 'C:\\')
+        check(['C:\\Program Files\\', 'C:\\Projects'], 'C:\\')
+
+        check(['C:\\Program Files\\Foo', 'C:/Program Files/Bar'],
+              'C:\\Program Files')
+        check(['C:\\Program Files\\Foo', 'c:/program files/bar'],
+              'C:\\Program Files')
+        check(['c:/program files/bar', 'C:\\Program Files\\Foo'],
+              'c:\\program files')
+
+        check_error(ValueError, ['C:\\Program Files', 'D:\\Program Files'])
+
+        check(['spam'], 'spam')
+        check(['spam', 'spam'], 'spam')
+        check(['spam', 'alot'], '')
+        check(['and\\jam', 'and\\spam'], 'and')
+        check(['and\\\\jam', 'and\\spam\\\\'], 'and')
+        check(['and\\.\\jam', '.\\and\\spam'], 'and')
+        check(['and\\jam', 'and\\spam', 'alot'], '')
+        check(['and\\jam', 'and\\spam', 'and'], 'and')
+        check(['C:and\\jam', 'C:and\\spam'], 'C:and')
+
+        check([''], '')
+        check(['', 'spam\\alot'], '')
+        check_error(ValueError, ['', '\\spam\\alot'])
+
+        self.assertRaises(TypeError, ntpath.commonpath,
+                          [b'C:\\Program Files', 'C:\\Program Files\\Foo'])
+        self.assertRaises(TypeError, ntpath.commonpath,
+                          [b'C:\\Program Files', 'Program Files\\Foo'])
+        self.assertRaises(TypeError, ntpath.commonpath,
+                          [b'Program Files', 'C:\\Program Files\\Foo'])
+        self.assertRaises(TypeError, ntpath.commonpath,
+                          ['C:\\Program Files', b'C:\\Program Files\\Foo'])
+        self.assertRaises(TypeError, ntpath.commonpath,
+                          ['C:\\Program Files', b'Program Files\\Foo'])
+        self.assertRaises(TypeError, ntpath.commonpath,
+                          ['Program Files', b'C:\\Program Files\\Foo'])
 
     def test_sameopenfile(self):
         with TemporaryFile() as tf1, TemporaryFile() as tf2:

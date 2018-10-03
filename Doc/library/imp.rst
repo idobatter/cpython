@@ -1,12 +1,12 @@
 :mod:`imp` --- Access the :ref:`import <importsystem>` internals
 ================================================================
 
-.. deprecated:: 3.4
-   The :mod:`imp` package is pending deprecation in favor of :mod:`importlib`.
-
 .. module:: imp
    :synopsis: Access the implementation of the import statement.
+   :deprecated:
 
+.. deprecated:: 3.4
+   The :mod:`imp` package is pending deprecation in favor of :mod:`importlib`.
 
 .. index:: statement: import
 
@@ -79,7 +79,9 @@ This module provides an interface to the mechanisms used to implement the
    When *P* itself has a dotted name, apply this recipe recursively.
 
    .. deprecated:: 3.3
-      Use :func:`importlib.find_loader` instead.
+      Use :func:`importlib.util.find_spec` instead unless Python 3.3
+      compatibility is required, in which case use
+      :func:`importlib.find_loader`.
 
 
 .. function:: load_module(name, file, pathname, description)
@@ -104,9 +106,11 @@ This module provides an interface to the mechanisms used to implement the
 
    .. deprecated:: 3.3
       If previously used in conjunction with :func:`imp.find_module` then
-      call ``load_module()`` on the returned loader. If you wish to load a
-      module from a specific file, then use one of the file-based loaders found
-      in :mod:`importlib.machinery`.
+      consider using :func:`importlib.import_module`, otherwise use the loader
+      returned by the replacement you chose for :func:`imp.find_module`. If you
+      called :func:`imp.load_module` and related functions directly then use the
+      classes in :mod:`importlib.machinery`, e.g.
+      ``importlib.machinery.SourceFileLoader(name, path).load_module()``.
 
 
 .. function:: new_module(name)
@@ -144,12 +148,6 @@ This module provides an interface to the mechanisms used to implement the
      where they occur if that is desired.
 
    There are a number of other caveats:
-
-   If a module is syntactically correct but its initialization fails, the first
-   :keyword:`import` statement for it does not bind its name locally, but does
-   store a (partially initialized) module object in ``sys.modules``.  To reload the
-   module you must first :keyword:`import` it again (this will bind the name to the
-   partially initialized module object) before you can :func:`reload` it.
 
    When a module is reloaded, its dictionary (containing the module's global
    variables) is retained.  Redefinitions of names will override the old
@@ -199,11 +197,9 @@ file paths.
    value would be ``/foo/bar/__pycache__/baz.cpython-32.pyc`` for Python 3.2.
    The ``cpython-32`` string comes from the current magic tag (see
    :func:`get_tag`; if :attr:`sys.implementation.cache_tag` is not defined then
-   :exc:`NotImplementedError` will be raised).  The returned path will end in
-   ``.pyc`` when ``__debug__`` is ``True`` or ``.pyo`` for an optimized Python
-   (i.e. ``__debug__`` is ``False``).  By passing in ``True`` or ``False`` for
-   *debug_override* you can override the system's value for ``__debug__`` for
-   extension selection.
+   :exc:`NotImplementedError` will be raised). By passing in ``True`` or
+   ``False`` for *debug_override* you can override the system's value for
+   ``__debug__``, leading to optimized bytecode.
 
    *path* need not exist.
 
@@ -213,6 +209,9 @@ file paths.
 
    .. deprecated:: 3.4
       Use :func:`importlib.util.cache_from_source` instead.
+
+   .. versionchanged:: 3.5
+      The *debug_override* parameter no longer creates a ``.pyo`` file.
 
 
 .. function:: source_from_cache(path)
@@ -262,12 +261,12 @@ that circular imports work without any deadlocks.
    exception is made for circular imports, which by construction have to
    expose an incomplete module object at some point.
 
-.. versionchanged:: 3.3
-   The locking scheme has changed to per-module locks for
-   the most part.  A global import lock is kept for some critical tasks,
-   such as initializing the per-module locks.
+   .. versionchanged:: 3.3
+      The locking scheme has changed to per-module locks for
+      the most part.  A global import lock is kept for some critical tasks,
+      such as initializing the per-module locks.
 
-.. deprecated:: 3.4
+   .. deprecated:: 3.4
 
 
 .. function:: acquire_lock()
@@ -282,12 +281,12 @@ that circular imports work without any deadlocks.
 
    On platforms without threads, this function does nothing.
 
-.. versionchanged:: 3.3
-   The locking scheme has changed to per-module locks for
-   the most part.  A global import lock is kept for some critical tasks,
-   such as initializing the per-module locks.
+   .. versionchanged:: 3.3
+      The locking scheme has changed to per-module locks for
+      the most part.  A global import lock is kept for some critical tasks,
+      such as initializing the per-module locks.
 
-.. deprecated:: 3.4
+   .. deprecated:: 3.4
 
 
 .. function:: release_lock()
@@ -295,12 +294,12 @@ that circular imports work without any deadlocks.
    Release the interpreter's global import lock. On platforms without
    threads, this function does nothing.
 
-.. versionchanged:: 3.3
-   The locking scheme has changed to per-module locks for
-   the most part.  A global import lock is kept for some critical tasks,
-   such as initializing the per-module locks.
+   .. versionchanged:: 3.3
+      The locking scheme has changed to per-module locks for
+      the most part.  A global import lock is kept for some critical tasks,
+      such as initializing the per-module locks.
 
-.. deprecated:: 3.4
+   .. deprecated:: 3.4
 
 
 The following constants with integer values, defined in this module, are used

@@ -33,12 +33,13 @@ import unittest
 import numbers
 import locale
 from test.support import (run_unittest, run_doctest, is_resource_enabled,
-                          requires_IEEE_754)
+                          requires_IEEE_754, requires_docstrings)
 from test.support import (check_warnings, import_fresh_module, TestFailed,
                           run_with_locale, cpython_only)
 import random
 import time
 import warnings
+import inspect
 try:
     import threading
 except ImportError:
@@ -300,7 +301,6 @@ class IBMTestCases(unittest.TestCase):
                     #Exception raised where there shouldn't have been one.
                     self.fail('Exception "'+exception.__class__.__name__ + '" raised on line '+line)
 
-        return
 
     def eval_line(self, s):
         if s.find(' -> ') >= 0 and s[:2] != '--' and not s.startswith('  --'):
@@ -460,7 +460,6 @@ class IBMTestCases(unittest.TestCase):
 
         self.assertEqual(myexceptions, theirexceptions,
               'Incorrect flags set in ' + s + ' -- got ' + str(myexceptions))
-        return
 
     def getexceptions(self):
         return [e for e in Signals[self.decimal] if self.context.flags[e]]
@@ -1059,6 +1058,11 @@ class FormatTest(unittest.TestCase):
 
             # issue 6850
             ('a=-7.0', '0.12345', 'aaaa0.1'),
+
+            # issue 22090
+            ('<^+15.20%', 'inf', '<<+Infinity%<<<'),
+            ('\x07>,%', 'sNaN1234567', 'sNaN1234567%'),
+            ('=10.10%', 'NaN123', '   NaN123%'),
             ]
         for fmt, d, result in test_values:
             self.assertEqual(format(Decimal(d), fmt), result)
@@ -1072,7 +1076,7 @@ class FormatTest(unittest.TestCase):
         try:
             from locale import CHAR_MAX
         except ImportError:
-            return
+            self.skipTest('locale.CHAR_MAX not available')
 
         def make_grouping(lst):
             return ''.join([chr(x) for x in lst]) if self.decimal == C else lst
@@ -1163,8 +1167,12 @@ class FormatTest(unittest.TestCase):
 
         decimal_point = locale.localeconv()['decimal_point']
         thousands_sep = locale.localeconv()['thousands_sep']
-        if decimal_point != '\u066b' or thousands_sep != '\u066c':
-            return
+        if decimal_point != '\u066b':
+            self.skipTest('inappropriate decimal point separator'
+                          '({!a} not {!a})'.format(decimal_point, '\u066b'))
+        if thousands_sep != '\u066c':
+            self.skipTest('inappropriate thousands separator'
+                          '({!a} not {!a})'.format(thousands_sep, '\u066c'))
 
         self.assertEqual(format(Decimal('100000000.123'), 'n'),
                          '100\u066c000\u066c000\u066b123')
@@ -1514,7 +1522,6 @@ def thfunc1(cls):
     cls.assertTrue(c1.flags[Inexact])
     for sig in Overflow, Underflow, DivisionByZero, InvalidOperation:
         cls.assertFalse(c1.flags[sig])
-    return
 
 def thfunc2(cls):
     Decimal = cls.decimal.Decimal
@@ -1559,7 +1566,6 @@ def thfunc2(cls):
     cls.assertTrue(thiscontext.flags[Inexact])
     for sig in Overflow, Underflow, DivisionByZero, InvalidOperation:
         cls.assertFalse(thiscontext.flags[sig])
-    return
 
 class ThreadingTest(unittest.TestCase):
     '''Unit tests for thread local contexts in Decimal.'''
@@ -1601,7 +1607,6 @@ class ThreadingTest(unittest.TestCase):
         DefaultContext.prec = save_prec
         DefaultContext.Emax = save_emax
         DefaultContext.Emin = save_emin
-        return
 
 @unittest.skipUnless(threading, 'threading required')
 class CThreadingTest(ThreadingTest):
@@ -2042,6 +2047,39 @@ class UsabilityTest(unittest.TestCase):
         d = Decimal( (1, (0, 2, 7, 1), 'F') )
         self.assertEqual(d.as_tuple(), (1, (0,), 'F'))
 
+    def test_as_integer_ratio(self):
+        Decimal = self.decimal.Decimal
+
+        # exceptional cases
+        self.assertRaises(OverflowError,
+                          Decimal.as_integer_ratio, Decimal('inf'))
+        self.assertRaises(OverflowError,
+                          Decimal.as_integer_ratio, Decimal('-inf'))
+        self.assertRaises(ValueError,
+                          Decimal.as_integer_ratio, Decimal('-nan'))
+        self.assertRaises(ValueError,
+                          Decimal.as_integer_ratio, Decimal('snan123'))
+
+        for exp in range(-4, 2):
+            for coeff in range(1000):
+                for sign in '+', '-':
+                    d = Decimal('%s%dE%d' % (sign, coeff, exp))
+                    pq = d.as_integer_ratio()
+                    p, q = pq
+
+                    # check return type
+                    self.assertIsInstance(pq, tuple)
+                    self.assertIsInstance(p, int)
+                    self.assertIsInstance(q, int)
+
+                    # check normalization:  q should be positive;
+                    # p should be relatively prime to q.
+                    self.assertGreater(q, 0)
+                    self.assertEqual(math.gcd(p, q), 1)
+
+                    # check that p/q actually gives the correct value
+                    self.assertEqual(Decimal(p) / Decimal(q), d)
+
     def test_subclassing(self):
         # Different behaviours when subclassing Decimal
         Decimal = self.decimal.Decimal
@@ -2402,37 +2440,55 @@ class PythonAPItests(unittest.TestCase):
         self.assertNotIsInstance(Decimal(0), numbers.Real)
 
     def test_pickle(self):
-        Decimal = self.decimal.Decimal
+        for proto in range(pickle.HIGHEST_PROTOCOL + 1):
+            Decimal = self.decimal.Decimal
 
-        savedecimal = sys.modules['decimal']
+            savedecimal = sys.modules['decimal']
 
-        # Round trip
-        sys.modules['decimal'] = self.decimal
-        d = Decimal('-3.141590000')
-        p = pickle.dumps(d)
-        e = pickle.loads(p)
-        self.assertEqual(d, e)
+            # Round trip
+            sys.modules['decimal'] = self.decimal
+            d = Decimal('-3.141590000')
+            p = pickle.dumps(d, proto)
+            e = pickle.loads(p)
+            self.assertEqual(d, e)
 
-        if C:
-            # Test interchangeability
-            x = C.Decimal('-3.123e81723')
-            y = P.Decimal('-3.123e81723')
+            if C:
+                # Test interchangeability
+                x = C.Decimal('-3.123e81723')
+                y = P.Decimal('-3.123e81723')
 
-            sys.modules['decimal'] = C
-            sx = pickle.dumps(x)
-            sys.modules['decimal'] = P
-            r = pickle.loads(sx)
-            self.assertIsInstance(r, P.Decimal)
-            self.assertEqual(r, y)
+                sys.modules['decimal'] = C
+                sx = pickle.dumps(x, proto)
+                sys.modules['decimal'] = P
+                r = pickle.loads(sx)
+                self.assertIsInstance(r, P.Decimal)
+                self.assertEqual(r, y)
 
-            sys.modules['decimal'] = P
-            sy = pickle.dumps(y)
-            sys.modules['decimal'] = C
-            r = pickle.loads(sy)
-            self.assertIsInstance(r, C.Decimal)
-            self.assertEqual(r, x)
+                sys.modules['decimal'] = P
+                sy = pickle.dumps(y, proto)
+                sys.modules['decimal'] = C
+                r = pickle.loads(sy)
+                self.assertIsInstance(r, C.Decimal)
+                self.assertEqual(r, x)
 
-        sys.modules['decimal'] = savedecimal
+                x = C.Decimal('-3.123e81723').as_tuple()
+                y = P.Decimal('-3.123e81723').as_tuple()
+
+                sys.modules['decimal'] = C
+                sx = pickle.dumps(x, proto)
+                sys.modules['decimal'] = P
+                r = pickle.loads(sx)
+                self.assertIsInstance(r, P.DecimalTuple)
+                self.assertEqual(r, y)
+
+                sys.modules['decimal'] = P
+                sy = pickle.dumps(y, proto)
+                sys.modules['decimal'] = C
+                r = pickle.loads(sy)
+                self.assertIsInstance(r, C.DecimalTuple)
+                self.assertEqual(r, x)
+
+            sys.modules['decimal'] = savedecimal
 
     def test_int(self):
         Decimal = self.decimal.Decimal
@@ -2756,63 +2812,64 @@ class ContextAPItests(unittest.TestCase):
 
     def test_pickle(self):
 
-        Context = self.decimal.Context
+        for proto in range(pickle.HIGHEST_PROTOCOL + 1):
+            Context = self.decimal.Context
 
-        savedecimal = sys.modules['decimal']
+            savedecimal = sys.modules['decimal']
 
-        # Round trip
-        sys.modules['decimal'] = self.decimal
-        c = Context()
-        e = pickle.loads(pickle.dumps(c))
+            # Round trip
+            sys.modules['decimal'] = self.decimal
+            c = Context()
+            e = pickle.loads(pickle.dumps(c, proto))
 
-        self.assertEqual(c.prec, e.prec)
-        self.assertEqual(c.Emin, e.Emin)
-        self.assertEqual(c.Emax, e.Emax)
-        self.assertEqual(c.rounding, e.rounding)
-        self.assertEqual(c.capitals, e.capitals)
-        self.assertEqual(c.clamp, e.clamp)
-        self.assertEqual(c.flags, e.flags)
-        self.assertEqual(c.traps, e.traps)
+            self.assertEqual(c.prec, e.prec)
+            self.assertEqual(c.Emin, e.Emin)
+            self.assertEqual(c.Emax, e.Emax)
+            self.assertEqual(c.rounding, e.rounding)
+            self.assertEqual(c.capitals, e.capitals)
+            self.assertEqual(c.clamp, e.clamp)
+            self.assertEqual(c.flags, e.flags)
+            self.assertEqual(c.traps, e.traps)
 
-        # Test interchangeability
-        combinations = [(C, P), (P, C)] if C else [(P, P)]
-        for dumper, loader in combinations:
-            for ri, _ in enumerate(RoundingModes):
-                for fi, _ in enumerate(OrderedSignals[dumper]):
-                    for ti, _ in enumerate(OrderedSignals[dumper]):
+            # Test interchangeability
+            combinations = [(C, P), (P, C)] if C else [(P, P)]
+            for dumper, loader in combinations:
+                for ri, _ in enumerate(RoundingModes):
+                    for fi, _ in enumerate(OrderedSignals[dumper]):
+                        for ti, _ in enumerate(OrderedSignals[dumper]):
 
-                        prec = random.randrange(1, 100)
-                        emin = random.randrange(-100, 0)
-                        emax = random.randrange(1, 100)
-                        caps = random.randrange(2)
-                        clamp = random.randrange(2)
+                            prec = random.randrange(1, 100)
+                            emin = random.randrange(-100, 0)
+                            emax = random.randrange(1, 100)
+                            caps = random.randrange(2)
+                            clamp = random.randrange(2)
 
-                        # One module dumps
-                        sys.modules['decimal'] = dumper
-                        c = dumper.Context(
-                              prec=prec, Emin=emin, Emax=emax,
-                              rounding=RoundingModes[ri],
-                              capitals=caps, clamp=clamp,
-                              flags=OrderedSignals[dumper][:fi],
-                              traps=OrderedSignals[dumper][:ti]
-                        )
-                        s = pickle.dumps(c)
+                            # One module dumps
+                            sys.modules['decimal'] = dumper
+                            c = dumper.Context(
+                                  prec=prec, Emin=emin, Emax=emax,
+                                  rounding=RoundingModes[ri],
+                                  capitals=caps, clamp=clamp,
+                                  flags=OrderedSignals[dumper][:fi],
+                                  traps=OrderedSignals[dumper][:ti]
+                            )
+                            s = pickle.dumps(c, proto)
 
-                        # The other module loads
-                        sys.modules['decimal'] = loader
-                        d = pickle.loads(s)
-                        self.assertIsInstance(d, loader.Context)
+                            # The other module loads
+                            sys.modules['decimal'] = loader
+                            d = pickle.loads(s)
+                            self.assertIsInstance(d, loader.Context)
 
-                        self.assertEqual(d.prec, prec)
-                        self.assertEqual(d.Emin, emin)
-                        self.assertEqual(d.Emax, emax)
-                        self.assertEqual(d.rounding, RoundingModes[ri])
-                        self.assertEqual(d.capitals, caps)
-                        self.assertEqual(d.clamp, clamp)
-                        assert_signals(self, d, 'flags', OrderedSignals[loader][:fi])
-                        assert_signals(self, d, 'traps', OrderedSignals[loader][:ti])
+                            self.assertEqual(d.prec, prec)
+                            self.assertEqual(d.Emin, emin)
+                            self.assertEqual(d.Emax, emax)
+                            self.assertEqual(d.rounding, RoundingModes[ri])
+                            self.assertEqual(d.capitals, caps)
+                            self.assertEqual(d.clamp, clamp)
+                            assert_signals(self, d, 'flags', OrderedSignals[loader][:fi])
+                            assert_signals(self, d, 'traps', OrderedSignals[loader][:ti])
 
-        sys.modules['decimal'] = savedecimal
+            sys.modules['decimal'] = savedecimal
 
     def test_equality_with_other_types(self):
         Decimal = self.decimal.Decimal
@@ -4151,9 +4208,7 @@ class CheckAttributes(unittest.TestCase):
         self.assertEqual(C.__version__, P.__version__)
         self.assertEqual(C.__libmpdec_version__, P.__libmpdec_version__)
 
-        x = dir(C)
-        y = [s for s in dir(P) if '__' in s or not s.startswith('_')]
-        self.assertEqual(set(x) - set(y), set())
+        self.assertEqual(dir(C), dir(P))
 
     def test_context_attributes(self):
 
@@ -4432,18 +4487,6 @@ class PyCoverage(Coverage):
 class PyFunctionality(unittest.TestCase):
     """Extra functionality in decimal.py"""
 
-    def test_py_quantize_watchexp(self):
-        # watchexp functionality
-        Decimal = P.Decimal
-        localcontext = P.localcontext
-
-        with localcontext() as c:
-            c.prec = 1
-            c.Emax = 1
-            c.Emin = -1
-            x = Decimal(99999).quantize(Decimal("1e3"), watchexp=False)
-            self.assertEqual(x, Decimal('1.00E+5'))
-
     def test_py_alternate_formatting(self):
         # triples giving a format, a Decimal, and the expected result
         Decimal = P.Decimal
@@ -4524,7 +4567,6 @@ class PyWhitebox(unittest.TestCase):
                 self.assertEqual(d1._sign, b1._sign)
                 self.assertEqual(d1._int, b1._int)
                 self.assertEqual(d1._exp, b1._exp)
-            return
 
         Decimal(d1)
         self.assertEqual(d1._sign, b1._sign)
@@ -5270,7 +5312,7 @@ class CWhitebox(unittest.TestCase):
         try:
             from locale import CHAR_MAX
         except ImportError:
-            return
+            self.skipTest('locale.CHAR_MAX not available')
 
         def make_grouping(lst):
             return ''.join([chr(x) for x in lst])
@@ -5387,6 +5429,143 @@ class CWhitebox(unittest.TestCase):
             y = Decimal(10**(9*25)).__sizeof__()
             self.assertEqual(y, x+4)
 
+@requires_docstrings
+@unittest.skipUnless(C, "test requires C version")
+class SignatureTest(unittest.TestCase):
+    """Function signatures"""
+
+    def test_inspect_module(self):
+        for attr in dir(P):
+            if attr.startswith('_'):
+                continue
+            p_func = getattr(P, attr)
+            c_func = getattr(C, attr)
+            if (attr == 'Decimal' or attr == 'Context' or
+                inspect.isfunction(p_func)):
+                p_sig = inspect.signature(p_func)
+                c_sig = inspect.signature(c_func)
+
+                # parameter names:
+                c_names = list(c_sig.parameters.keys())
+                p_names = [x for x in p_sig.parameters.keys() if not
+                           x.startswith('_')]
+
+                self.assertEqual(c_names, p_names,
+                                 msg="parameter name mismatch in %s" % p_func)
+
+                c_kind = [x.kind for x in c_sig.parameters.values()]
+                p_kind = [x[1].kind for x in p_sig.parameters.items() if not
+                          x[0].startswith('_')]
+
+                # parameters:
+                if attr != 'setcontext':
+                    self.assertEqual(c_kind, p_kind,
+                                     msg="parameter kind mismatch in %s" % p_func)
+
+    def test_inspect_types(self):
+
+        POS = inspect._ParameterKind.POSITIONAL_ONLY
+        POS_KWD = inspect._ParameterKind.POSITIONAL_OR_KEYWORD
+
+        # Type heuristic (type annotations would help!):
+        pdict = {C: {'other': C.Decimal(1),
+                     'third': C.Decimal(1),
+                     'x': C.Decimal(1),
+                     'y': C.Decimal(1),
+                     'z': C.Decimal(1),
+                     'a': C.Decimal(1),
+                     'b': C.Decimal(1),
+                     'c': C.Decimal(1),
+                     'exp': C.Decimal(1),
+                     'modulo': C.Decimal(1),
+                     'num': "1",
+                     'f': 1.0,
+                     'rounding': C.ROUND_HALF_UP,
+                     'context': C.getcontext()},
+                 P: {'other': P.Decimal(1),
+                     'third': P.Decimal(1),
+                     'a': P.Decimal(1),
+                     'b': P.Decimal(1),
+                     'c': P.Decimal(1),
+                     'exp': P.Decimal(1),
+                     'modulo': P.Decimal(1),
+                     'num': "1",
+                     'f': 1.0,
+                     'rounding': P.ROUND_HALF_UP,
+                     'context': P.getcontext()}}
+
+        def mkargs(module, sig):
+            args = []
+            kwargs = {}
+            for name, param in sig.parameters.items():
+                if name == 'self': continue
+                if param.kind == POS:
+                    args.append(pdict[module][name])
+                elif param.kind == POS_KWD:
+                    kwargs[name] = pdict[module][name]
+                else:
+                    raise TestFailed("unexpected parameter kind")
+            return args, kwargs
+
+        def tr(s):
+            """The C Context docstrings use 'x' in order to prevent confusion
+               with the article 'a' in the descriptions."""
+            if s == 'x': return 'a'
+            if s == 'y': return 'b'
+            if s == 'z': return 'c'
+            return s
+
+        def doit(ty):
+            p_type = getattr(P, ty)
+            c_type = getattr(C, ty)
+            for attr in dir(p_type):
+                if attr.startswith('_'):
+                    continue
+                p_func = getattr(p_type, attr)
+                c_func = getattr(c_type, attr)
+                if inspect.isfunction(p_func):
+                    p_sig = inspect.signature(p_func)
+                    c_sig = inspect.signature(c_func)
+
+                    # parameter names:
+                    p_names = list(p_sig.parameters.keys())
+                    c_names = [tr(x) for x in c_sig.parameters.keys()]
+
+                    self.assertEqual(c_names, p_names,
+                                     msg="parameter name mismatch in %s" % p_func)
+
+                    p_kind = [x.kind for x in p_sig.parameters.values()]
+                    c_kind = [x.kind for x in c_sig.parameters.values()]
+
+                    # 'self' parameter:
+                    self.assertIs(p_kind[0], POS_KWD)
+                    self.assertIs(c_kind[0], POS)
+
+                    # remaining parameters:
+                    if ty == 'Decimal':
+                        self.assertEqual(c_kind[1:], p_kind[1:],
+                                         msg="parameter kind mismatch in %s" % p_func)
+                    else: # Context methods are positional only in the C version.
+                        self.assertEqual(len(c_kind), len(p_kind),
+                                         msg="parameter kind mismatch in %s" % p_func)
+
+                    # Run the function:
+                    args, kwds = mkargs(C, c_sig)
+                    try:
+                        getattr(c_type(9), attr)(*args, **kwds)
+                    except Exception as err:
+                        raise TestFailed("invalid signature for %s: %s %s" % (c_func, args, kwds))
+
+                    args, kwds = mkargs(P, p_sig)
+                    try:
+                        getattr(p_type(9), attr)(*args, **kwds)
+                    except Exception as err:
+                        raise TestFailed("invalid signature for %s: %s %s" % (p_func, args, kwds))
+
+        doit('Decimal')
+        doit('Context')
+
+
 all_tests = [
   CExplicitConstructionTest, PyExplicitConstructionTest,
   CImplicitConstructionTest, PyImplicitConstructionTest,
@@ -5412,9 +5591,10 @@ if not C:
     all_tests = all_tests[1::2]
 else:
     all_tests.insert(0, CheckAttributes)
+    all_tests.insert(1, SignatureTest)
 
 
-def test_main(arith=False, verbose=None, todo_tests=None, debug=None):
+def test_main(arith=None, verbose=None, todo_tests=None, debug=None):
     """ Execute the tests.
 
     Runs all arithmetic tests if arith is True or if the "decimal" resource
@@ -5424,7 +5604,7 @@ def test_main(arith=False, verbose=None, todo_tests=None, debug=None):
     init(C)
     init(P)
     global TEST_ALL, DEBUG
-    TEST_ALL = arith or is_resource_enabled('decimal')
+    TEST_ALL = arith if arith is not None else is_resource_enabled('decimal')
     DEBUG = debug
 
     if todo_tests is None:

@@ -123,15 +123,6 @@ Extension types can easily be made to support weak references; see
       weakref.  If there is no callback or if the referent of the weakref is
       no longer alive then this attribute will have value ``None``.
 
-   .. note::
-
-      Like :meth:`__del__` methods, weak reference callbacks can be
-      called during interpreter shutdown when module globals have been
-      overwritten with :const:`None`.  This can make writing robust
-      weak reference callbacks a challenge.  Callbacks registered
-      using :class:`finalize` do not have to worry about this issue
-      because they will not be run after module teardown has begun.
-
    .. versionchanged:: 3.4
       Added the :attr:`__callback__` attribute.
 
@@ -247,7 +238,7 @@ These method have the same issues as the and :meth:`keyrefs` method of
 .. class:: finalize(obj, func, *args, **kwargs)
 
    Return a callable finalizer object which will be called when *obj*
-   is garbage collected. Unlike an ordinary weak reference, a finalizer is
+   is garbage collected. Unlike an ordinary weak reference, a finalizer
    will always survive until the reference object is collected, greatly
    simplifying lifecycle management.
 
@@ -267,7 +258,7 @@ These method have the same issues as the and :meth:`keyrefs` method of
    are called in reverse order of creation.
 
    A finalizer will never invoke its callback during the later part of
-   the interpreter shutdown when module globals are liable to have
+   the :term:`interpreter shutdown` when module globals are liable to have
    been replaced by :const:`None`.
 
    .. method:: __call__()
@@ -536,8 +527,8 @@ follows::
 
 Starting with Python 3.4, :meth:`__del__` methods no longer prevent
 reference cycles from being garbage collected, and module globals are
-no longer forced to :const:`None` during interpreter shutdown. So this
-code should work without any issues on CPython.
+no longer forced to :const:`None` during :term:`interpreter shutdown`.
+So this code should work without any issues on CPython.
 
 However, handling of :meth:`__del__` methods is notoriously implementation
 specific, since it depends on internal details of the interpreter's garbage
@@ -575,8 +566,8 @@ third party, such as running code when a module is unloaded::
 
 .. note::
 
-   If you create a finalizer object in a daemonic thread just as the
-   the program exits then there is the possibility that the finalizer
+   If you create a finalizer object in a daemonic thread just as the program
+   exits then there is the possibility that the finalizer
    does not get called at exit.  However, in a daemonic thread
    :func:`atexit.register`, ``try: ... finally: ...`` and ``with: ...``
    do not guarantee that cleanup occurs either.

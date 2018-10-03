@@ -121,7 +121,7 @@ but when it is set to the correct value, the header does not have to
 be patched up.
 It is best to first set all parameters, perhaps possibly the
 compression type, and then write audio frames using writeframesraw.
-When all frames have been written, either call writeframes('') or
+When all frames have been written, either call writeframes(b'') or
 close() to patch up the sizes in the header.
 Marks can be added anytime.  If there are any marks, you must call
 close() after all frames have been written.
@@ -257,6 +257,15 @@ from collections import namedtuple
 _aifc_params = namedtuple('_aifc_params',
                           'nchannels sampwidth framerate nframes comptype compname')
 
+_aifc_params.nchannels.__doc__ = 'Number of audio channels (1 for mono, 2 for stereo)'
+_aifc_params.sampwidth.__doc__ = 'Sample width in bytes'
+_aifc_params.framerate.__doc__ = 'Sampling frequency'
+_aifc_params.nframes.__doc__ = 'Number of audio frames'
+_aifc_params.comptype.__doc__ = 'Compression type ("NONE" for AIFF files)'
+_aifc_params.compname.__doc__ = ("""\
+A human-readable version of the compression type
+('not compressed' for AIFF files)""")
+
 
 class Aifc_read:
     # Variables used in this class:
@@ -356,7 +365,10 @@ class Aifc_read:
         self._soundpos = 0
 
     def close(self):
-        self._file.close()
+        file = self._file
+        if file is not None:
+            self._file = None
+            file.close()
 
     def tell(self):
         return self._soundpos
@@ -790,7 +802,10 @@ class Aifc_write:
                 self._datalength = (self._datalength + 3) // 4
                 if self._datalength & 1:
                     self._datalength = self._datalength + 1
-        self._form_length_pos = self._file.tell()
+        try:
+            self._form_length_pos = self._file.tell()
+        except (AttributeError, OSError):
+            self._form_length_pos = None
         commlength = self._write_form_length(self._datalength)
         if self._aifc:
             self._file.write(b'AIFC')
@@ -802,7 +817,8 @@ class Aifc_write:
         self._file.write(b'COMM')
         _write_ulong(self._file, commlength)
         _write_short(self._file, self._nchannels)
-        self._nframes_pos = self._file.tell()
+        if self._form_length_pos is not None:
+            self._nframes_pos = self._file.tell()
         _write_ulong(self._file, self._nframes)
         if self._comptype in (b'ULAW', b'ulaw', b'ALAW', b'alaw', b'G722'):
             _write_short(self._file, 8)
@@ -813,7 +829,8 @@ class Aifc_write:
             self._file.write(self._comptype)
             _write_string(self._file, self._compname)
         self._file.write(b'SSND')
-        self._ssnd_length_pos = self._file.tell()
+        if self._form_length_pos is not None:
+            self._ssnd_length_pos = self._file.tell()
         _write_ulong(self._file, self._datalength + 8)
         _write_ulong(self._file, 0)
         _write_ulong(self._file, 0)

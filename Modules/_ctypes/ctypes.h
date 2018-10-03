@@ -191,7 +191,7 @@ typedef struct {
    remember is that in PyCArrayType_new the ffi_type fields must be filled in -
    so far it was unneeded because libffi doesn't support arrays at all
    (because they are passed as pointers to function calls anyway).  But it's
-   too much risk to change that now, and there are other fields which doen't
+   too much risk to change that now, and there are other fields which doesn't
    belong into this structure anyway.  Maybe in ctypes 2.0... (ctypes 2000?)
 */
     Py_ssize_t size;            /* number of bytes */
@@ -327,7 +327,7 @@ extern int
 PyCData_set(PyObject *dst, PyObject *type, SETFUNC setfunc, PyObject *value,
           Py_ssize_t index, Py_ssize_t size, char *ptr);
 
-extern void _ctypes_extend_error(PyObject *exc_class, char *fmt, ...);
+extern void _ctypes_extend_error(PyObject *exc_class, const char *fmt, ...);
 
 struct basespec {
     CDataObject *base;
@@ -353,10 +353,11 @@ extern char *_ctypes_conversion_errors;
 extern void _ctypes_free_closure(void *);
 extern void *_ctypes_alloc_closure(void);
 
-extern void _ctypes_add_traceback(char *, char *, int);
-
 extern PyObject *PyCData_FromBaseObj(PyObject *type, PyObject *base, Py_ssize_t index, char *adr);
 extern char *_ctypes_alloc_format_string(const char *prefix, const char *suffix);
+extern char *_ctypes_alloc_format_string_with_shape(int ndim,
+                                                const Py_ssize_t *shape,
+                                                const char *prefix, const char *suffix);
 
 extern int _ctypes_simple_instance(PyObject *obj);
 

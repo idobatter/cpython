@@ -5,16 +5,10 @@
 
 #include <locale.h>
 
-#ifdef __VMS
-#error "PEP 11: VMS is now unsupported, code will be removed in Python 3.4"
-#include <unixlib.h>
-#endif
-
 #if defined(MS_WINDOWS) || defined(__CYGWIN__)
 #include <windows.h>
 #ifdef HAVE_FCNTL_H
 #include <fcntl.h>
-#define PATH_MAX MAXPATHLEN
 #endif
 #endif
 
@@ -48,11 +42,11 @@ static int  orig_argc;
 #define PROGRAM_OPTS BASE_OPTS
 
 /* Short usage message (with %s for argv0) */
-static char *usage_line =
+static const char usage_line[] =
 "usage: %ls [option] ... [-c cmd | -m mod | file | -] [arg] ...\n";
 
 /* Long usage message, split into parts < 512 bytes */
-static char *usage_1 = "\
+static const char usage_1[] = "\
 Options and arguments (and corresponding environment variables):\n\
 -b     : issue warnings about str(bytes_instance), str(bytearray_instance)\n\
          and comparing bytes/bytearray with str. (-bb: issue errors)\n\
@@ -62,7 +56,7 @@ Options and arguments (and corresponding environment variables):\n\
 -E     : ignore PYTHON* environment variables (such as PYTHONPATH)\n\
 -h     : print this help message and exit (also --help)\n\
 ";
-static char *usage_2 = "\
+static const char usage_2[] = "\
 -i     : inspect interactively after running script; forces a prompt even\n\
          if stdin does not appear to be a terminal; also PYTHONINSPECT=x\n\
 -I     : isolate Python from the user's environment (implies -E and -s)\n\
@@ -73,7 +67,7 @@ static char *usage_2 = "\
 -s     : don't add user site directory to sys.path; also PYTHONNOUSERSITE\n\
 -S     : don't imply 'import site' on initialization\n\
 ";
-static char *usage_3 = "\
+static const char usage_3[] = "\
 -u     : unbuffered binary stdout and stderr, stdin always buffered;\n\
          also PYTHONUNBUFFERED=x\n\
          see man page for details on internal buffering relating to '-u'\n\
@@ -85,23 +79,23 @@ static char *usage_3 = "\
 -x     : skip first line of source, allowing use of non-Unix forms of #!cmd\n\
 -X opt : set implementation-specific option\n\
 ";
-static char *usage_4 = "\
+static const char usage_4[] = "\
 file   : program read from script file\n\
 -      : program read from stdin (default; interactive mode if a tty)\n\
 arg ...: arguments passed to program in sys.argv[1:]\n\n\
 Other environment variables:\n\
 PYTHONSTARTUP: file executed on interactive startup (no default)\n\
-PYTHONPATH   : '%c'-separated list of directories prefixed to the\n\
+PYTHONPATH   : '%lc'-separated list of directories prefixed to the\n\
                default module search path.  The result is sys.path.\n\
 ";
-static char *usage_5 =
-"PYTHONHOME   : alternate <prefix> directory (or <prefix>%c<exec_prefix>).\n"
+static const char usage_5[] =
+"PYTHONHOME   : alternate <prefix> directory (or <prefix>%lc<exec_prefix>).\n"
 "               The default module search path uses %s.\n"
 "PYTHONCASEOK : ignore case in 'import' statements (Windows).\n"
 "PYTHONIOENCODING: Encoding[:errors] used for stdin/stdout/stderr.\n"
 "PYTHONFAULTHANDLER: dump the Python traceback on fatal errors.\n\
 ";
-static char *usage_6 = "\
+static const char usage_6[] = "\
 PYTHONHASHSEED: if this variable is set to 'random', a random value is used\n\
    to seed the hashes of str, bytes and datetime objects.  It can also be\n\
    set to an integer in the range [0,4294967295] to get hash values with a\n\
@@ -109,7 +103,7 @@ PYTHONHASHSEED: if this variable is set to 'random', a random value is used\n\
 ";
 
 static int
-usage(int exitcode, wchar_t* program)
+usage(int exitcode, const wchar_t* program)
 {
     FILE *f = exitcode ? stderr : stdout;
 
@@ -120,23 +114,11 @@ usage(int exitcode, wchar_t* program)
         fputs(usage_1, f);
         fputs(usage_2, f);
         fputs(usage_3, f);
-        fprintf(f, usage_4, DELIM);
-        fprintf(f, usage_5, DELIM, PYTHONHOMEHELP);
+        fprintf(f, usage_4, (wint_t)DELIM);
+        fprintf(f, usage_5, (wint_t)DELIM, PYTHONHOMEHELP);
         fputs(usage_6, f);
     }
-#if defined(__VMS)
-    if (exitcode == 0) {
-        /* suppress 'error' message */
-        return 1;
-    }
-    else {
-        /* STS$M_INHIB_MSG + SS$_ABORT */
-        return 0x1000002c;
-    }
-#else
     return exitcode;
-#endif
-    /*NOTREACHED*/
 }
 
 static void RunStartupFile(PyCompilerFlags *cf)
@@ -360,6 +342,8 @@ Py_Main(int argc, wchar_t **argv)
     int version = 0;
     int saw_unbuffered_flag = 0;
     PyCompilerFlags cf;
+    PyObject *warning_option = NULL;
+    PyObject *warning_options = NULL;
 
     cf.cf_flags = 0;
 
@@ -482,7 +466,15 @@ Py_Main(int argc, wchar_t **argv)
             break;
 
         case 'W':
-            PySys_AddWarnOption(_PyOS_optarg);
+            if (warning_options == NULL)
+                warning_options = PyList_New(0);
+            if (warning_options == NULL)
+                Py_FatalError("failure in handling of -W argument");
+            warning_option = PyUnicode_FromWideChar(_PyOS_optarg, -1);
+            if (warning_option == NULL)
+                Py_FatalError("failure in handling of -W argument");
+            PyList_Append(warning_options, warning_option);
+            Py_DECREF(warning_option);
             break;
 
         case 'X':
@@ -528,16 +520,16 @@ Py_Main(int argc, wchar_t **argv)
 #ifdef MS_WINDOWS
     if (!Py_IgnoreEnvironmentFlag && (wp = _wgetenv(L"PYTHONWARNINGS")) &&
         *wp != L'\0') {
-        wchar_t *buf, *warning;
+        wchar_t *buf, *warning, *context = NULL;
 
         buf = (wchar_t *)PyMem_RawMalloc((wcslen(wp) + 1) * sizeof(wchar_t));
         if (buf == NULL)
             Py_FatalError(
                "not enough memory to copy PYTHONWARNINGS");
         wcscpy(buf, wp);
-        for (warning = wcstok(buf, L",");
+        for (warning = wcstok_s(buf, L",", &context);
              warning != NULL;
-             warning = wcstok(NULL, L",")) {
+             warning = wcstok_s(NULL, L",", &context)) {
             PySys_AddWarnOption(warning);
         }
         PyMem_RawFree(buf);
@@ -576,18 +568,17 @@ Py_Main(int argc, wchar_t **argv)
         PyMem_RawFree(buf);
     }
 #endif
+    if (warning_options != NULL) {
+        Py_ssize_t i;
+        for (i = 0; i < PyList_GET_SIZE(warning_options); i++) {
+            PySys_AddWarnOptionUnicode(PyList_GET_ITEM(warning_options, i));
+        }
+    }
 
     if (command == NULL && module == NULL && _PyOS_optind < argc &&
         wcscmp(argv[_PyOS_optind], L"-") != 0)
     {
-#ifdef __VMS
-        filename = decc$translate_vms(argv[_PyOS_optind]);
-        if (filename == (char *)0 || filename == (char *)-1)
-            filename = argv[_PyOS_optind];
-
-#else
         filename = argv[_PyOS_optind];
-#endif
     }
 
     stdin_is_interactive = Py_FdIsInteractive(stdin, (char *)0);
@@ -623,11 +614,6 @@ Py_Main(int argc, wchar_t **argv)
 #endif /* !MS_WINDOWS */
         /* Leave stderr alone - it should be unbuffered anyway. */
     }
-#ifdef __VMS
-    else {
-        setvbuf (stdout, (char *)NULL, _IOLBF, BUFSIZ);
-    }
-#endif /* __VMS */
 
 #ifdef __APPLE__
     /* On MacOS X, when the Python interpreter is embedded in an
@@ -660,7 +646,7 @@ Py_Main(int argc, wchar_t **argv)
             /* Used by Mac/Tools/pythonw.c to forward
              * the argv0 of the stub executable
              */
-            wchar_t* wbuf = _Py_char2wchar(pyvenv_launcher, NULL);
+            wchar_t* wbuf = Py_DecodeLocale(pyvenv_launcher, NULL);
 
             if (wbuf == NULL) {
                 Py_FatalError("Cannot decode __PYVENV_LAUNCHER__");
@@ -668,7 +654,7 @@ Py_Main(int argc, wchar_t **argv)
             Py_SetProgramName(wbuf);
 
             /* Don't free wbuf, the argument to Py_SetProgramName
-             * must remain valid until the Py_Finalize is called.
+             * must remain valid until Py_FinalizeEx is called.
              */
         } else {
             Py_SetProgramName(argv[0]);
@@ -681,6 +667,7 @@ Py_Main(int argc, wchar_t **argv)
     Py_SetProgramName(argv[0]);
 #endif
     Py_Initialize();
+    Py_XDECREF(warning_options);
 
     if (!Py_QuietFlag && (Py_VerboseFlag ||
                         (command == NULL && filename == NULL &&
@@ -742,7 +729,7 @@ Py_Main(int argc, wchar_t **argv)
                 char *cfilename_buffer;
                 const char *cfilename;
                 int err = errno;
-                cfilename_buffer = _Py_wchar2char(filename, NULL);
+                cfilename_buffer = Py_EncodeLocale(filename, NULL);
                 if (cfilename_buffer != NULL)
                     cfilename = cfilename_buffer;
                 else
@@ -765,11 +752,12 @@ Py_Main(int argc, wchar_t **argv)
                 }
             }
             {
-                /* XXX: does this work on Win/Win64? (see posix_fstat) */
-                struct stat sb;
-                if (fstat(fileno(fp), &sb) == 0 &&
+                struct _Py_stat_struct sb;
+                if (_Py_fstat_noraise(fileno(fp), &sb) == 0 &&
                     S_ISDIR(sb.st_mode)) {
-                    fprintf(stderr, "%ls: '%ls' is a directory, cannot continue\n", argv[0], filename);
+                    fprintf(stderr,
+                            "%ls: '%ls' is a directory, cannot continue\n",
+                            argv[0], filename);
                     fclose(fp);
                     return 1;
                 }
@@ -797,7 +785,11 @@ Py_Main(int argc, wchar_t **argv)
         sts = PyRun_AnyFileFlags(stdin, "<stdin>", &cf) != 0;
     }
 
-    Py_Finalize();
+    if (Py_FinalizeEx() < 0) {
+        /* Value unlikely to be confused with a non-error exit status or
+        other special meaning */
+        sts = 120;
+    }
 
 #ifdef __INSURE__
     /* Insure++ is a memory analysis tool that aids in discovering

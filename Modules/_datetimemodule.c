@@ -7,6 +7,10 @@
 
 #include <time.h>
 
+#ifdef MS_WINDOWS
+#  include <winsock2.h>         /* struct timeval */
+#endif
+
 /* Differentiate between building the core module and building extension
  * modules.
  */
@@ -16,11 +20,13 @@
 #include "datetime.h"
 #undef Py_BUILD_CORE
 
-/*[clinic]
+/*[clinic input]
 module datetime
-class datetime.datetime
-[clinic]*/
-/*[clinic checksum: da39a3ee5e6b4b0d3255bfef95601890afd80709]*/
+class datetime.datetime "PyDateTime_DateTime *" "&PyDateTime_DateTimeType"
+[clinic start generated code]*/
+/*[clinic end generated code: output=da39a3ee5e6b4b0d input=78142cb64b9e98bc]*/
+
+#include "clinic/_datetimemodule.c.h"
 
 /* We require that C int be at least 32 bits, and use int virtually
  * everywhere.  In just a few cases we use a temp long, where a Python
@@ -178,12 +184,12 @@ divide_nearest(PyObject *m, PyObject *n)
  * and the number of days before that month in the same year.  These
  * are correct for non-leap years only.
  */
-static int _days_in_month[] = {
+static const int _days_in_month[] = {
     0, /* unused; this vector uses 1-based indexing */
     31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
 };
 
-static int _days_before_month[] = {
+static const int _days_before_month[] = {
     0, /* unused; this vector uses 1-based indexing */
     0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334
 };
@@ -613,7 +619,7 @@ time_alloc(PyTypeObject *type, Py_ssize_t aware)
                 sizeof(_PyDateTime_BaseTime));
     if (self == NULL)
         return (PyObject *)PyErr_NoMemory();
-    PyObject_INIT(self, type);
+    (void)PyObject_INIT(self, type);
     return self;
 }
 
@@ -628,7 +634,7 @@ datetime_alloc(PyTypeObject *type, Py_ssize_t aware)
                 sizeof(_PyDateTime_BaseDateTime));
     if (self == NULL)
         return (PyObject *)PyErr_NoMemory();
-    PyObject_INIT(self, type);
+    (void)PyObject_INIT(self, type);
     return self;
 }
 
@@ -867,7 +873,7 @@ get_tzinfo_member(PyObject *self)
  * this returns NULL.  Else result is returned.
  */
 static PyObject *
-call_tzinfo_method(PyObject *tzinfo, char *name, PyObject *tzinfoarg)
+call_tzinfo_method(PyObject *tzinfo, const char *name, PyObject *tzinfoarg)
 {
     PyObject *offset;
 
@@ -897,11 +903,11 @@ call_tzinfo_method(PyObject *tzinfo, char *name, PyObject *tzinfoarg)
         }
     }
     else {
-        Py_DECREF(offset);
         PyErr_Format(PyExc_TypeError,
                      "tzinfo.%s() must return None or "
                      "timedelta, not '%.200s'",
                      name, Py_TYPE(offset)->tp_name);
+        Py_DECREF(offset);
         return NULL;
     }
 
@@ -1003,10 +1009,10 @@ append_keyword_tzinfo(PyObject *repr, PyObject *tzinfo)
 static PyObject *
 format_ctime(PyDateTime_Date *date, int hours, int minutes, int seconds)
 {
-    static const char *DayNames[] = {
+    static const char * const DayNames[] = {
         "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"
     };
-    static const char *MonthNames[] = {
+    static const char * const MonthNames[] = {
         "Jan", "Feb", "Mar", "Apr", "May", "Jun",
         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
     };
@@ -2153,7 +2159,7 @@ delta_new(PyTypeObject *type, PyObject *args, PyObject *kw)
              * is odd. Note that x is odd when it's last bit is 1. The
              * code below uses bitwise and operation to check the last
              * bit. */
-	    temp = PyNumber_And(x, one);  /* temp <- x & 1 */
+            temp = PyNumber_And(x, one);  /* temp <- x & 1 */
             if (temp == NULL) {
                 Py_DECREF(x);
                 goto Done;
@@ -2301,7 +2307,7 @@ static PyMethodDef delta_methods[] = {
     {NULL,      NULL},
 };
 
-static char delta_doc[] =
+static const char delta_doc[] =
 PyDoc_STR("Difference between two datetime values.");
 
 static PyNumberMethods delta_as_number = {
@@ -2459,7 +2465,7 @@ date_local_from_object(PyObject *cls, PyObject *obj)
     struct tm *tm;
     time_t t;
 
-    if (_PyTime_ObjectToTime_t(obj, &t) == -1)
+    if (_PyTime_ObjectToTime_t(obj, &t, _PyTime_ROUND_FLOOR) == -1)
         return NULL;
 
     tm = localtime(&t);
@@ -2880,7 +2886,7 @@ static PyMethodDef date_methods[] = {
     {NULL,      NULL}
 };
 
-static char date_doc[] =
+static const char date_doc[] =
 PyDoc_STR("date(year, month, day) --> date object");
 
 static PyNumberMethods date_as_number = {
@@ -3040,7 +3046,7 @@ tzinfo_fromutc(PyDateTime_TZInfo *self, PyObject *dt)
         goto Fail;
     if (dst == Py_None)
         goto Inconsistent;
-    if (delta_bool(delta) != 0) {
+    if (delta_bool((PyDateTime_Delta *)dst) != 0) {
         PyObject *temp = result;
         result = add_datetime_timedelta((PyDateTime_DateTime *)result,
                                         (PyDateTime_Delta *)dst, 1);
@@ -3149,7 +3155,7 @@ static PyMethodDef tzinfo_methods[] = {
     {NULL, NULL}
 };
 
-static char tzinfo_doc[] =
+static const char tzinfo_doc[] =
 PyDoc_STR("Abstract base class for time zone info objects.");
 
 static PyTypeObject PyDateTime_TZInfoType = {
@@ -3224,10 +3230,10 @@ timezone_richcompare(PyDateTime_TimeZone *self,
     if (op != Py_EQ && op != Py_NE)
         Py_RETURN_NOTIMPLEMENTED;
     if (Py_TYPE(other) != &PyDateTime_TimeZoneType) {
-	if (op == Py_EQ)
-	    Py_RETURN_FALSE;
-	else
-	    Py_RETURN_TRUE;
+        if (op == Py_EQ)
+            Py_RETURN_FALSE;
+        else
+            Py_RETURN_TRUE;
     }
     return delta_richcompare(self->offset, other->offset, op);
 }
@@ -3281,6 +3287,11 @@ timezone_str(PyDateTime_TimeZone *self)
         Py_INCREF(self->name);
         return self->name;
     }
+    if ((PyObject *)self == PyDateTime_TimeZone_UTC ||
+           (GET_TD_DAYS(self->offset) == 0 &&
+            GET_TD_SECONDS(self->offset) == 0 &&
+            GET_TD_MICROSECONDS(self->offset) == 0))
+        return PyUnicode_FromString("UTC");
     /* Offset is normalized, so it is negative if days < 0 */
     if (GET_TD_DAYS(self->offset) < 0) {
         sign = '-';
@@ -3376,7 +3387,7 @@ static PyMethodDef timezone_methods[] = {
     {NULL, NULL}
 };
 
-static char timezone_doc[] =
+static const char timezone_doc[] =
 PyDoc_STR("Fixed offset from UTC implementation of tzinfo.");
 
 static PyTypeObject PyDateTime_TimeZoneType = {
@@ -3805,29 +3816,6 @@ time_replace(PyDateTime_Time *self, PyObject *args, PyObject *kw)
     return clone;
 }
 
-static int
-time_bool(PyObject *self)
-{
-    PyObject *offset, *tzinfo;
-    int offsecs = 0;
-
-    if (TIME_GET_SECOND(self) || TIME_GET_MICROSECOND(self)) {
-        /* Since utcoffset is in whole minutes, nothing can
-         * alter the conclusion that this is nonzero.
-         */
-        return 1;
-    }
-    tzinfo = GET_TIME_TZINFO(self);
-    if (tzinfo != Py_None) {
-        offset = call_utcoffset(tzinfo, Py_None);
-        if (offset == NULL)
-            return -1;
-        offsecs = GET_TD_DAYS(offset)*86400 + GET_TD_SECONDS(offset);
-        Py_DECREF(offset);
-    }
-    return (TIME_GET_MINUTE(self)*60 - offsecs + TIME_GET_HOUR(self)*3600) != 0;
-}
-
 /* Pickle support, a simple use of __reduce__. */
 
 /* Let basestate be the non-tzinfo data string.
@@ -3889,24 +3877,11 @@ static PyMethodDef time_methods[] = {
     {NULL,      NULL}
 };
 
-static char time_doc[] =
+static const char time_doc[] =
 PyDoc_STR("time([hour[, minute[, second[, microsecond[, tzinfo]]]]]) --> a time object\n\
 \n\
 All arguments are optional. tzinfo may be None, or an instance of\n\
 a tzinfo subclass. The remaining arguments may be ints.\n");
-
-static PyNumberMethods time_as_number = {
-    0,                                          /* nb_add */
-    0,                                          /* nb_subtract */
-    0,                                          /* nb_multiply */
-    0,                                          /* nb_remainder */
-    0,                                          /* nb_divmod */
-    0,                                          /* nb_power */
-    0,                                          /* nb_negative */
-    0,                                          /* nb_positive */
-    0,                                          /* nb_absolute */
-    (inquiry)time_bool,                         /* nb_bool */
-};
 
 static PyTypeObject PyDateTime_TimeType = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -3919,7 +3894,7 @@ static PyTypeObject PyDateTime_TimeType = {
     0,                                          /* tp_setattr */
     0,                                          /* tp_reserved */
     (reprfunc)time_repr,                        /* tp_repr */
-    &time_as_number,                            /* tp_as_number */
+    0,                                          /* tp_as_number */
     0,                                          /* tp_as_sequence */
     0,                                          /* tp_as_mapping */
     (hashfunc)time_hash,                        /* tp_hash */
@@ -4127,8 +4102,10 @@ datetime_from_timestamp(PyObject *cls, TM_FUNC f, PyObject *timestamp,
     time_t timet;
     long us;
 
-    if (_PyTime_ObjectToTimeval(timestamp, &timet, &us) == -1)
+    if (_PyTime_ObjectToTimeval(timestamp,
+                                &timet, &us, _PyTime_ROUND_HALF_EVEN) == -1)
         return NULL;
+
     return datetime_from_timet_and_us(cls, f, timet, (int)us, tzinfo);
 }
 
@@ -4139,13 +4116,18 @@ datetime_from_timestamp(PyObject *cls, TM_FUNC f, PyObject *timestamp,
 static PyObject *
 datetime_best_possible(PyObject *cls, TM_FUNC f, PyObject *tzinfo)
 {
-    _PyTime_timeval t;
-    _PyTime_gettimeofday(&t);
-    return datetime_from_timet_and_us(cls, f, t.tv_sec, (int)t.tv_usec,
-                                      tzinfo);
+    _PyTime_t ts = _PyTime_GetSystemClock();
+    time_t secs;
+    int us;
+
+    if (_PyTime_AsTimevalTime_t(ts, &secs, &us, _PyTime_ROUND_FLOOR) < 0)
+        return NULL;
+    assert(0 <= us && us <= 999999);
+
+    return datetime_from_timet_and_us(cls, f, secs, us, tzinfo);
 }
 
-/*[clinic]
+/*[clinic input]
 
 @classmethod
 datetime.datetime.now
@@ -4156,43 +4138,11 @@ datetime.datetime.now
 Returns new datetime object representing current time local to tz.
 
 If no tz is specified, uses local timezone.
-[clinic]*/
-
-PyDoc_STRVAR(datetime_datetime_now__doc__,
-"now(tz=None)\n"
-"Returns new datetime object representing current time local to tz.\n"
-"\n"
-"  tz\n"
-"    Timezone object.\n"
-"\n"
-"If no tz is specified, uses local timezone.");
-
-#define DATETIME_DATETIME_NOW_METHODDEF    \
-    {"now", (PyCFunction)datetime_datetime_now, METH_VARARGS|METH_KEYWORDS|METH_CLASS, datetime_datetime_now__doc__},
+[clinic start generated code]*/
 
 static PyObject *
-datetime_datetime_now_impl(PyTypeObject *cls, PyObject *tz);
-
-static PyObject *
-datetime_datetime_now(PyTypeObject *cls, PyObject *args, PyObject *kwargs)
-{
-    PyObject *return_value = NULL;
-    static char *_keywords[] = {"tz", NULL};
-    PyObject *tz = Py_None;
-
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs,
-        "|O:now", _keywords,
-        &tz))
-        goto exit;
-    return_value = datetime_datetime_now_impl(cls, tz);
-
-exit:
-    return return_value;
-}
-
-static PyObject *
-datetime_datetime_now_impl(PyTypeObject *cls, PyObject *tz)
-/*[clinic checksum: ca3d26a423b3f633b260c7622e303f0915a96f7c]*/
+datetime_datetime_now_impl(PyTypeObject *type, PyObject *tz)
+/*[clinic end generated code: output=b3386e5345e2b47a input=80d09869c5267d00]*/
 {
     PyObject *self;
 
@@ -4202,7 +4152,7 @@ datetime_datetime_now_impl(PyTypeObject *cls, PyObject *tz)
     if (check_tzinfo_subclass(tz) < 0)
         return NULL;
 
-    self = datetime_best_possible((PyObject *)cls,
+    self = datetime_best_possible((PyObject *)type,
                                   tz == Py_None ? localtime : gmtime,
                                   tz);
     if (self != NULL && tz != Py_None) {
@@ -4763,7 +4713,7 @@ local_timezone(PyDateTime_DateTime *utc_time)
     if (seconds == NULL)
         goto error;
     Py_DECREF(delta);
-    timestamp = PyLong_AsLong(seconds);
+    timestamp = _PyLong_AsTime_t(seconds);
     Py_DECREF(seconds);
     if (timestamp == -1 && PyErr_Occurred())
         return NULL;
@@ -4812,7 +4762,7 @@ datetime_astimezone(PyDateTime_DateTime *self, PyObject *args, PyObject *kw)
     static char *keywords[] = {"tz", NULL};
 
     if (! PyArg_ParseTupleAndKeywords(args, kw, "|O:astimezone", keywords,
-				      &tzinfo))
+                                      &tzinfo))
         return NULL;
 
     if (check_tzinfo_subclass(tzinfo) == -1)
@@ -5054,8 +5004,7 @@ static PyMethodDef datetime_methods[] = {
 
     {"utcfromtimestamp", (PyCFunction)datetime_utcfromtimestamp,
      METH_VARARGS | METH_CLASS,
-     PyDoc_STR("timestamp -> UTC datetime from a POSIX timestamp "
-               "(like time.time()).")},
+     PyDoc_STR("Construct a naive UTC datetime from a POSIX timestamp.")},
 
     {"strptime", (PyCFunction)datetime_strptime,
      METH_VARARGS | METH_CLASS,
@@ -5116,7 +5065,7 @@ static PyMethodDef datetime_methods[] = {
     {NULL,      NULL}
 };
 
-static char datetime_doc[] =
+static const char datetime_doc[] =
 PyDoc_STR("datetime(year, month, day[, hour[, minute[, second[, microsecond[,tzinfo]]]]])\n\
 \n\
 The year, month and day arguments are required. tzinfo may be None, or an\n\
@@ -5380,19 +5329,19 @@ PyInit__datetime(void)
     /* A 4-year cycle has an extra leap day over what we'd get from
      * pasting together 4 single years.
      */
-    assert(DI4Y == 4 * 365 + 1);
+    Py_BUILD_ASSERT(DI4Y == 4 * 365 + 1);
     assert(DI4Y == days_before_year(4+1));
 
     /* Similarly, a 400-year cycle has an extra leap day over what we'd
      * get from pasting together 4 100-year cycles.
      */
-    assert(DI400Y == 4 * DI100Y + 1);
+    Py_BUILD_ASSERT(DI400Y == 4 * DI100Y + 1);
     assert(DI400Y == days_before_year(400+1));
 
     /* OTOH, a 100-year cycle has one fewer leap day than we'd get from
      * pasting together 25 4-year cycles.
      */
-    assert(DI100Y == 25 * DI4Y - 1);
+    Py_BUILD_ASSERT(DI100Y == 25 * DI4Y - 1);
     assert(DI100Y == days_before_year(100+1));
 
     one = PyLong_FromLong(1);

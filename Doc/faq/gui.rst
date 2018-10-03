@@ -29,17 +29,17 @@ Tkinter
 Standard builds of Python include an object-oriented interface to the Tcl/Tk
 widget set, called :ref:`tkinter <Tkinter>`.  This is probably the easiest to
 install (since it comes included with most
-`binary distributions <http://www.python.org/download/>`_ of Python) and use.
+`binary distributions <https://www.python.org/download/>`_ of Python) and use.
 For more info about Tk, including pointers to the source, see the
 `Tcl/Tk home page <http://www.tcl.tk>`_.  Tcl/Tk is fully portable to the
-MacOS, Windows, and Unix platforms.
+Mac OS X, Windows, and Unix platforms.
 
 wxWidgets
 ---------
 
 wxWidgets (http://www.wxwidgets.org) is a free, portable GUI class
 library written in C++ that provides a native look and feel on a
-number of platforms, with Windows, MacOS X, GTK, X11, all listed as
+number of platforms, with Windows, Mac OS X, GTK, X11, all listed as
 current stable targets.  Language bindings are available for a number
 of languages including Python, Perl, Ruby, etc.
 
@@ -58,14 +58,14 @@ Qt
 ---
 
 There are bindings available for the Qt toolkit (using either `PyQt
-<http://www.riverbankcomputing.co.uk/software/pyqt/>`_ or `PySide
-<http://www.pyside.org/>`_) and for KDE (`PyKDE <http://www.riverbankcomputing.co.uk/software/pykde/intro>`__).
+<http://www.riverbankcomputing.co.uk/software/pyqt/intro>`_ or `PySide
+<http://www.pyside.org/>`_) and for KDE (`PyKDE <https://techbase.kde.org/Development/Languages/Python>`__).
 PyQt is currently more mature than PySide, but you must buy a PyQt license from
 `Riverbank Computing <http://www.riverbankcomputing.co.uk/software/pyqt/license>`_
 if you want to write proprietary applications.  PySide is free for all applications.
 
 Qt 4.5 upwards is licensed under the LGPL license; also, commercial licenses
-are available from `Nokia <http://qt.nokia.com/>`_.
+are available from `The Qt Company <http://www.qt.io/licensing/>`_.
 
 Gtk+
 ----
@@ -102,13 +102,9 @@ For OpenGL bindings, see `PyOpenGL <http://pyopengl.sourceforge.net>`_.
 What platform-specific GUI toolkits exist for Python?
 ========================================================
 
-`The Mac port <http://python.org/download/mac>`_ by Jack Jansen has a rich and
-ever-growing set of modules that support the native Mac toolbox calls.  The port
-supports MacOS X's Carbon libraries.
-
 By installing the `PyObjc Objective-C bridge
-<http://pyobjc.sourceforge.net>`_, Python programs can use MacOS X's
-Cocoa libraries. See the documentation that comes with the Mac port.
+<https://pythonhosted.org/pyobjc/>`_, Python programs can use Mac OS X's
+Cocoa libraries.
 
 :ref:`Pythonwin <windows-faq>` by Mark Hammond includes an interface to the
 Microsoft Foundation Classes and a Python programming environment
@@ -143,30 +139,11 @@ might include the Tix libraries as well).
 Can I have Tk events handled while waiting for I/O?
 ---------------------------------------------------
 
-Yes, and you don't even need threads!  But you'll have to restructure your I/O
+On platforms other than Windows, yes, and you don't even
+need threads!  But you'll have to restructure your I/O
 code a bit.  Tk has the equivalent of Xt's :c:func:`XtAddInput()` call, which allows you
 to register a callback function which will be called from the Tk mainloop when
-I/O is possible on a file descriptor.  Here's what you need::
-
-   from Tkinter import tkinter
-   tkinter.createfilehandler(file, mask, callback)
-
-The file may be a Python file or socket object (actually, anything with a
-fileno() method), or an integer file descriptor.  The mask is one of the
-constants tkinter.READABLE or tkinter.WRITABLE.  The callback is called as
-follows::
-
-   callback(file, mask)
-
-You must unregister the callback when you're done, using ::
-
-   tkinter.deletefilehandler(file)
-
-Note: since you don't know *how many bytes* are available for reading, you can't
-use the Python file object's read or readline methods, since these will insist
-on reading a predefined number of bytes.  For sockets, the :meth:`recv` or
-:meth:`recvfrom` methods will work fine; for other files, use
-``os.read(file.fileno(), maxbytecount)``.
+I/O is possible on a file descriptor.  See :ref:`tkinter-file-handlers`.
 
 
 I can't get key bindings to work in Tkinter: why?
